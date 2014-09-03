@@ -206,6 +206,8 @@ public:
     bool frameStrutEventsEnabled() const Q_DECL_OVERRIDE
         { return m_frameStrutEventsEnabled; }
 
+    void requestUpdate() Q_DECL_OVERRIDE;
+
     void setMenubar(QCocoaMenuBar *mb);
     QCocoaMenuBar *menubar() const;
 

@@ -177,6 +177,8 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     [super dealloc];
 }
 
+CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* now, const CVTimeStamp* outputTime, CVOptionFlags flagsIn, CVOptionFlags* flagsOut, void* displayLinkContext);
+
 - (id)initWithQWindow:(QWindow *)window platformWindow:(QCocoaWindow *) platformWindow
 {
     self = [self init];
@@ -187,6 +189,13 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     m_platformWindow = platformWindow;
     m_sendKeyEvent = false;
     m_trackingArea = nil;
+
+
+    CVDisplayLinkCreateWithActiveCGDisplays(&m_displayLink);
+    CVDisplayLinkSetOutputCallback(m_displayLink, &qNsViewDisplayLinkCallback, self);
+    m_displayLinkSerial = 0;
+    m_displayLinkSerialAtTimerSchedule = 0;
+    m_requestUpdateCalled = false;
 
 #ifdef QT_COCOA_ENABLE_ACCESSIBILITY_INSPECTOR
     // prevent rift in space-time continuum, disable
@@ -383,6 +392,12 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         }
 
     } else if (notificationName == NSWindowDidChangeScreenNotification) {
+
+        // Update display link
+        // ### correct screen
+        NSScreen *screen = self.window.screen;
+        CVDisplayLinkSetCurrentCGDisplay(m_displayLink, kCGDirectMainDisplay);
+
         if (m_window) {
             NSUInteger screenIndex = [[NSScreen screens] indexOfObject:self.window.screen];
             if (screenIndex != NSNotFound) {
@@ -2039,6 +2054,79 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     QPoint qtScreenPoint = QPoint(screenPoint.x, qt_mac_flipYCoordinate(screenPoint.y));
 
     QWindowSystemInterface::handleMouseEvent(target, mapWindowCoordinates(m_window, target, qtWindowPoint), qtScreenPoint, m_buttons);
+}
+
+- (void) requestUpdate
+{
+    m_requestUpdateCalled = true;
+
+    // Start the display link if needed
+    if (!CVDisplayLinkIsRunning(m_displayLink))
+        CVDisplayLinkStart(m_displayLink);
+
+    ++m_displayLinkSerial;
+
+    // Schedule the stop timer if not already scheduled. This timer will stop
+    // the displaylink if/when there are no more requestUpdate calls.
+    if (!m_displayLinkStopTimer || ![m_displayLinkStopTimer isValid])
+        [self scheduleStopDisplayLinkTimer];
+}
+
+- (void) scheduleStopDisplayLinkTimer
+{
+    m_displayLinkSerialAtTimerSchedule = m_displayLinkSerial;
+
+    // Select a delay which determines how often Qt will check
+    // if the animatons have stopped. The tradeoff is timer activity
+    // while animating vs. displaylink activity while not animating.
+    NSTimeInterval delay = 10.0/60.0;
+
+    m_displayLinkStopTimer =
+        [NSTimer scheduledTimerWithTimeInterval:delay
+                                         target:self
+                                       selector:@selector(stopDisplayLinkTimerFire)
+                                      userInfo:nil
+                                       repeats:NO];
+}
+
+- (void) stopDisplayLinkTimerFire
+{
+    [m_displayLinkStopTimer invalidate];
+    m_displayLinkStopTimer = 0;
+
+    if (!CVDisplayLinkIsRunning(m_displayLink))
+        return;
+
+    // The dislplay link can be stopped if there was no requestUpdate
+    // calls since the timer was scheduled.
+    if (m_displayLinkSerial == m_displayLinkSerialAtTimerSchedule) {
+        CVDisplayLinkStop(m_displayLink);
+    } else {
+        // Othervise we don't know; we could never get a requestUpdate
+        // call again. Schedule the timer here to catch that case.
+        [self scheduleStopDisplayLinkTimer];
+    }
+}
+
+- (void) callRequestAnimationCallback
+{
+    if (!m_requestUpdateCalled)
+        return;
+    m_requestUpdateCalled = false;
+    QCoreApplication::postEvent(m_window, new QEvent(QEvent::UpdateRequest));
+}
+
+CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* now, const CVTimeStamp* outputTime,
+                                    CVOptionFlags flagsIn, CVOptionFlags* flagsOut, void* displayLinkContext)
+{
+    Q_UNUSED(displayLink);
+    Q_UNUSED(now);
+    Q_UNUSED(outputTime);
+    Q_UNUSED(flagsIn);
+    Q_UNUSED(flagsOut);
+
+    [(QNSView*)displayLinkContext callRequestAnimationCallback];
+    return kCVReturnSuccess;
 }
 
 @end

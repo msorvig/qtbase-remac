@@ -1875,3 +1875,8 @@ void QCocoaWindow::setFrameStrutEventsEnabled(bool enabled)
 {
     m_frameStrutEventsEnabled = enabled;
 }
+
+void QCocoaWindow::requestUpdate()
+{
+    [m_qtView requestUpdate];
+}

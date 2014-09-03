@@ -70,6 +70,13 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     QCocoaGLContext *m_glContext;
     bool m_shouldSetGLContextinDrawRect;
 #endif
+
+    CVDisplayLinkRef m_displayLink;
+    NSTimer *m_displayLinkStopTimer;
+    int m_displayLinkSerial;
+    int m_displayLinkSerialAtTimerSchedule;
+    bool m_requestUpdateCalled;
+
     NSString *m_inputSource;
     QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper) *m_mouseMoveHelper;
     bool m_resendKeyEvent;
@@ -136,6 +143,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 
 - (void)registerDragTypes;
 - (NSDragOperation)handleDrag:(id <NSDraggingInfo>)sender;
+- (void) requestUpdate;
 
 @end
 
