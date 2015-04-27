@@ -141,7 +141,6 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         m_buttons = Qt::NoButton;
         m_frameStrutButtons = Qt::NoButton;
         m_sendKeyEvent = false;
-        m_subscribesForGlobalFrameNotifications = false;
 #ifndef QT_NO_OPENGL
         m_glContext = 0;
         m_shouldSetGLContextinDrawRect = false;
@@ -169,7 +168,6 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     [m_trackingArea release];
     m_maskImage = 0;
     m_window = 0;
-    m_subscribesForGlobalFrameNotifications = false;
     [m_inputSource release];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [m_mouseMoveHelper release];
@@ -230,26 +228,8 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         //was unable to set view
         m_shouldSetGLContextinDrawRect = true;
     }
-
-    if (!m_subscribesForGlobalFrameNotifications) {
-        // NSOpenGLContext expects us to repaint (or update) the view when
-        // it changes position on screen. Since this happens unnoticed for
-        // the view when the parent view moves, we need to register a special
-        // notification that lets us handle this case:
-        m_subscribesForGlobalFrameNotifications = true;
-        [[NSNotificationCenter defaultCenter] addObserver:self
-            selector:@selector(globalFrameChanged:)
-            name:NSViewGlobalFrameDidChangeNotification
-            object:self];
-    }
 }
 #endif
-
-- (void) globalFrameChanged:(NSNotification*)notification
-{
-    Q_UNUSED(notification);
-    m_platformWindow->updateExposedGeometry();
-}
 
 - (void)viewDidMoveToSuperview
 {
@@ -259,26 +239,8 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     if ([self superview]) {
         m_platformWindow->m_contentViewIsEmbedded = true;
         QWindowSystemInterface::handleGeometryChange(m_window, m_platformWindow->geometry());
-        m_platformWindow->updateExposedGeometry();
-        QWindowSystemInterface::flushWindowSystemEvents();
     } else {
         m_platformWindow->m_contentViewIsEmbedded = false;
-    }
-}
-
-- (void)viewDidMoveToWindow
-{
-    if (self.window) {
-        // This is the case of QWidgetAction's generated QWidget inserted in an NSMenu.
-        // 10.9 and newer get the NSWindowDidChangeOcclusionStateNotification
-        if ((!_q_NSWindowDidChangeOcclusionStateNotification
-            && [self.window.className isEqualToString:@"NSCarbonMenuWindow"])) {
-            m_exposedOnMoveToWindow = true;
-            m_platformWindow->exposeWindow();
-        }
-    } else if (m_exposedOnMoveToWindow) {
-        m_exposedOnMoveToWindow = false;
-        m_platformWindow->obscureWindow();
     }
 }
 
@@ -370,13 +332,6 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     // Send a geometry change event to Qt, if it's ready to handle events
     if (!m_platformWindow->m_inConstructor) {
         QWindowSystemInterface::handleGeometryChange(m_window, geometry);
-        m_platformWindow->updateExposedGeometry();
-        // Guard against processing window system events during QWindow::setGeometry
-        // calles, which Qt and Qt applications do not excpect.
-        if (!m_platformWindow->m_inSetGeometry)
-            QWindowSystemInterface::flushWindowSystemEvents();
-        else
-            m_backingStore = 0;
     }
 }
 
@@ -418,39 +373,21 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         Qt::WindowState newState = notificationName == NSWindowDidMiniaturizeNotification ?
                     Qt::WindowMinimized : Qt::WindowNoState;
         [self notifyWindowStateChanged:newState];
-    } else if ([notificationName isEqualToString: @"NSWindowDidOrderOffScreenNotification"]) {
-        m_platformWindow->obscureWindow();
-    } else if ([notificationName isEqualToString: @"NSWindowDidOrderOnScreenAndFinishAnimatingNotification"]) {
-        m_platformWindow->exposeWindow();
+
     } else if (_q_NSWindowDidChangeOcclusionStateNotification
                && [notificationName isEqualToString:_q_NSWindowDidChangeOcclusionStateNotification]) {
-#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_9
-// ### HACK Remove the enum declaration, the warning disabling and the cast further down once 10.8 is unsupported
-QT_WARNING_PUSH
-QT_WARNING_DISABLE_CLANG("-Wobjc-method-access")
-        enum { NSWindowOcclusionStateVisible = 1UL << 1 };
-#endif
-        if ((NSUInteger)[self.window occlusionState] & NSWindowOcclusionStateVisible) {
-            m_platformWindow->exposeWindow();
+        if (([self.window occlusionState] & NSWindowOcclusionStateVisible) == 0) {
+            m_platformWindow->obscureWindow();
         } else {
-            // Send Obscure events on window occlusion to stop animations. Several
-            // unit tests expect paint and/or expose events for windows that are
-            // sometimes (unpredictably) occlouded: Don't send Obscure events when
-            // running under QTestLib.
-            static bool onTestLib = qt_mac_resolveOption(false, "QT_QTESTLIB_RUNNING");
-            if (!onTestLib)
-                m_platformWindow->obscureWindow();
+            [self setNeedsDisplay:true];
         }
-#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_9
-QT_WARNING_POP
-#endif
+
     } else if (notificationName == NSWindowDidChangeScreenNotification) {
         if (m_window) {
             NSUInteger screenIndex = [[NSScreen screens] indexOfObject:self.window.screen];
             if (screenIndex != NSNotFound) {
                 QCocoaScreen *cocoaScreen = QCocoaIntegration::instance()->screenAtIndex(screenIndex);
                 QWindowSystemInterface::handleWindowScreenChanged(m_window, cocoaScreen->screen());
-                m_platformWindow->updateExposedGeometry();
             }
         }
     } else if (notificationName == NSWindowDidEnterFullScreenNotification
@@ -471,18 +408,22 @@ QT_WARNING_POP
 
 - (void)viewDidHide
 {
+    qDebug() << "viewDidHide";
     m_platformWindow->obscureWindow();
-}
-
-- (void)viewDidUnhide
-{
-    m_platformWindow->exposeWindow();
 }
 
 - (void) flushBackingStore:(QCocoaBackingStore *)backingStore region:(const QRegion &)region offset:(QPoint)offset
 {
+    qDebug() << "flushBackingStore" << backingStore;
+
     m_backingStore = backingStore;
     m_backingStoreOffset = offset * m_backingStore->getBackingStoreDevicePixelRatio();
+
+    // If this flushBackingStore call comes as a result of the expose event sent in
+    // drawRect then we're done; the backingstore content will be flushed later in
+    // that function.
+
+    // If not we trigger a drawRect cal by invalidating the view.
     foreach (QRect rect, region.rects())
         [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
 }
@@ -550,9 +491,17 @@ QT_WARNING_POP
     }
 #endif
 
+    // Draw window background for the unified tool bar.
     if (m_platformWindow->m_drawContentBorderGradient)
         NSDrawWindowBackground(dirtyRect);
 
+    qDebug() << "drawRect" << m_backingStore << m_window->geometry().size();
+    qDebug() << "drawRect window type" << m_window->supportsOpenGL();
+
+    // Make Qt draw a frame.
+    m_platformWindow->exposeWindow();
+
+    // OpenGL content should be flushed at this point; we're done
     if (!m_backingStore)
         return;
 

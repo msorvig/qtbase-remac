@@ -658,16 +658,7 @@ void QCocoaWindow::setVisible(bool visible)
 
         }
 
-        // This call is here to handle initial window show correctly:
-        // - top-level windows need to have backing store content ready when the
-        //   window is shown, sendin the expose event here makes that more likely.
-        // - QNSViews for child windows are initialy not hidden and won't get the
-        //   viewDidUnhide message.
-        exposeWindow();
-
         if (m_nsWindow) {
-            QWindowSystemInterface::flushWindowSystemEvents(QEventLoop::ExcludeUserInputEvents);
-
             // setWindowState might have been called while the window was hidden and
             // will not change the NSWindow state in that case. Sync up here:
             syncWindowState(window()->windowState());
@@ -1093,7 +1084,7 @@ void QCocoaWindow::propagateSizeHints()
     QRect rect = geometry();
     QSize baseSize = windowBaseSize();
     if (!baseSize.isNull() && baseSize.isValid()) {
-        [m_nsWindow setFrame:NSMakeRect(rect.x(), rect.y(), baseSize.width(), baseSize.height()) display:YES];
+        [m_nsWindow setFrame:NSMakeRect(rect.x(), rect.y(), baseSize.width(), baseSize.height()) display:NO];
     }
 }
 
@@ -1777,14 +1768,14 @@ void QCocoaWindow::exposeWindow()
 {
     m_geometryUpdateExposeAllowed = true;
 
-    if (!isWindowExposable())
-        return;
+    bool geometryChannge = m_exposedGeometry != geometry() || m_exposedDevicePixelRatio != devicePixelRatio();
 
-    if (!m_isExposed) {
+    if (!m_isExposed || geometryChannge) {
         m_isExposed = true;
         m_exposedGeometry = geometry();
         m_exposedDevicePixelRatio = devicePixelRatio();
         QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), m_exposedGeometry.size()));
+        QWindowSystemInterface::flushWindowSystemEvents();
     }
 }
 
@@ -1792,7 +1783,6 @@ void QCocoaWindow::exposeWindow()
 void QCocoaWindow::obscureWindow()
 {
     if (m_isExposed) {
-        m_geometryUpdateExposeAllowed = false;
         m_isExposed = false;
         QWindowSystemInterface::handleExposeEvent(window(), QRegion());
     }
