@@ -53,6 +53,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 @interface QT_MANGLE_NAMESPACE(QNSView) : NSView <NSTextInputClient> {
     QCocoaBackingStore* m_backingStore;
     QPoint m_backingStoreOffset;
+    QRegion m_maskRegion;
     CGImageRef m_maskImage;
     uchar *m_maskData;
     bool m_shouldInvalidateWindowShadow;
@@ -75,6 +76,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     bool m_resendKeyEvent;
     bool m_scrolling;
     bool m_exposedOnMoveToWindow;
+    QHash<int, bool> m_acceptedKeyDowns;
 }
 
 - (id)init;
@@ -105,11 +107,11 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 
 - (void)resetMouseButtons;
 
-- (void)handleMouseEvent:(NSEvent *)theEvent;
+- (bool)handleMouseEvent:(NSEvent *)theEvent;
 - (void)mouseDown:(NSEvent *)theEvent;
 - (void)mouseDragged:(NSEvent *)theEvent;
 - (void)mouseUp:(NSEvent *)theEvent;
-- (void)mouseMovedImpl:(NSEvent *)theEvent;
+- (bool)mouseMovedImpl:(NSEvent *)theEvent;
 - (void)mouseEnteredImpl:(NSEvent *)theEvent;
 - (void)mouseExitedImpl:(NSEvent *)theEvent;
 - (void)cursorUpdateImpl:(NSEvent *)theEvent;
@@ -127,7 +129,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 
 - (int) convertKeyCode : (QChar)keyCode;
 + (Qt::KeyboardModifiers) convertKeyModifiers : (ulong)modifierFlags;
-- (void)handleKeyEvent:(NSEvent *)theEvent eventType:(int)eventType;
+- (bool)handleKeyEvent:(NSEvent *)theEvent eventType:(int)eventType;
 - (void)keyDown:(NSEvent *)theEvent;
 - (void)keyUp:(NSEvent *)theEvent;
 - (BOOL)performKeyEquivalent:(NSEvent *)theEvent;

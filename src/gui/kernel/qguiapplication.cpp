@@ -1753,6 +1753,9 @@ void QGuiApplicationPrivate::processMouseEvent(QWindowSystemInterfacePrivate::Mo
 {
     QEvent::Type type;
     Qt::MouseButtons stateChange = e->buttons ^ buttons;
+    // Record the event as "not accepted" by default. The accepted state
+    // will be set again if we end up actually propagating the event.
+    e->eventAccepted = false;
     if (e->globalPos != QGuiApplicationPrivate::lastCursorPosition && (stateChange != Qt::NoButton)) {
         // A mouse event should not change both position and buttons at the same time. Instead we
         // should first send a move event followed by a button changed event. Since this is not the case

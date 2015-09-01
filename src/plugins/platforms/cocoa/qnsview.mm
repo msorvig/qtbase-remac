@@ -436,7 +436,7 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
 
 - (BOOL) hasMask
 {
-    return m_maskImage != 0;
+    return !m_maskRegion.isEmpty();
 }
 
 - (BOOL) isOpaque
@@ -448,6 +448,8 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
 
 - (void) setMaskRegion:(const QRegion *)region
 {
+    m_maskRegion = *region;
+
     m_shouldInvalidateWindowShadow = true;
     if (m_maskImage)
         CGImageRelease(m_maskImage);
@@ -642,7 +644,7 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     return screenPoint;
 }
 
-- (void)handleMouseEvent:(NSEvent *)theEvent
+- (bool)handleMouseEvent:(NSEvent *)theEvent
 {
     [self handleTabletEvent: theEvent];
 
@@ -668,8 +670,16 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     QCocoaDrag* nativeDrag = QCocoaIntegration::instance()->drag();
     nativeDrag->setLastMouseEvent(theEvent, self);
 
+    // Route events that hit the masked region back to Cocoa
+    bool masked = m_maskRegion.contains(qtWindowPoint.toPoint());
+    if (masked)
+        return false;
+
     Qt::KeyboardModifiers keyboardModifiers = [QNSView convertKeyModifiers:[theEvent modifierFlags]];
     QWindowSystemInterface::handleMouseEvent(targetView->m_window, timestamp, qtWindowPoint, qtScreenPoint, m_buttons, keyboardModifiers);
+
+    // Accept all mouse events that hit the view.
+    return true;
 }
 
 - (void)handleFrameStrutMouseEvent:(NSEvent *)theEvent
@@ -772,7 +782,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         } else {
             m_buttons |= Qt::LeftButton;
         }
-        [self handleMouseEvent:theEvent];
+        bool accepted = [self handleMouseEvent:theEvent];
+        if (!accepted)
+            [super mouseDown:theEvent];
     }
 }
 
@@ -782,7 +794,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         return [super mouseDragged:theEvent];
     if (!(m_buttons & (m_sendUpAsRightButton ? Qt::RightButton : Qt::LeftButton)))
         qWarning("QNSView mouseDragged: Internal mouse button tracking invalid (missing Qt::LeftButton)");
-    [self handleMouseEvent:theEvent];
+    bool accepted = [self handleMouseEvent:theEvent];
+    if (!accepted)
+        [super mouseDragged:theEvent];
 }
 
 - (void)mouseUp:(NSEvent *)theEvent
@@ -795,7 +809,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     } else {
         m_buttons &= ~Qt::LeftButton;
     }
-    [self handleMouseEvent:theEvent];
+    bool accepted = [self handleMouseEvent:theEvent];
+    if (!accepted)
+        [super mouseUp:theEvent];
 }
 
 - (void)updateTrackingAreas
@@ -841,10 +857,10 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         [self addCursorRect:[self visibleRect] cursor:m_platformWindow->m_windowCursor];
 }
 
-- (void)mouseMovedImpl:(NSEvent *)theEvent
+- (bool)mouseMovedImpl:(NSEvent *)theEvent
 {
     if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return;
+        return false;
 
     QPointF windowPoint;
     QPointF screenPoint;
@@ -866,9 +882,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     // Cocoa keeps firing mouse move events for obscured parent views. Qt should not
     // send those events so filter them out here.
     if (childWindow != m_window)
-        return;
+        return false;
 
-    [self handleMouseEvent: theEvent];
+    return [self handleMouseEvent: theEvent];
 }
 
 - (void)mouseEnteredImpl:(NSEvent *)theEvent
@@ -912,7 +928,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         return [super rightMouseDown:theEvent];
     m_buttons |= Qt::RightButton;
     m_sendUpAsRightButton = true;
-    [self handleMouseEvent:theEvent];
+    bool accepted = [self handleMouseEvent:theEvent];
+    if (!accepted)
+        [super rightMouseDown:theEvent];
 }
 
 - (void)rightMouseDragged:(NSEvent *)theEvent
@@ -921,7 +939,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         return [super rightMouseDragged:theEvent];
     if (!(m_buttons & Qt::RightButton))
         qWarning("QNSView rightMouseDragged: Internal mouse button tracking invalid (missing Qt::RightButton)");
-    [self handleMouseEvent:theEvent];
+    bool accepted = [self handleMouseEvent:theEvent];
+    if (!accepted)
+        [super rightMouseDragged:theEvent];
 }
 
 - (void)rightMouseUp:(NSEvent *)theEvent
@@ -930,7 +950,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         return [super rightMouseUp:theEvent];
     m_buttons &= ~Qt::RightButton;
     m_sendUpAsRightButton = false;
-    [self handleMouseEvent:theEvent];
+    bool accepted = [self handleMouseEvent:theEvent];
+    if (!accepted)
+        [super rightMouseUp:theEvent];
 }
 
 - (void)otherMouseDown:(NSEvent *)theEvent
@@ -938,7 +960,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
         return [super otherMouseDown:theEvent];
     m_buttons |= cocoaButton2QtButton([theEvent buttonNumber]);
-    [self handleMouseEvent:theEvent];
+    bool accepted = [self handleMouseEvent:theEvent];
+    if (!accepted)
+        [super otherMouseDown:theEvent];
 }
 
 - (void)otherMouseDragged:(NSEvent *)theEvent
@@ -947,7 +971,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         return [super otherMouseDragged:theEvent];
     if (!(m_buttons & ~(Qt::LeftButton | Qt::RightButton)))
         qWarning("QNSView otherMouseDragged: Internal mouse button tracking invalid (missing Qt::MiddleButton or Qt::ExtraButton*)");
-    [self handleMouseEvent:theEvent];
+    bool accepted = [self handleMouseEvent:theEvent];
+    if (!accepted)
+        [super otherMouseDragged:theEvent];
 }
 
 - (void)otherMouseUp:(NSEvent *)theEvent
@@ -955,7 +981,9 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
         return [super otherMouseUp:theEvent];
     m_buttons &= ~cocoaButton2QtButton([theEvent buttonNumber]);
-    [self handleMouseEvent:theEvent];
+    bool accepted = [self handleMouseEvent:theEvent];
+    if (!accepted)
+        [super otherMouseUp:theEvent];
 }
 
 struct QCocoaTabletDeviceData
@@ -1349,7 +1377,7 @@ static QTabletEvent::TabletDevice wacomTabletDevice(NSEvent *theEvent)
     return qtMods;
 }
 
-- (void)handleKeyEvent:(NSEvent *)nsevent eventType:(int)eventType
+- (bool)handleKeyEvent:(NSEvent *)nsevent eventType:(int)eventType
 {
     ulong timestamp = [nsevent timestamp] * 1000;
     ulong nativeModifiers = [nsevent modifierFlags];
@@ -1418,26 +1446,50 @@ static QTabletEvent::TabletDevice wacomTabletDevice(NSEvent *theEvent)
             m_sendKeyEvent = true;
     }
 
-    if (m_sendKeyEvent && m_composingText.isEmpty())
+    bool accepted = true;
+    if (m_sendKeyEvent && m_composingText.isEmpty()) {
         QWindowSystemInterface::handleExtendedKeyEvent(focusWindow, timestamp, QEvent::Type(eventType), keyCode, modifiers,
                                                        nativeScanCode, nativeVirtualKey, nativeModifiers, text, [nsevent isARepeat], 1, false);
-
+        accepted = QWindowSystemInterface::flushWindowSystemEvents();
+    }
     m_sendKeyEvent = false;
     m_resendKeyEvent = false;
+    return accepted;
 }
 
 - (void)keyDown:(NSEvent *)nsevent
 {
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super keyDown:nsevent];
-    [self handleKeyEvent:nsevent eventType:int(QEvent::KeyPress)];
+    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) ) {
+        [super keyDown:nsevent];
+        return;
+    }
+    bool accepted = [self handleKeyEvent:nsevent eventType:int(QEvent::KeyPress)];
+
+    // Track accepted keyDowns for later acceptance of the keyUp.
+    if (accepted) {
+        quint32 nativeVirtualKey = [nsevent keyCode];
+        m_acceptedKeyDowns.insert(nativeVirtualKey, true);
+    }
+
+    // Propagate the keyDown to the next responder if Qt did not accept it.
+    if (!accepted)
+        [super keyDown:nsevent];
 }
 
 - (void)keyUp:(NSEvent *)nsevent
 {
     if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
         return [super keyUp:nsevent];
-    [self handleKeyEvent:nsevent eventType:int(QEvent::KeyRelease)];
+    bool accepted = [self handleKeyEvent:nsevent eventType:int(QEvent::KeyRelease)];
+
+    // Propagate the keyUp if neither Qt accepted it nor the corresponding KeyDown was
+    // accepted. Qt text controls wil often not use and ignore keyUp events, but we
+    // want to avoid propagating unmatched keyUps.
+    quint32 nativeVirtualKey = [nsevent keyCode];
+    bool keyDownAccepted = m_acceptedKeyDowns.value(nativeVirtualKey, false);
+    m_acceptedKeyDowns.remove(nativeVirtualKey);
+    if (!accepted && !keyDownAccepted)
+        [super keyUp:nsevent];
 }
 
 - (BOOL)performKeyEquivalent:(NSEvent *)nsevent
