@@ -414,7 +414,7 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
 
 - (void) flushBackingStore:(QCocoaBackingStore *)backingStore region:(const QRegion &)region offset:(QPoint)offset
 {
-    qDebug() << "flushBackingStore" << backingStore;
+    // qDebug() << "flushBackingStore" << backingStore;
 
     m_backingStore = backingStore;
     m_backingStoreOffset = offset * m_backingStore->getBackingStoreDevicePixelRatio();
@@ -497,8 +497,8 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     if (m_platformWindow->m_drawContentBorderGradient)
         NSDrawWindowBackground(dirtyRect);
 
-    qDebug() << "drawRect" << m_backingStore << m_window->geometry().size();
-    qDebug() << "drawRect window type" << m_window->supportsOpenGL();
+    // qDebug() << "drawRect" << m_backingStore << m_window->geometry().size();
+    // qDebug() << "drawRect window type" << m_window->supportsOpenGL();
 
     // Make Qt draw a frame.
     m_platformWindow->exposeWindow();
