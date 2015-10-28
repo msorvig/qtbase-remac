@@ -503,6 +503,8 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     // Make Qt draw a frame.
     m_platformWindow->exposeWindow();
 
+//    qDebug() << "drawRect" << m_backingStore;
+
     // OpenGL content should be flushed at this point; we're done
     if (!m_backingStore)
         return;
@@ -670,7 +672,7 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
     QCocoaDrag* nativeDrag = QCocoaIntegration::instance()->drag();
     nativeDrag->setLastMouseEvent(theEvent, self);
 
-    // Route events that hit the masked region back to Cocoa
+    // Route events that hit the masked region to the next responder.
     bool masked = m_maskRegion.contains(qtWindowPoint.toPoint());
     if (masked)
         return false;
