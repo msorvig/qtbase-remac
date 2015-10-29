@@ -650,8 +650,6 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
 {
     [self handleTabletEvent: theEvent];
 
-    QPointF qtWindowPoint;
-    QPointF qtScreenPoint;
     QNSView *targetView = self;
     if (m_platformWindow && m_platformWindow->m_forwardWindow) {
         if (theEvent.type == NSLeftMouseDragged || theEvent.type == NSLeftMouseUp)
@@ -666,22 +664,203 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
             targetView = popupView;
     }
 
+    QPointF qtWindowPoint;
+    QPointF qtScreenPoint;
     [targetView convertFromScreen:[self screenMousePoint:theEvent] toWindowPoint:&qtWindowPoint andScreenPoint:&qtScreenPoint];
     ulong timestamp = [theEvent timestamp] * 1000;
 
     QCocoaDrag* nativeDrag = QCocoaIntegration::instance()->drag();
     nativeDrag->setLastMouseEvent(theEvent, self);
-
-    // Route events that hit the masked region to the next responder.
-    bool masked = m_maskRegion.contains(qtWindowPoint.toPoint());
-    if (masked)
-        return false;
-
     Qt::KeyboardModifiers keyboardModifiers = [QNSView convertKeyModifiers:[theEvent modifierFlags]];
     QWindowSystemInterface::handleMouseEvent(targetView->m_window, timestamp, qtWindowPoint, qtScreenPoint, m_buttons, keyboardModifiers);
 
     // Accept all mouse events that hit the view.
     return true;
+}
+
+- (void)handleMouseDown:(NSEvent *)event
+{
+    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput))
+        return [super mouseDragged:event];
+
+    Qt::MouseButton button = cocoaButton2QtButton([event buttonNumber]);
+
+    QPointF qtWindowPoint;
+    QPointF qtScreenPoint;
+    [self convertFromScreen:[self screenMousePoint:event] toWindowPoint:&qtWindowPoint andScreenPoint:&qtScreenPoint];
+    Q_UNUSED(qtScreenPoint);
+
+    bool masked = m_maskRegion.contains(qtWindowPoint.toPoint());
+
+    // Maintain masked state for the button for use by Dragged and Up.
+    if (masked)
+        m_acceptedMouseDowns.remove(button);
+    else
+        m_acceptedMouseDowns.insert(button);
+
+    // Forward masked out events to the next responder
+    if (masked) {
+        [super mouseDragged:event];
+        return;
+    }
+
+    [self handleMouseEvent:event];
+}
+
+- (void)handleMouseDragged:(NSEvent *)event
+{
+    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput)) {
+        [super mouseDragged:event];
+        return;
+    }
+
+    Qt::MouseButton button = cocoaButton2QtButton([event buttonNumber]);
+
+    // Forward the event to the next responder if Qt did not accept the
+    // corresponding mouse down for this button
+    if (!m_acceptedMouseDowns.contains(button)) {
+        [super mouseDragged:event];
+        return;
+    }
+
+    [self handleMouseEvent:event];
+}
+
+- (void)handleMouseUp:(NSEvent *)event
+{
+    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput)) {
+        [super mouseUp:event];
+        return;
+    }
+
+    Qt::MouseButton button = cocoaButton2QtButton([event buttonNumber]);
+
+    // Forward the event to the next responder if Qt did not accept the
+    // corresponding mouse down for this button.
+    if (!m_acceptedMouseDowns.contains(button)) {
+        [super mouseUp:event];
+        return;
+    }
+
+    // Twiddle the mouse button for the opt-left-click release case
+    if (m_sendUpAsRightButton && button == Qt::LeftButton) {
+        m_sendUpAsRightButton = false;
+        button = Qt::RightButton;
+    }
+
+    m_buttons &= ~button;
+    [self handleMouseEvent:event];
+}
+
+- (void)mouseDown:(NSEvent *)theEvent
+{
+    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
+        return [super mouseDown:theEvent];
+    m_sendUpAsRightButton = false;
+
+    // Handle any active poup windows; clicking outisde them should close them
+    // all. Don't do anything or clicks inside one of the menus, let Cocoa
+    // handle that case. Note that in practice many windows of the Qt::Popup type
+    // will actually close themselves in this case using logic implemented in
+    // that particular poup type (for example context menus). However, Qt expects
+    // that plain popup QWindows will also be closed, so we implement the logic
+    // here as well.
+    QList<QCocoaWindow *> *popups = QCocoaIntegration::instance()->popupWindowStack();
+    if (!popups->isEmpty()) {
+        // Check if the click is outside all popups.
+        bool inside = false;
+        QPointF qtScreenPoint = qt_mac_flipPoint([self screenMousePoint:theEvent]);
+        for (QList<QCocoaWindow *>::const_iterator it = popups->begin(); it != popups->end(); ++it) {
+            if ((*it)->geometry().contains(qtScreenPoint.toPoint())) {
+                inside = true;
+                break;
+            }
+        }
+        // Close the popups if the click was outside.
+        if (!inside) {
+            Qt::WindowType type = QCocoaIntegration::instance()->activePopupWindow()->window()->type();
+            while (QCocoaWindow *popup = QCocoaIntegration::instance()->popPopupWindow()) {
+                QWindowSystemInterface::handleCloseEvent(popup->window());
+                QWindowSystemInterface::flushWindowSystemEvents();
+            }
+            // Consume the mouse event when closing the popup, except for tool tips
+            // were it's expected that the event is processed normally.
+            if (type != Qt::ToolTip)
+                 return;
+        }
+    }
+
+    QPointF qtWindowPoint;
+    QPointF qtScreenPoint;
+    [self convertFromScreen:[self screenMousePoint:theEvent] toWindowPoint:&qtWindowPoint andScreenPoint:&qtScreenPoint];
+    Q_UNUSED(qtScreenPoint);
+
+    bool masked = m_maskRegion.contains(qtWindowPoint.toPoint());
+
+    // Maintain masked state for the button for use by Dragged and Up.
+    if (masked)
+        m_acceptedMouseDowns.remove(Qt::LeftButton);
+    else
+        m_acceptedMouseDowns.insert(Qt::LeftButton);
+
+    // Forward masked out events to the next responder
+    if (masked) {
+        [super mouseDragged:theEvent];
+        return;
+    }
+
+    if ([self hasMarkedText]) {
+        [[NSTextInputContext currentInputContext] handleEvent:theEvent];
+    } else {
+        if ([QNSView convertKeyModifiers:[theEvent modifierFlags]] & Qt::MetaModifier) {
+            m_buttons |= Qt::RightButton;
+            m_sendUpAsRightButton = true;
+        } else {
+            m_buttons |= Qt::LeftButton;
+        }
+
+        [self handleMouseEvent:theEvent];
+    }
+}
+
+- (void)mouseDragged:(NSEvent *)event
+{
+    [self handleMouseDragged:event];
+}
+
+- (void)mouseUp:(NSEvent *)event
+{
+    [self handleMouseUp:event];
+}
+
+- (void)rightMouseDown:(NSEvent *)event
+{
+    [self handleMouseDown:event];
+}
+
+- (void)rightMouseDragged:(NSEvent *)event
+{
+    [self handleMouseDragged:event];
+}
+
+- (void)rightMouseUp:(NSEvent *)event
+{
+    [self handleMouseUp:event];
+}
+
+- (void)otherMouseDown:(NSEvent *)event
+{
+    [self handleMouseDown:event];
+}
+
+- (void)otherMouseDragged:(NSEvent *)event
+{
+    [self handleMouseDragged:event];
+}
+
+- (void)otherMouseUp:(NSEvent *)event
+{
+    [self handleMouseUp:event];
 }
 
 - (void)handleFrameStrutMouseEvent:(NSEvent *)theEvent
@@ -735,85 +914,6 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
 
     ulong timestamp = [theEvent timestamp] * 1000;
     QWindowSystemInterface::handleFrameStrutMouseEvent(m_window, timestamp, qtWindowPoint, qtScreenPoint, m_frameStrutButtons);
-}
-
-- (void)mouseDown:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super mouseDown:theEvent];
-    m_sendUpAsRightButton = false;
-
-    // Handle any active poup windows; clicking outisde them should close them
-    // all. Don't do anything or clicks inside one of the menus, let Cocoa
-    // handle that case. Note that in practice many windows of the Qt::Popup type
-    // will actually close themselves in this case using logic implemented in
-    // that particular poup type (for example context menus). However, Qt expects
-    // that plain popup QWindows will also be closed, so we implement the logic
-    // here as well.
-    QList<QCocoaWindow *> *popups = QCocoaIntegration::instance()->popupWindowStack();
-    if (!popups->isEmpty()) {
-        // Check if the click is outside all popups.
-        bool inside = false;
-        QPointF qtScreenPoint = qt_mac_flipPoint([self screenMousePoint:theEvent]);
-        for (QList<QCocoaWindow *>::const_iterator it = popups->begin(); it != popups->end(); ++it) {
-            if ((*it)->geometry().contains(qtScreenPoint.toPoint())) {
-                inside = true;
-                break;
-            }
-        }
-        // Close the popups if the click was outside.
-        if (!inside) {
-            Qt::WindowType type = QCocoaIntegration::instance()->activePopupWindow()->window()->type();
-            while (QCocoaWindow *popup = QCocoaIntegration::instance()->popPopupWindow()) {
-                QWindowSystemInterface::handleCloseEvent(popup->window());
-                QWindowSystemInterface::flushWindowSystemEvents();
-            }
-            // Consume the mouse event when closing the popup, except for tool tips
-            // were it's expected that the event is processed normally.
-            if (type != Qt::ToolTip)
-                 return;
-        }
-    }
-
-    if ([self hasMarkedText]) {
-        [[NSTextInputContext currentInputContext] handleEvent:theEvent];
-    } else {
-        if ([QNSView convertKeyModifiers:[theEvent modifierFlags]] & Qt::MetaModifier) {
-            m_buttons |= Qt::RightButton;
-            m_sendUpAsRightButton = true;
-        } else {
-            m_buttons |= Qt::LeftButton;
-        }
-        bool accepted = [self handleMouseEvent:theEvent];
-        if (!accepted)
-            [super mouseDown:theEvent];
-    }
-}
-
-- (void)mouseDragged:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super mouseDragged:theEvent];
-    if (!(m_buttons & (m_sendUpAsRightButton ? Qt::RightButton : Qt::LeftButton)))
-        qWarning("QNSView mouseDragged: Internal mouse button tracking invalid (missing Qt::LeftButton)");
-    bool accepted = [self handleMouseEvent:theEvent];
-    if (!accepted)
-        [super mouseDragged:theEvent];
-}
-
-- (void)mouseUp:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super mouseUp:theEvent];
-    if (m_sendUpAsRightButton) {
-        m_buttons &= ~Qt::RightButton;
-        m_sendUpAsRightButton = false;
-    } else {
-        m_buttons &= ~Qt::LeftButton;
-    }
-    bool accepted = [self handleMouseEvent:theEvent];
-    if (!accepted)
-        [super mouseUp:theEvent];
 }
 
 - (void)updateTrackingAreas
@@ -922,70 +1022,6 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
 
     QWindowSystemInterface::handleLeaveEvent(m_platformWindow->m_enterLeaveTargetWindow);
     m_platformWindow->m_enterLeaveTargetWindow = 0;
-}
-
-- (void)rightMouseDown:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super rightMouseDown:theEvent];
-    m_buttons |= Qt::RightButton;
-    m_sendUpAsRightButton = true;
-    bool accepted = [self handleMouseEvent:theEvent];
-    if (!accepted)
-        [super rightMouseDown:theEvent];
-}
-
-- (void)rightMouseDragged:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super rightMouseDragged:theEvent];
-    if (!(m_buttons & Qt::RightButton))
-        qWarning("QNSView rightMouseDragged: Internal mouse button tracking invalid (missing Qt::RightButton)");
-    bool accepted = [self handleMouseEvent:theEvent];
-    if (!accepted)
-        [super rightMouseDragged:theEvent];
-}
-
-- (void)rightMouseUp:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super rightMouseUp:theEvent];
-    m_buttons &= ~Qt::RightButton;
-    m_sendUpAsRightButton = false;
-    bool accepted = [self handleMouseEvent:theEvent];
-    if (!accepted)
-        [super rightMouseUp:theEvent];
-}
-
-- (void)otherMouseDown:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super otherMouseDown:theEvent];
-    m_buttons |= cocoaButton2QtButton([theEvent buttonNumber]);
-    bool accepted = [self handleMouseEvent:theEvent];
-    if (!accepted)
-        [super otherMouseDown:theEvent];
-}
-
-- (void)otherMouseDragged:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super otherMouseDragged:theEvent];
-    if (!(m_buttons & ~(Qt::LeftButton | Qt::RightButton)))
-        qWarning("QNSView otherMouseDragged: Internal mouse button tracking invalid (missing Qt::MiddleButton or Qt::ExtraButton*)");
-    bool accepted = [self handleMouseEvent:theEvent];
-    if (!accepted)
-        [super otherMouseDragged:theEvent];
-}
-
-- (void)otherMouseUp:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super otherMouseUp:theEvent];
-    m_buttons &= ~cocoaButton2QtButton([theEvent buttonNumber]);
-    bool accepted = [self handleMouseEvent:theEvent];
-    if (!accepted)
-        [super otherMouseUp:theEvent];
 }
 
 struct QCocoaTabletDeviceData

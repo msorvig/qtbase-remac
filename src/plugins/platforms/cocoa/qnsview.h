@@ -76,6 +76,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     bool m_scrolling;
     bool m_exposedOnMoveToWindow;
     QHash<int, bool> m_acceptedKeyDowns;
+    QSet<Qt::MouseButton> m_acceptedMouseDowns;
 }
 
 - (id)init;
