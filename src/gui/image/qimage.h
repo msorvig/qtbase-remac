@@ -58,6 +58,18 @@ class QVariant;
 template <class T> class QList;
 template <class T> class QVector;
 
+#ifndef QT_FORWARD_DECLARE_MUTABLE_CG_TYPE
+#define QT_FORWARD_DECLARE_MUTABLE_CG_TYPE(type) typedef struct type *type ## Ref;
+#endif
+
+
+#ifdef Q_OS_DARWIN
+QT_FORWARD_DECLARE_MUTABLE_CG_TYPE(CGImage);
+#  ifdef __OBJC__
+Q_FORWARD_DECLARE_OBJC_CLASS(NSImage);
+#  endif
+#endif
+
 struct QImageData;
 class QImageDataMisc; // internal
 #if QT_DEPRECATED_SINCE(5, 0)
@@ -313,6 +325,18 @@ public:
     QPixelFormat pixelFormat() const Q_DECL_NOTHROW;
     static QPixelFormat toPixelFormat(QImage::Format format) Q_DECL_NOTHROW;
     static QImage::Format toImageFormat(QPixelFormat format) Q_DECL_NOTHROW;
+
+    // Platform spesific conversion functions
+#if defined(Q_OS_DARWIN) || defined(Q_QDOC)
+    static QImage fromCGImage(CGImageRef image);
+    CGImageRef toCGImage() const Q_DECL_CF_RETURNS_RETAINED;
+#  if defined(__OBJC__) || defined(Q_QDOC)
+    static QImage fromNSImage(const NSImage *image);
+    NSImage *toNSImage() const Q_DECL_NS_RETURNS_AUTORELEASED;
+#  endif
+#endif
+
+
 
 #if QT_DEPRECATED_SINCE(5, 0)
     QT_DEPRECATED inline QString text(const char* key, const char* lang=0) const;
