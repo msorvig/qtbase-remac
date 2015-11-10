@@ -759,7 +759,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     return screenPoint;
 }
 
-- (bool)handleMouseEvent:(NSEvent *)theEvent
+- (void)handleMouseEvent:(NSEvent *)theEvent
 {
     [self handleTabletEvent: theEvent];
 
@@ -786,89 +786,86 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     nativeDrag->setLastMouseEvent(theEvent, self);
     Qt::KeyboardModifiers keyboardModifiers = [QNSView convertKeyModifiers:[theEvent modifierFlags]];
     QWindowSystemInterface::handleMouseEvent(targetView->m_window, timestamp, qtWindowPoint, qtScreenPoint, m_buttons, keyboardModifiers);
-
-    // Accept all mouse events that hit the view.
-    return true;
 }
 
-- (void)handleMouseDown:(NSEvent *)event
+- (bool)handleMouseDownEvent:(NSEvent *)theEvent
 {
     if (m_window && (m_window->flags() & Qt::WindowTransparentForInput))
-        return [super mouseDragged:event];
+        return false;
 
-    Qt::MouseButton button = cocoaButton2QtButton([event buttonNumber]);
+    Qt::MouseButton button = cocoaButton2QtButton([theEvent buttonNumber]);
 
     QPointF qtWindowPoint;
     QPointF qtScreenPoint;
-    [self convertFromScreen:[self screenMousePoint:event] toWindowPoint:&qtWindowPoint andScreenPoint:&qtScreenPoint];
+    [self convertFromScreen:[self screenMousePoint:theEvent] toWindowPoint:&qtWindowPoint andScreenPoint:&qtScreenPoint];
     Q_UNUSED(qtScreenPoint);
 
-    bool masked = m_maskRegion.contains(qtWindowPoint.toPoint());
-
-    // Maintain masked state for the button for use by Dragged and Up.
+    // Maintain masked state for the button for use by MouseDragged and MouseUp.
+    const bool masked = m_maskRegion.contains(qtWindowPoint.toPoint());
     if (masked)
         m_acceptedMouseDowns.remove(button);
     else
         m_acceptedMouseDowns.insert(button);
 
     // Forward masked out events to the next responder
-    if (masked) {
-        [super mouseDragged:event];
-        return;
-    }
+    if (masked)
+        return false;
 
-    [self handleMouseEvent:event];
+    if (button == Qt::RightButton)
+        m_sendUpAsRightButton = true;
+
+    m_buttons |= button;
+
+    [self handleMouseEvent:theEvent];
+    return true;
 }
 
-- (void)handleMouseDragged:(NSEvent *)event
+- (bool)handleMouseDraggedEvent:(NSEvent *)theEvent
 {
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput)) {
-        [super mouseDragged:event];
-        return;
-    }
+    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput))
+        return false;
 
-    Qt::MouseButton button = cocoaButton2QtButton([event buttonNumber]);
+     Qt::MouseButton button = cocoaButton2QtButton([theEvent buttonNumber]);
 
     // Forward the event to the next responder if Qt did not accept the
     // corresponding mouse down for this button
-    if (!m_acceptedMouseDowns.contains(button)) {
-        [super mouseDragged:event];
-        return;
-    }
+    if (!m_acceptedMouseDowns.contains(button))
+        return false;
 
-    [self handleMouseEvent:event];
+    [self handleMouseEvent:theEvent];
+    return true;
 }
 
-- (void)handleMouseUp:(NSEvent *)event
+- (bool)handleMouseUpEvent:(NSEvent *)theEvent
 {
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput)) {
-        [super mouseUp:event];
-        return;
-    }
+    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput))
+        return false;
 
-    Qt::MouseButton button = cocoaButton2QtButton([event buttonNumber]);
+    Qt::MouseButton button = cocoaButton2QtButton([theEvent buttonNumber]);
 
     // Forward the event to the next responder if Qt did not accept the
-    // corresponding mouse down for this button.
-    if (!m_acceptedMouseDowns.contains(button)) {
-        [super mouseUp:event];
-        return;
-    }
+    // corresponding mouse down for this button
+    if (!m_acceptedMouseDowns.contains(button))
+        return false;
 
-    // Twiddle the mouse button for the opt-left-click release case
-    if (m_sendUpAsRightButton && button == Qt::LeftButton) {
-        m_sendUpAsRightButton = false;
+    if (m_sendUpAsRightButton && button == Qt::LeftButton)
         button = Qt::RightButton;
-    }
+    if (button == Qt::RightButton)
+        m_sendUpAsRightButton = false;
 
     m_buttons &= ~button;
-    [self handleMouseEvent:event];
+
+    [self handleMouseEvent:theEvent];
+    return true;
 }
 
 - (void)mouseDown:(NSEvent *)theEvent
 {
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return [super mouseDown:theEvent];
+    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput)) {
+        [super mouseDown:theEvent];
+        return;
+    }
+
     m_sendUpAsRightButton = false;
 
     // Handle any active poup windows; clicking outisde them should close them
@@ -910,6 +907,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     bool masked = m_maskRegion.contains(qtWindowPoint.toPoint());
 
+
     // Maintain masked state for the button for use by Dragged and Up.
     if (masked)
         m_acceptedMouseDowns.remove(Qt::LeftButton);
@@ -918,7 +916,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     // Forward masked out events to the next responder
     if (masked) {
-        [super mouseDragged:theEvent];
+        [super mouseDown:theEvent];
         return;
     }
 
@@ -936,44 +934,59 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     }
 }
 
-- (void)mouseDragged:(NSEvent *)event
+- (void)mouseDragged:(NSEvent *)theEvent
 {
-    [self handleMouseDragged:event];
+    const bool accepted = [self handleMouseDraggedEvent:theEvent];
+    if (!accepted)
+        [super mouseDragged:theEvent];
 }
 
-- (void)mouseUp:(NSEvent *)event
-{
-    [self handleMouseUp:event];
+- (void)mouseUp:(NSEvent *)theEvent {
+    const bool accepted = [self handleMouseUpEvent:theEvent];
+    if (!accepted)
+        [super mouseUp:theEvent];
 }
 
-- (void)rightMouseDown:(NSEvent *)event
+- (void)rightMouseDown:(NSEvent *)theEvent
 {
-    [self handleMouseDown:event];
+    const bool accepted = [self handleMouseDownEvent:theEvent];
+    if (!accepted)
+        [super rightMouseDown:theEvent];
 }
 
-- (void)rightMouseDragged:(NSEvent *)event
+- (void)rightMouseDragged:(NSEvent *)theEvent
 {
-    [self handleMouseDragged:event];
+    const bool accepted = [self handleMouseDraggedEvent:theEvent];
+    if (!accepted)
+        [super rightMouseDragged:theEvent];
 }
 
-- (void)rightMouseUp:(NSEvent *)event
+- (void)rightMouseUp:(NSEvent *)theEvent
 {
-    [self handleMouseUp:event];
+    const bool accepted = [self handleMouseUpEvent:theEvent];
+    if (!accepted)
+        [super rightMouseUp:theEvent];
 }
 
-- (void)otherMouseDown:(NSEvent *)event
+- (void)otherMouseDown:(NSEvent *)theEvent
 {
-    [self handleMouseDown:event];
+    const bool accepted = [self handleMouseDownEvent:theEvent];
+    if (!accepted)
+        [super otherMouseDown:theEvent];
 }
 
-- (void)otherMouseDragged:(NSEvent *)event
+- (void)otherMouseDragged:(NSEvent *)theEvent
 {
-    [self handleMouseDragged:event];
+    const bool accepted = [self handleMouseDraggedEvent:theEvent];
+    if (!accepted)
+        [super otherMouseDragged:theEvent];
 }
 
-- (void)otherMouseUp:(NSEvent *)event
+- (void)otherMouseUp:(NSEvent *)theEvent
 {
-    [self handleMouseUp:event];
+    const bool accepted = [self handleMouseUpEvent:theEvent];
+    if (!accepted)
+        [super otherMouseUp:theEvent];
 }
 
 - (void)handleFrameStrutMouseEvent:(NSEvent *)theEvent
@@ -1072,10 +1085,10 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         [self addCursorRect:[self visibleRect] cursor:m_platformWindow->m_windowCursor];
 }
 
-- (bool)mouseMovedImpl:(NSEvent *)theEvent
+- (void)mouseMovedImpl:(NSEvent *)theEvent
 {
     if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
-        return false;
+        return;
 
     QPointF windowPoint;
     QPointF screenPoint;
@@ -1097,9 +1110,9 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // Cocoa keeps firing mouse move events for obscured parent views. Qt should not
     // send those events so filter them out here.
     if (childWindow != m_window)
-        return false;
+        return;
 
-    return [self handleMouseEvent: theEvent];
+    [self handleMouseEvent: theEvent];
 }
 
 - (void)mouseEnteredImpl:(NSEvent *)theEvent
