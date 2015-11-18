@@ -289,6 +289,8 @@ public Q_SLOTS:
     Q_REVISION(1) void alert(int msec);
 
     Q_REVISION(3) void requestUpdate();
+    Q_REVISION(4) void requestUpdate(const QRect &rect);
+    Q_REVISION(4) void requestUpdate(const QRegion &region);
 
 Q_SIGNALS:
     void screenChanged(QScreen *screen);

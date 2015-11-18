@@ -144,6 +144,8 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 - (void)registerDragTypes;
 - (NSDragOperation)handleDrag:(id <NSDraggingInfo>)sender;
 - (void) requestUpdate;
+- (void) requestUpdateWithRect:(QRect)rect;
+- (void) requestUpdateWithRegion:(QRegion)region;
 
 @end
 

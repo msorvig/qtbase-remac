@@ -515,8 +515,14 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // qDebug() << "drawRect" << m_backingStore << m_window->geometry().size();
     // qDebug() << "drawRect window type" << m_window->supportsOpenGL();
 
-    // Make Qt draw a frame.
-    m_platformWindow->exposeWindow();
+    if (m_requestUpdateCalled) {
+        m_requestUpdateCalled = false;
+        m_platformWindow->deliverUpdateRequest(dirty);
+    } else {
+        // Make Qt draw a frame.
+        m_platformWindow->exposeWindow();
+    }
+
 
 //    qDebug() << "drawRect" << m_backingStore;
 
@@ -2059,7 +2065,25 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
 - (void) requestUpdate
 {
     m_requestUpdateCalled = true;
+    [self setNeedsDisplay:true];
+}
 
+- (void) requestUpdateWithRect:(QRect) rect
+{
+    m_requestUpdateCalled = true;
+    [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
+}
+
+- (void) requestUpdateWithRegion:(QRegion) region
+{
+    m_requestUpdateCalled = true;
+    foreach (QRect rect, region.rects())
+        [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
+}
+
+- (void) requestCVDisplayLinkUpdate
+{
+    m_requestUpdateCalled = true;
     // Start the display link if needed
     if (!CVDisplayLinkIsRunning(m_displayLink))
         CVDisplayLinkStart(m_displayLink);

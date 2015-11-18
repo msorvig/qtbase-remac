@@ -130,6 +130,8 @@ public:
         const QRect &initialGeometry, int defaultWidth, int defaultHeight);
 
     virtual void requestUpdate();
+    virtual void requestUpdate(const QRect &rect);
+    virtual void requestUpdate(const QRegion &region);
 
     // Window property accessors. Platform plugins should use these
     // instead of accessing QWindow directly.
@@ -146,7 +148,9 @@ protected:
     static QString formatWindowTitle(const QString &title, const QString &separator);
     QPlatformScreen *screenForGeometry(const QRect &newGeometry) const;
     static QSize constrainWindowSize(const QSize &size);
-
+public: // ### for QNSView
+    void deliverUpdateRequest(const QRect &rect);
+protected:
     QScopedPointer<QPlatformWindowPrivate> d_ptr;
 private:
     Q_DISABLE_COPY(QPlatformWindow)

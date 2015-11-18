@@ -83,7 +83,7 @@ void QPaintDeviceWindow::update(const QRect &rect)
     Q_D(QPaintDeviceWindow);
     d->dirtyRegion += rect;
     if (isExposed())
-        requestUpdate();
+        requestUpdate(rect);
 }
 
 /*!
@@ -100,7 +100,7 @@ void QPaintDeviceWindow::update(const QRegion &region)
     Q_D(QPaintDeviceWindow);
     d->dirtyRegion += region;
     if (isExposed())
-        requestUpdate();
+        requestUpdate(region);
 }
 
 /*!

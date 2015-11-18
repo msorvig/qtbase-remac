@@ -207,6 +207,8 @@ public:
         { return m_frameStrutEventsEnabled; }
 
     void requestUpdate() Q_DECL_OVERRIDE;
+    void requestUpdate(const QRect &rect) Q_DECL_OVERRIDE;
+    void requestUpdate(const QRegion &region) Q_DECL_OVERRIDE;
 
     void setMenubar(QCocoaMenuBar *mb);
     QCocoaMenuBar *menubar() const;

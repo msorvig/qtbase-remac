@@ -1880,3 +1880,12 @@ void QCocoaWindow::requestUpdate()
 {
     [m_qtView requestUpdate];
 }
+void QCocoaWindow::requestUpdate(const QRect &rect)
+{
+    [m_qtView requestUpdateWithRect:rect];
+}
+
+void QCocoaWindow::requestUpdate(const QRegion &region)
+{
+    [m_qtView requestUpdateWithRegion:region];
+}

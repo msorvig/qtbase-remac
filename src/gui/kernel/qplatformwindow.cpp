@@ -640,6 +640,25 @@ void QPlatformWindow::requestUpdate()
     wp->updateTimer = w->startTimer(timeout, Qt::PreciseTimer);
 }
 
+void QPlatformWindow::requestUpdate(const QRect &rect)
+{
+    requestUpdate();
+}
+
+void QPlatformWindow::requestUpdate(const QRegion &region)
+{
+    requestUpdate();
+}
+
+void QPlatformWindow::deliverUpdateRequest(const QRect &rect)
+{
+    Q_UNUSED(rect);
+
+    QWindow *w = window();
+    QWindowPrivate *wp = (QWindowPrivate *) QObjectPrivate::get(w);
+    wp->deliverUpdateRequest();
+}
+
 /*!
     Returns the QWindow minimum size.
 */
