@@ -39,6 +39,7 @@
 #include <QtGui/qpaintdevice.h>
 #include <QtGui/qpixelformat.h>
 #include <QtGui/qtransform.h>
+#include <QtCore/qglobal.h>
 #include <QtCore/qbytearray.h>
 #include <QtCore/qrect.h>
 #include <QtCore/qstring.h>
@@ -58,10 +59,10 @@ class QVariant;
 template <class T> class QList;
 template <class T> class QVector;
 
+// ### figure out why this is not defined by qglobal.h
 #ifndef QT_FORWARD_DECLARE_MUTABLE_CG_TYPE
 #define QT_FORWARD_DECLARE_MUTABLE_CG_TYPE(type) typedef struct type *type ## Ref;
 #endif
-
 
 #ifdef Q_OS_DARWIN
 QT_FORWARD_DECLARE_MUTABLE_CG_TYPE(CGImage);

@@ -120,7 +120,7 @@ CGImageRef QImage::toCGImage() const
     CGImageRef cgImage = CGImageCreate(image.width(), image.height(),
                                        bitsPerComponent, bitsPerPixel, image.bytesPerLine(),
                                        colorSpace, cgflags, dataProvider,
-                                       bitsPerPixel, shouldInterpolate, kCGRenderingIntentDefault);
+                                       decode, shouldInterpolate, kCGRenderingIntentDefault);
     CFRelease(dataProvider);
     CFRelease(colorSpace);
     return cgImage;
