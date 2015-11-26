@@ -77,9 +77,11 @@ HEADERS += qcocoaintegration.h \
     qcocoamimetypes.h
 
 contains(QT_CONFIG, opengl.*) {
-    OBJECTIVE_SOURCES += qcocoaglcontext.mm
+    OBJECTIVE_SOURCES += qcocoaglcontext.mm \
+        qcocoagllayer.mm
 
-    HEADERS += qcocoaglcontext.h
+    HEADERS += qcocoaglcontext.h \
+        qcocoagllayer.h
 }
 
 RESOURCES += qcocoaresources.qrc
@@ -112,3 +114,4 @@ OTHER_FILES += cocoa.json
 
 # Window debug support
 #DEFINES += QT_COCOA_ENABLE_WINDOW_DEBUG
+
