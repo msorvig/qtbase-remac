@@ -501,6 +501,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 - (void) drawRect:(NSRect)dirtyRect
 {
+    QRect dirty = qt_mac_toQRect(dirtyRect);
 #ifndef QT_NO_OPENGL
     if (m_glContext && m_shouldSetGLContextinDrawRect) {
         [m_glContext->nsOpenGLContext() setView:self];
