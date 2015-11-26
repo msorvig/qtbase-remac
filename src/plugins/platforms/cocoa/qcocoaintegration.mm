@@ -477,29 +477,34 @@ T qsurface_cast(QSurface *surface)
 template<>
 QWindow *qsurface_cast<QWindow *>(QSurface *surface)
 {
-    return surface->surfaceClass() == QSurface::Window ? static_cast<QWindow *>(surface) : 0;
+    if (!surface)
+        return 0;
+    if (surface->surfaceClass() != QSurface::Window)
+        return 0;
+    return static_cast<QWindow *>(surface);
 }
 
 QPlatformOpenGLContext *QCocoaIntegration::createPlatformOpenGLContext(QOpenGLContext *context) const
 {
-    QPlatformOpenGLContext *platformContext = 0;
+    QCocoaGLContext *platformContext = 0;
 
-    // Crate a platform OpenGLContext according to mode QWindow mode.
+    // Crate a QCocoaGLContext subclass according to the QWindow mode.
     QWindow *window = qsurface_cast<QWindow *>(context->surface());
     BOOL layer = qt_mac_resolveOption(NO, window, "_q_mac_wantsLayer", "QT_MAC_WANTS_LAYER");
-    if (!layer) {
-        QCocoaGLViewContext *c = new QCocoaGLViewContext(context->format(),
-                                                         context->shareHandle(),
-                                                         context->nativeHandle());
-
-        platformContext = c;
-        context->setNativeHandle(c->nativeHandle());
-    } else {
+    if (layer) {
         platformContext = new QCocoaGLLayerContext(context->format(),
                                                    context->shareHandle(),
                                                    context->nativeHandle());
-        // there's no native handle created yet.
+    } else {
+        platformContext = new QCocoaGLViewContext(context->format(),
+                                                  context->shareHandle(),
+                                                  context->nativeHandle());
     }
+
+    // Propagate the native context up to QtGui. Note that in
+    // layer mode the native context has not been created yet
+    // and will be null.
+    context->setNativeHandle(platformContext->nativeHandle());
 
     return platformContext;
 }
