@@ -196,8 +196,8 @@ public:
     void setWindowZoomButton(Qt::WindowFlags flags);
 
 #ifndef QT_NO_OPENGL
-    void setCurrentContext(QCocoaGLContext *context);
-    QCocoaGLContext *currentContext() const;
+    void setCurrentContext(QCocoaGLViewContext *context);
+    QCocoaGLViewContext *currentContext() const;
 #endif
 
     bool setWindowModified(bool modified) Q_DECL_OVERRIDE;
@@ -280,7 +280,7 @@ public: // for QNSView
     bool m_inSetGeometry;
     bool m_inSetStyleMask;
 #ifndef QT_NO_OPENGL
-    QCocoaGLContext *m_glContext;
+    QCocoaGLViewContext *m_glContext;
 #endif
     QCocoaMenuBar *m_menubar;
     NSCursor *m_windowCursor;

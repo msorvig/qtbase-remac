@@ -45,7 +45,7 @@
 QT_BEGIN_NAMESPACE
 class QCocoaWindow;
 class QCocoaBackingStore;
-class QCocoaGLContext;
+class QCocoaGLViewContext;
 QT_END_NAMESPACE
 
 Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
@@ -67,7 +67,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     bool m_sendUpAsRightButton;
     Qt::KeyboardModifiers currentWheelModifiers;
 #ifndef QT_NO_OPENGL
-    QCocoaGLContext *m_glContext;
+    QCocoaGLViewContext *m_glContext;
     bool m_shouldSetGLContextinDrawRect;
 #endif
 
@@ -84,13 +84,14 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     bool m_exposedOnMoveToWindow;
     QHash<int, bool> m_acceptedKeyDowns;
     QSet<Qt::MouseButton> m_acceptedMouseDowns;
+    bool m_inDrawRect;
 }
 
 - (id)init;
 - (id)initWithQWindow:(QWindow *)window platformWindow:(QCocoaWindow *) platformWindow;
 - (void) clearQWindowPointers;
 #ifndef QT_NO_OPENGL
-- (void)setQCocoaGLContext:(QCocoaGLContext *)context;
+- (void)setQCocoaGLViewContext:(QCocoaGLViewContext *)context;
 #endif
 - (void)flushBackingStore:(QCocoaBackingStore *)backingStore region:(const QRegion &)region offset:(QPoint)offset;
 - (void)clearBackingStore:(QCocoaBackingStore *)backingStore;

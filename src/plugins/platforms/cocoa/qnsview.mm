@@ -229,11 +229,11 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 }
 
 #ifndef QT_NO_OPENGL
-- (void) setQCocoaGLContext:(QCocoaGLContext *)context
+- (void) setQCocoaGLViewContext:(QCocoaGLViewContext *)context
 {
     m_glContext = context;
-    [m_glContext->nsOpenGLContext() setView:self];
-    if (![m_glContext->nsOpenGLContext() view]) {
+    [m_glContext->nativeContext() setView:self];
+    if (![m_glContext->nativeContext() view]) {
         //was unable to set view
         m_shouldSetGLContextinDrawRect = true;
     }

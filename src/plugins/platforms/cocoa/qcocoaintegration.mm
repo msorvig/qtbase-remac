@@ -467,13 +467,41 @@ QPlatformWindow *QCocoaIntegration::createPlatformWindow(QWindow *window) const
 }
 
 #ifndef QT_NO_OPENGL
+
+template <typename T>
+T qsurface_cast(QSurface *surface)
+{
+    return 0;
+}
+
+template<>
+QWindow *qsurface_cast<QWindow *>(QSurface *surface)
+{
+    return surface->surfaceClass() == QSurface::Window ? static_cast<QWindow *>(surface) : 0;
+}
+
 QPlatformOpenGLContext *QCocoaIntegration::createPlatformOpenGLContext(QOpenGLContext *context) const
 {
-    QCocoaGLContext *glContext = new QCocoaGLContext(context->format(),
-                                                     context->shareHandle(),
-                                                     context->nativeHandle());
-    context->setNativeHandle(glContext->nativeHandle());
-    return glContext;
+    QPlatformOpenGLContext *platformContext = 0;
+
+    // Crate a platform OpenGLContext according to mode QWindow mode.
+    QWindow *window = qsurface_cast<QWindow *>(context->surface());
+    BOOL layer = qt_mac_resolveOption(NO, window, "_q_mac_wantsLayer", "QT_MAC_WANTS_LAYER");
+    if (!layer) {
+        QCocoaGLViewContext *c = new QCocoaGLViewContext(context->format(),
+                                                         context->shareHandle(),
+                                                         context->nativeHandle());
+
+        platformContext = c;
+        context->setNativeHandle(c->nativeHandle());
+    } else {
+        platformContext = new QCocoaGLLayerContext(context->format(),
+                                                   context->shareHandle(),
+                                                   context->nativeHandle());
+        // there's no native handle created yet.
+    }
+
+    return platformContext;
 }
 #endif
 

@@ -91,7 +91,7 @@ void *QCocoaNativeInterface::nativeResourceForWindow(const QByteArray &resourceS
         return static_cast<QCocoaWindow *>(window->handle())->m_contentView;
 #ifndef QT_NO_OPENGL
     } else if (resourceString == "nsopenglcontext") {
-        return static_cast<QCocoaWindow *>(window->handle())->currentContext()->nsOpenGLContext();
+        return static_cast<QCocoaWindow *>(window->handle())->currentContext()->nativeContext();
 #endif
     } else if (resourceString == "nswindow") {
         return static_cast<QCocoaWindow *>(window->handle())->m_nsWindow;
@@ -212,7 +212,7 @@ void *QCocoaNativeInterface::nsOpenGLContextForContext(QOpenGLContext* context)
     if (context) {
         QCocoaGLContext *cocoaGLContext = static_cast<QCocoaGLContext *>(context->handle());
         if (cocoaGLContext) {
-            return cocoaGLContext->nsOpenGLContext();
+            return cocoaGLContext->nativeContext();
         }
     }
     return 0;

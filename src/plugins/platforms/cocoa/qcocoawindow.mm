@@ -1245,12 +1245,12 @@ bool QCocoaWindow::windowIsPopupType(Qt::WindowType type) const
 }
 
 #ifndef QT_NO_OPENGL
-void QCocoaWindow::setCurrentContext(QCocoaGLContext *context)
+void QCocoaWindow::setCurrentContext(QCocoaGLViewContext *context)
 {
     m_glContext = context;
 }
 
-QCocoaGLContext *QCocoaWindow::currentContext() const
+QCocoaGLViewContext *QCocoaWindow::currentContext() const
 {
     return m_glContext;
 }
