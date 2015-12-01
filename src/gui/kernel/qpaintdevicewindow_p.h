@@ -64,8 +64,10 @@ public:
     {
         Q_Q(QPaintDeviceWindow);
         QRegion toPaint = region & dirtyRegion;
-        if (toPaint.isEmpty())
-            return false;
+
+        // ### must produce a frame on paint.
+        // if (toPaint.isEmpty())
+        //    return false;
 
         // Clear the region now. The overridden functions may call update().
         dirtyRegion -= toPaint;
@@ -89,8 +91,9 @@ public:
 
     void handleUpdateEvent()
     {
-        if (dirtyRegion.isEmpty())
-            return;
+        // ### must produce a frame on paint.
+        // if (dirtyRegion.isEmpty())
+        //   return;
         doFlush(dirtyRegion);
     }
 
