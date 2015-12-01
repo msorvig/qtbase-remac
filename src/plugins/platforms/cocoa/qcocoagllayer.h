@@ -32,9 +32,16 @@
 ****************************************************************************/
 
 #import <AppKit/AppKit.h>
+#include <OpenGL.h>
+
+@class QNSView;
 
 @interface QCocoaOpenGLLayer : NSOpenGLLayer
 {
+    @public GLint m_drawFbo;
     int frame;
+    QNSView *m_qtView;
 }
+- (id)initWithQNSView:(QNSView *)qtView;
+
 @end

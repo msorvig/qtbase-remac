@@ -50,6 +50,7 @@
 #include "qcocoabackingstore.h"
 #ifndef QT_NO_OPENGL
 #include "qcocoaglcontext.h"
+#include "qcocoagllayer.h"
 #endif
 #include "qcocoaintegration.h"
 
@@ -151,6 +152,7 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         m_mouseMoveHelper = [[QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper) alloc] initWithView:self];
         m_resendKeyEvent = false;
         m_scrolling = false;
+        m_inDrawRect = false;
 
         if (!touchDevice) {
             touchDevice = new QTouchDevice;
@@ -221,6 +223,15 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     return self;
 }
+
+#ifndef QT_NO_OPENGL
+- (CALayer *)makeBackingLayer
+{
+    qDebug() << "makeBackingLayer";
+
+    return [[QCocoaOpenGLLayer alloc] initWithQNSView:self];
+}
+#endif
 
 - (void) clearQWindowPointers
 {
@@ -388,6 +399,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         if (([self.window occlusionState] & NSWindowOcclusionStateVisible) == 0) {
             m_platformWindow->obscureWindow();
         } else {
+            m_requestUpdateCalled = true;
             [self setNeedsDisplay:true];
         }
 
@@ -438,7 +450,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // drawRect then we're done; the backingstore content will be flushed later in
     // that function.
 
-    // If not we trigger a drawRect cal by invalidating the view.
+    // If not we trigger a drawRect call by invalidating the view.
     foreach (QRect rect, region.rects())
         [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
 }
@@ -499,12 +511,29 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     }
 }
 
+- (void) triggerQtDrawFrame:(QRect) dirty
+{
+    if (m_requestUpdateCalled) {
+        m_requestUpdateCalled = false;
+        m_platformWindow->deliverUpdateRequest(dirty);
+    } else {
+        // Make Qt draw a frame.
+        m_platformWindow->exposeWindow();
+    }
+}
+
 - (void) drawRect:(NSRect)dirtyRect
 {
+    if (m_platformWindow->m_inLayerMode) {
+        qDebug() << "drawRect in layer mode";
+        return;
+    }
+
+    QBoolBlocker inDrawRect(m_inDrawRect);
     QRect dirty = qt_mac_toQRect(dirtyRect);
 #ifndef QT_NO_OPENGL
     if (m_glContext && m_shouldSetGLContextinDrawRect) {
-        [m_glContext->nsOpenGLContext() setView:self];
+        [m_glContext->nativeContext() setView:self];
         m_shouldSetGLContextinDrawRect = false;
     }
 #endif
@@ -513,21 +542,16 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     if (m_platformWindow->m_drawContentBorderGradient)
         NSDrawWindowBackground(dirtyRect);
 
-    // qDebug() << "drawRect" << m_backingStore << m_window->geometry().size();
     // qDebug() << "drawRect window type" << m_window->supportsOpenGL();
 
-    if (m_requestUpdateCalled) {
-        m_requestUpdateCalled = false;
-        m_platformWindow->deliverUpdateRequest(dirty);
-    } else {
-        // Make Qt draw a frame.
-        m_platformWindow->exposeWindow();
-    }
+    // Request frame from Qt
+    [self triggerQtDrawFrame:dirty];
 
+    // --> Drawing (by Qt) is done here <---
 
 //    qDebug() << "drawRect" << m_backingStore;
 
-    // OpenGL content should be flushed at this point; we're done
+    // For OpenGL content should have been flushed at this point; we're done
     if (!m_backingStore)
         return;
 
@@ -2066,24 +2090,37 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
 - (void) requestUpdate
 {
     m_requestUpdateCalled = true;
-    [self setNeedsDisplay:true];
+    if (m_platformWindow->m_inLayerMode) {
+
+    } else {
+        [self requestCVDisplayLinkUpdate];
+    }
 }
 
 - (void) requestUpdateWithRect:(QRect) rect
 {
     m_requestUpdateCalled = true;
-    [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
+    if (m_platformWindow->m_inLayerMode) {
+
+    } else {
+        [self requestCVDisplayLinkUpdate];
+    }
 }
 
 - (void) requestUpdateWithRegion:(QRegion) region
 {
     m_requestUpdateCalled = true;
-    foreach (QRect rect, region.rects())
-        [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
+    if (m_platformWindow->m_inLayerMode) {
+
+    } else {
+        [self requestCVDisplayLinkUpdate];
+    }
 }
 
 - (void) requestCVDisplayLinkUpdate
 {
+   // qDebug() << "requestCVDisplayLinkUpdate";
+
     m_requestUpdateCalled = true;
     // Start the display link if needed
     if (!CVDisplayLinkIsRunning(m_displayLink))

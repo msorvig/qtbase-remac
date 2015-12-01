@@ -295,6 +295,7 @@ public: // for QNSView
     bool m_resizableTransientParent;
     bool m_hiddenByClipping;
     bool m_hiddenByAncestor;
+    bool m_inLayerMode;
 
     static const int NoAlertRequest;
     NSInteger m_alertRequest;

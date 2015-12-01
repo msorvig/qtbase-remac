@@ -75,7 +75,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     NSTimer *m_displayLinkStopTimer;
     int m_displayLinkSerial;
     int m_displayLinkSerialAtTimerSchedule;
-    bool m_requestUpdateCalled;
+    @public bool m_requestUpdateCalled;
 
     NSString *m_inputSource;
     QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper) *m_mouseMoveHelper;

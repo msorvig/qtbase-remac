@@ -32,15 +32,19 @@
 ****************************************************************************/
 
 #include "qcocoagllayer.h"
+#include "qnsview.h"
 
 #include <QtCore/qdebug.h>
+#include <OpenGL.h>
+#include <gl.h>
 
 @implementation QCocoaOpenGLLayer
 
-- (id)init
+- (id)initWithQNSView:(QNSView *)qtView
 {
     [super init];
     frame = 0;
+    m_qtView = qtView;
     return self;
 }
 
@@ -82,7 +86,8 @@
     Q_UNUSED(timeInterval);
     Q_UNUSED(timeStamp);
 
-    return YES; // Yes, we have a frame
+    return YES; // TODO: bootstrap updates on show
+    return m_qtView->m_requestUpdateCalled;
 }
 
 - (void)drawInOpenGLContext:(NSOpenGLContext *)context
@@ -97,8 +102,12 @@
 
     ++frame;
 
-    qDebug() << "frame" << frame;
-    // ### TODO draw
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &m_drawFbo);
+//    qDebug() << "";
+//    qDebug() << "drawInOpenGLContext" << "draw fbo is" << m_drawFbo;
+
+    QRect dirty(0,0, 999, 999);
+    [m_qtView triggerQtDrawFrame:dirty];
 }
 
 @end

@@ -98,6 +98,7 @@ public:
                          const QVariant &nativeHandle, QWindow *targetWindow);
 
     void swapBuffers(QPlatformSurface *surface) Q_DECL_OVERRIDE;
+    GLuint defaultFramebufferObject(QPlatformSurface *surface) const Q_DECL_OVERRIDE;
     bool makeCurrent(QPlatformSurface *surface) Q_DECL_OVERRIDE;
     void doneCurrent() Q_DECL_OVERRIDE;
     bool isSharing() const Q_DECL_OVERRIDE;

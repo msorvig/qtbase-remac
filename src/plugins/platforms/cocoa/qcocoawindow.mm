@@ -363,6 +363,7 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_resizableTransientParent(false)
     , m_hiddenByClipping(false)
     , m_hiddenByAncestor(false)
+    , m_inLayerMode(false)
     , m_alertRequest(NoAlertRequest)
     , monitor(nil)
     , m_drawContentBorderGradient(false)
@@ -389,11 +390,14 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
         if (tlw->supportsOpenGL()) {
             BOOL enable = qt_mac_resolveOption(YES, tlw, "_q_mac_wantsBestResolutionOpenGLSurface",
                                                           "QT_MAC_WANTS_BEST_RESOLUTION_OPENGL_SURFACE");
-            [m_contentView setWantsBestResolutionOpenGLSurface:enable];
+            [m_qtView setWantsBestResolutionOpenGLSurface:enable];
         }
         BOOL enable = qt_mac_resolveOption(NO, tlw, "_q_mac_wantsLayer",
                                                      "QT_MAC_WANTS_LAYER");
-        [m_contentView setWantsLayer:enable];
+        qDebug() << "Enable layer" << enable;
+
+        m_inLayerMode = enable;
+        [m_qtView setWantsLayer:enable];
     }
     setGeometry(tlw->geometry());
     recreateWindow(parent());

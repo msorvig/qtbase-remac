@@ -34,6 +34,8 @@
 #include "qcocoaglcontext.h"
 #include "qcocoawindow.h"
 #include "qcocoahelpers.h"
+#include "qcocoagllayer.h"
+
 #include <qdebug.h>
 #include <QtCore/private/qcore_mac_p.h>
 #include <QtPlatformSupport/private/cglconvenience_p.h>
@@ -415,6 +417,16 @@ void QCocoaGLLayerContext::swapBuffers(QPlatformSurface *surface)
     // No-op: core canimation swaps buffers
 }
 
+GLuint QCocoaGLLayerContext::defaultFramebufferObject(QPlatformSurface *surface) const
+{
+    Q_UNUSED(surface);
+
+    // Cast and dereference our way to the current FBO identifier on the layer
+    QNSView *view = reinterpret_cast<QCocoaWindow* >(m_targetWindow->handle())->qtView();
+    QCocoaOpenGLLayer *layer= (QCocoaOpenGLLayer *)[view layer];
+    return layer->m_drawFbo;
+}
+
 bool QCocoaGLLayerContext::makeCurrent(QPlatformSurface *surface)
 {
     Q_UNUSED(surface);
@@ -434,7 +446,6 @@ bool QCocoaGLLayerContext::isSharing() const
 
 bool QCocoaGLLayerContext::isValid() const
 {
-    qDebug() << "is valid?";
     return m_isValid;
 }
 
