@@ -112,7 +112,7 @@ public:
     bool hasCapability(QPlatformIntegration::Capability cap) const Q_DECL_OVERRIDE;
     QPlatformWindow *createPlatformWindow(QWindow *window) const Q_DECL_OVERRIDE;
 #ifndef QT_NO_OPENGL
-    QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const Q_DECL_OVERRIDE;
+    QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context, QWindow *targetWindowHint) const Q_DECL_OVERRIDE;
 #endif
     QPlatformBackingStore *createPlatformBackingStore(QWindow *widget) const Q_DECL_OVERRIDE;
 

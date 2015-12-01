@@ -43,6 +43,7 @@
 #include <QtCore/QScopedPointer>
 
 #include <QtGui/QSurfaceFormat>
+#include <QtGui/QWindow>
 
 #ifdef __GLEW_H__
 #if defined(Q_CC_GNU)
@@ -152,7 +153,7 @@ public:
     void setScreen(QScreen *screen);
     void setNativeHandle(const QVariant &handle);
 
-    bool create();
+    bool create(QWindow *targetWindowHint = 0);
     bool isValid() const;
 
     QSurfaceFormat format() const;

@@ -484,21 +484,24 @@ QWindow *qsurface_cast<QWindow *>(QSurface *surface)
     return static_cast<QWindow *>(surface);
 }
 
-QPlatformOpenGLContext *QCocoaIntegration::createPlatformOpenGLContext(QOpenGLContext *context) const
+QPlatformOpenGLContext *QCocoaIntegration::createPlatformOpenGLContext(QOpenGLContext *context, QWindow *targetWindow) const
 {
     QCocoaGLContext *platformContext = 0;
 
     // Crate a QCocoaGLContext subclass according to the QWindow mode.
-    QWindow *window = qsurface_cast<QWindow *>(context->surface());
-    BOOL layer = qt_mac_resolveOption(NO, window, "_q_mac_wantsLayer", "QT_MAC_WANTS_LAYER");
+    BOOL layer = qt_mac_resolveOption(NO, targetWindow, "_q_mac_wantsLayer", "QT_MAC_WANTS_LAYER");
+    qDebug() << "gl context layer" << layer << targetWindow << context->surface();
+
     if (layer) {
         platformContext = new QCocoaGLLayerContext(context->format(),
                                                    context->shareHandle(),
-                                                   context->nativeHandle());
+                                                   context->nativeHandle(),
+                                                   targetWindow);
     } else {
         platformContext = new QCocoaGLViewContext(context->format(),
                                                   context->shareHandle(),
-                                                  context->nativeHandle());
+                                                  context->nativeHandle(),
+                                                  targetWindow);
     }
 
     // Propagate the native context up to QtGui. Note that in

@@ -219,7 +219,7 @@ void QOpenGLWindowPrivate::initialize()
     context.reset(new QOpenGLContext);
     context->setShareContext(shareContext);
     context->setFormat(q->requestedFormat());
-    if (!context->create())
+    if (!context->create(q))
         qWarning("QOpenGLWindow::beginPaint: Failed to create context");
     if (!context->makeCurrent(q))
         qWarning("QOpenGLWindow::beginPaint: Failed to make context current");

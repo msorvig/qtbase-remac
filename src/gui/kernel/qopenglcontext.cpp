@@ -595,13 +595,13 @@ QVariant QOpenGLContext::nativeHandle() const
 
     \sa makeCurrent(), format()
 */
-bool QOpenGLContext::create()
+bool QOpenGLContext::create(QWindow *targetWindowHint)
 {
     Q_D(QOpenGLContext);
     if (d->platformGLContext)
         destroy();
 
-    d->platformGLContext = QGuiApplicationPrivate::platformIntegration()->createPlatformOpenGLContext(this);
+    d->platformGLContext = QGuiApplicationPrivate::platformIntegration()->createPlatformOpenGLContext(this, targetWindowHint);
     if (!d->platformGLContext)
         return false;
     d->platformGLContext->initialize();

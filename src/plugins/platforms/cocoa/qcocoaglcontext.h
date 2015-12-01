@@ -63,6 +63,7 @@ public:
 protected:
     QSurfaceFormat m_format;
     NSOpenGLContext *m_context;
+    QWindow *m_targetWindow;
 };
 
 // Context implementation for when QCocoaWindow is backed by a NSView
@@ -70,7 +71,8 @@ protected:
 class QCocoaGLViewContext : public QCocoaGLContext
 {
 public:
-    QCocoaGLViewContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share, const QVariant &nativeHandle);
+    QCocoaGLViewContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share,
+                        const QVariant &nativeHandle, QWindow *targetWindow);
     ~QCocoaGLViewContext();
 
     void swapBuffers(QPlatformSurface *surface) Q_DECL_OVERRIDE;
@@ -92,7 +94,8 @@ private:
 class QCocoaGLLayerContext : public QCocoaGLContext
 {
 public:
-    QCocoaGLLayerContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share, const QVariant &nativeHandle);
+    QCocoaGLLayerContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share,
+                         const QVariant &nativeHandle, QWindow *targetWindow);
 
     void swapBuffers(QPlatformSurface *surface) Q_DECL_OVERRIDE;
     bool makeCurrent(QPlatformSurface *surface) Q_DECL_OVERRIDE;

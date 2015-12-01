@@ -102,7 +102,7 @@ public:
     virtual QPlatformWindow *createPlatformWindow(QWindow *window) const = 0;
     virtual QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const = 0;
 #ifndef QT_NO_OPENGL
-    virtual QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const;
+    virtual QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context, QWindow *targetWindowHint = 0) const;
 #endif
     virtual QPlatformSharedGraphicsCache *createPlatformSharedGraphicsCache(const char *cacheId) const;
     virtual QPaintEngine *createImagePaintEngine(QPaintDevice *paintDevice) const;

@@ -262,9 +262,11 @@ QVariant QCocoaGLContext::nativeHandle() const
 // QCocoaGLViewContext Implementation
 //
 QCocoaGLViewContext::QCocoaGLViewContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share,
-                                 const QVariant &nativeHandle)
+                                 const QVariant &nativeHandle, QWindow *targetWindow)
 : m_shareContext(nil)
 {
+    m_targetWindow =targetWindow;
+
     if (!nativeHandle.isNull()) {
         if (!nativeHandle.canConvert<QCocoaNativeContext>()) {
             qWarning("QCocoaGLContext: Requires a QCocoaNativeContext");
@@ -391,7 +393,7 @@ void QCocoaGLViewContext::setActiveWindow(QWindow *window)
 // callback.
 //
 QCocoaGLLayerContext::QCocoaGLLayerContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share,
-                                           const QVariant &nativeHandle)
+                                           const QVariant &nativeHandle, QWindow *targetWindow)
 {
     if (!nativeHandle.isNull()) {
         qWarning("QCocoaGLContext: Specifying a native context in layer mode is not supported");
@@ -401,6 +403,7 @@ QCocoaGLLayerContext::QCocoaGLLayerContext(const QSurfaceFormat &format, QPlatfo
     m_format = format;
     m_context = 0;
     m_shareContext = share;
+    m_targetWindow = targetWindow;
 
     // Assume we are good until native context creation possibly proves otherwise.
     m_isValid = true;
