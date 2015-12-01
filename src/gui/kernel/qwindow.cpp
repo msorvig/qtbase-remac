@@ -2146,7 +2146,6 @@ void QWindow::requestUpdate()
 void QWindow::requestUpdate(const QRect &rect)
 {
     Q_D(QWindow);
-    qDebug() << "QWindow::requestUpdate rect" << rect << d->updateRequestPending;
 
     if (d->updateRequestPending || !d->platformWindow)
         return;
