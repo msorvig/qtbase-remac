@@ -513,13 +513,10 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 - (void) triggerQtDrawFrame:(QRect) dirty
 {
-    if (m_requestUpdateCalled) {
-        m_requestUpdateCalled = false;
-        m_platformWindow->deliverUpdateRequest(dirty);
-    } else {
-        // Make Qt draw a frame.
+    if (!m_platformWindow->isExposed())
         m_platformWindow->exposeWindow();
-    }
+    else
+        m_platformWindow->deliverUpdateRequest(dirty);
 }
 
 - (void) drawRect:(NSRect)dirtyRect
