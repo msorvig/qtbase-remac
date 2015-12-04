@@ -86,7 +86,6 @@
     Q_UNUSED(timeInterval);
     Q_UNUSED(timeStamp);
 
-    return YES; // TODO: bootstrap updates on show
     return m_qtView->m_requestUpdateCalled;
 }
 

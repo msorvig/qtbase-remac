@@ -253,6 +253,8 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 - (void)viewDidMoveToSuperview
 {
+    m_requestUpdateCalled = true; // get the GL Layer going
+
     if (!(m_platformWindow->m_contentViewIsToBeEmbedded))
         return;
 
