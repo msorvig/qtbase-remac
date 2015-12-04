@@ -229,7 +229,29 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 {
     qDebug() << "makeBackingLayer";
 
-    return [[QCocoaOpenGLLayer alloc] initWithQNSView:self];
+    if (m_platformWindow->m_inLayerMode) {
+        // A layer was requested, but should we create an OpenGL or raster
+        // layer? m_window->supportsOpenGL() gives a hint, but this is more
+        // of a capability: QWidgetWindow will return true but may still push
+        // updates through the QBackingStore raster path.
+
+        // Create an OPenGL layer if OpenGL content is possible. This
+        // means widgets always have to render through the OpenGL code
+        // path when in layer mode.
+        if (m_window->surfaceType() == QWindow::OpenGLSurface ||
+            m_window->surfaceType() == QWindow::RasterGLSurface) {
+            return [[QCocoaOpenGLLayer alloc] initWithQNSView:self];
+        } else {
+            // RasterSurface windows could get a raster layer, or
+            // use the standard drawRect raster path. Dot he latter
+            // for now.
+            return [super makeBackingLayer];
+        }
+    }
+
+    // This function may be called even if we didn't request a layer
+    // for this view. Fall back to the default implentation.
+    return [super makeBackingLayer];
 }
 #endif
 
