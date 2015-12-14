@@ -358,7 +358,6 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_hasModalSession(false)
     , m_frameStrutEventsEnabled(false)
     , m_geometryUpdateExposeAllowed(false)
-    , m_isExposed(false)
     , m_registerTouchCount(0)
     , m_resizableTransientParent(false)
     , m_hiddenByClipping(false)
@@ -1033,7 +1032,7 @@ void QCocoaWindow::lower()
 
 bool QCocoaWindow::isExposed() const
 {
-    return m_isExposed;
+    return !m_exposedSize.isEmpty();
 }
 
 bool QCocoaWindow::isOpaque() const
@@ -1755,65 +1754,24 @@ qreal QCocoaWindow::devicePixelRatio() const
     return backingSize.height;
 }
 
-// Returns whether the window can be expose, which it can
-// if it is on screen and has a valid geometry.
-bool QCocoaWindow::isWindowExposable()
+// Updates the exposed state of a window by sending Expose events when
+// window geometry or devicePixelRatio changes. Call this method with an
+// empty rect on window hide.
+bool QCocoaWindow::updateExposedState(QSize windowSize, const qreal devicePixelRatio)
 {
-    QSize size = geometry().size();
-    bool validGeometry = (size.width() > 0 && size.height() > 0);
-    bool validScreen = ([[m_contentView window] screen] != 0);
-    bool nonHiddenSuperView = ![[m_contentView superview] isHidden];
-    return (validGeometry && validScreen && nonHiddenSuperView);
-}
+    // Don't send expose events if there are no changes.
+    if (m_exposedSize == windowSize && m_exposedDevicePixelRatio == devicePixelRatio)
+        return false;
 
-// Exposes the window by posting an expose event to QWindowSystemInterface
-void QCocoaWindow::exposeWindow()
-{
-    m_geometryUpdateExposeAllowed = true;
+    // Something changed, store the new geometry and send Expose event.
+    m_exposedSize = windowSize;
+    m_exposedDevicePixelRatio = devicePixelRatio;
+    QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0,0), windowSize));
 
-    bool geometryChannge = m_exposedGeometry != geometry() || m_exposedDevicePixelRatio != devicePixelRatio();
-
-    if (!m_isExposed || geometryChannge) {
-        m_isExposed = true;
-        m_exposedGeometry = geometry();
-        m_exposedDevicePixelRatio = devicePixelRatio();
-        QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), m_exposedGeometry.size()));
+    // We want to produce a frame immediately on becomming visible or changing geometry
+    if (!m_exposedSize.isEmpty())
         QWindowSystemInterface::flushWindowSystemEvents();
-    }
-}
-
-// Obscures the window by posting an empty expose event to QWindowSystemInterface
-void QCocoaWindow::obscureWindow()
-{
-    if (m_isExposed) {
-        m_isExposed = false;
-        QWindowSystemInterface::handleExposeEvent(window(), QRegion());
-    }
-}
-
-// Updates window geometry by posting an expose event to QWindowSystemInterface
-void QCocoaWindow::updateExposedGeometry()
-{
-    // updateExposedGeometry is not allowed to send the initial expose. If you want
-    // that call exposeWindow();
-    if (!m_geometryUpdateExposeAllowed)
-        return;
-
-    // Do not send incorrect exposes in case the window is not even visible yet.
-    // We might get here as a result of a resize() from QWidget's show(), for instance.
-    if (!window()->isVisible())
-        return;
-
-    if (!isWindowExposable())
-        return;
-
-    if (m_exposedGeometry.size() == geometry().size() && m_exposedDevicePixelRatio == devicePixelRatio())
-        return;
-
-    m_isExposed = true;
-    m_exposedGeometry = geometry();
-    m_exposedDevicePixelRatio = devicePixelRatio();
-    QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), m_exposedGeometry.size()));
+    return true;
 }
 
 QWindow *QCocoaWindow::childWindowAt(QPoint windowPoint)

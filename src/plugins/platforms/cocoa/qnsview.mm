@@ -423,7 +423,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     } else if (_q_NSWindowDidChangeOcclusionStateNotification
                && [notificationName isEqualToString:_q_NSWindowDidChangeOcclusionStateNotification]) {
         if (([self.window occlusionState] & NSWindowOcclusionStateVisible) == 0) {
-            m_platformWindow->obscureWindow();
+            m_platformWindow->updateExposedState(QSize());
         } else {
             m_requestUpdateCalled = true;
             [self setNeedsDisplay:true];
@@ -462,7 +462,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 - (void)viewDidHide
 {
     qDebug() << "viewDidHide";
-    m_platformWindow->obscureWindow();
+    m_platformWindow->updateExposedState(QSize());
 }
 
 - (void) flushBackingStore:(QCocoaBackingStore *)backingStore region:(const QRegion &)region offset:(QPoint)offset
@@ -2184,9 +2184,12 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
 {
     m_requestUpdateCalled = false;
 
-    if (!m_platformWindow->isExposed())
-        m_platformWindow->exposeWindow();
-    else
+    // maintain exposed state (initial expose or geometry change)
+    QSize viewSize = qt_mac_toQSize(self.frame.size);
+    qreal dpr = m_platformWindow->devicePixelRatio();
+    bool exposeEventSent = m_platformWindow->updateExposedState(viewSize, dpr);
+
+    if (!exposeEventSent)
         m_platformWindow->deliverUpdateRequest(dirty);
 }
 

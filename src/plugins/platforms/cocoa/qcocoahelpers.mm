@@ -189,6 +189,11 @@ NSSize qt_mac_toNSSize(const QSize &qtSize)
     return NSMakeSize(qtSize.width(), qtSize.height());
 }
 
+QSize qt_mac_toQSize(NSSize size)
+{
+    return QSize(size.width, size.height);
+}
+
 NSRect qt_mac_toNSRect(const QRect &rect)
 {
     return NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height());
