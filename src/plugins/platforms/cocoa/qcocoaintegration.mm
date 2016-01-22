@@ -488,11 +488,18 @@ QPlatformOpenGLContext *QCocoaIntegration::createPlatformOpenGLContext(QOpenGLCo
 {
     QCocoaGLContext *platformContext = 0;
 
-    // Crate a QCocoaGLContext subclass according to the QWindow mode.
-    BOOL layer = qt_mac_resolveOption(NO, targetWindow, "_q_mac_wantsLayer", "QT_MAC_WANTS_LAYER");
-    qDebug() << "gl context layer" << layer << targetWindow << context->surface();
+    // Crate a QCocoaGLContext subclass according to the NSView mode - layer
+    // or normal. This requires a platform window. If one isn't available then
+    // print a warning and select a normal context. (The context type selection
+    // could be further delayed until first-use if this becomes a problem.)
 
-    if (layer) {
+    QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(targetWindow->handle());
+    if (!cocoaWindow)
+        qWarning() << "QCocoaIntegration::createPlatformOpenGLContext:"
+                   << "Can't make layer/no-layer OpenGL context decision."
+                   << "No platform winow for" << targetWindow;
+
+    if (cocoaWindow && cocoaWindow->m_inLayerMode) {
         platformContext = new QCocoaGLLayerContext(context->format(),
                                                    context->shareHandle(),
                                                    context->nativeHandle(),

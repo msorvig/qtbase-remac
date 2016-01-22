@@ -396,7 +396,6 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
                                                      "QT_MAC_WANTS_LAYER");
         qDebug() << "Enable layer" << enable;
 
-        m_inLayerMode = enable;
         [m_qtView setWantsLayer:enable];
     }
     setGeometry(tlw->geometry());

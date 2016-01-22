@@ -227,30 +227,30 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 #ifndef QT_NO_OPENGL
 - (CALayer *)makeBackingLayer
 {
-    qDebug() << "makeBackingLayer";
+    qDebug() << "makeBackingLayer" << m_platformWindow->m_inLayerMode;
 
-    if (m_platformWindow->m_inLayerMode) {
-        // A layer was requested, but should we create an OpenGL or raster
-        // layer? m_window->supportsOpenGL() gives a hint, but this is more
-        // of a capability: QWidgetWindow will return true but may still push
-        // updates through the QBackingStore raster path.
+    // This function is called if layer mode is active, which can
+    // happen if this view requests a layer, or if a parent view
+    // requests a layer.
 
-        // Create an OPenGL layer if OpenGL content is possible. This
-        // means widgets always have to render through the OpenGL code
-        // path when in layer mode.
-        if (m_window->surfaceType() == QWindow::OpenGLSurface ||
-            m_window->surfaceType() == QWindow::RasterGLSurface) {
-            return [[QCocoaOpenGLLayer alloc] initWithQNSView:self];
-        } else {
-            // RasterSurface windows could get a raster layer, or
-            // use the standard drawRect raster path. Dot he latter
-            // for now.
-            return [super makeBackingLayer];
-        }
-    }
+    m_platformWindow->m_inLayerMode = true;
 
-    // This function may be called even if we didn't request a layer
-    // for this view. Fall back to the default implentation.
+    // OpenGL rendering needs a layer: We are rendering into a
+    // non-default framebuffer, the exact one only known at
+    // layer draw callback time.
+    if (m_window->surfaceType() == QWindow::OpenGLSurface)
+        return [[QCocoaOpenGLLayer alloc] initWithQNSView:self];
+
+    // RasterGLSurface may push either OpenGL or raster content.
+    // Since which one isn't known at this point, create an OpenGL
+    // layer in order to be able to handle OpenGL content. The
+    // raster flush path then handles flusing raster content to
+    // the OpenGL layer.
+    if (m_window->surfaceType() == QWindow::RasterGLSurface)
+        return [[QCocoaOpenGLLayer alloc] initWithQNSView:self];
+
+    // RasterSurface windows could get a raster layer, or use the
+    // standard drawRect raster path. Do he latter for now.
     return [super makeBackingLayer];
 }
 #endif
@@ -545,11 +545,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 - (void) drawRect:(NSRect)dirtyRect
 {
-    if (m_platformWindow->m_inLayerMode) {
-        qDebug() << "drawRect in layer mode";
-        return;
-    }
-
     QBoolBlocker inDrawRect(m_inDrawRect);
     QRect dirty = qt_mac_toQRect(dirtyRect);
 #ifndef QT_NO_OPENGL
