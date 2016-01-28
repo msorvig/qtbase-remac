@@ -51,6 +51,7 @@
 #ifndef QT_NO_OPENGL
 #include "qcocoaglcontext.h"
 #include "qcocoagllayer.h"
+#include <QtGui/QOpenGLPaintDevice>
 #endif
 #include "qcocoaintegration.h"
 
@@ -153,6 +154,7 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         m_resendKeyEvent = false;
         m_scrolling = false;
         m_inDrawRect = false;
+        m_inFlushBackingStore = false;
 
         if (!touchDevice) {
             touchDevice = new QTouchDevice;
@@ -470,13 +472,30 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     m_backingStore = backingStore;
     m_backingStoreOffset = offset * m_backingStore->getBackingStoreDevicePixelRatio();
 
-    // If this flushBackingStore call comes as a result of the expose event sent in
-    // drawRect then we're done; the backingstore content will be flushed later in
-    // that function.
+    // Standard Qt behavior requires that backing store flush should be synchronous,
+    // so the expected behavior here is to immediately flush the backing store content
+    // to the QNSView. However, if this flush is being called as a result of a paint
+    // request from [drawRect:] then we are done - there is a displyIfNeeded in progress
+    // and we don't want to trigger a new one. This is the "good", performant code path.
+    if (m_inDrawRect)
+        return;
 
-    // If not we trigger a drawRect call by invalidating the view.
-    foreach (QRect rect, region.rects())
-        [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
+    // If not trigger a drawRect call by invalidating the view and triggering a
+    // synchrounous redraw. This code path will be triggered if/when Qt or the
+    // application flushes the backing store outside of UpdateRequest or ExposeEvent
+    // callbacks. This code path is susceptible to performance issues if flush is
+    // called more often than ~60 times per second.
+    bool usesCustomOpenGLLayer = (m_platformWindow->m_inLayerMode && m_window->supportsOpenGL());
+    if (!usesCustomOpenGLLayer) {
+        m_inFlushBackingStore = true;
+        foreach (QRect rect, region.rects())
+            [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
+        [self displayIfNeeded];
+        m_inFlushBackingStore = false;
+    } else {
+        // OpenGL layer mode is async
+        m_requestUpdateCalled = true;
+    }
 }
 
 - (void)clearBackingStore:(QCocoaBackingStore *)backingStore
@@ -535,18 +554,11 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     }
 }
 
-- (void) triggerQtDrawFrame:(QRect) dirty
-{
-    if (!m_platformWindow->isExposed())
-        m_platformWindow->exposeWindow();
-    else
-        m_platformWindow->deliverUpdateRequest(dirty);
-}
-
 - (void) drawRect:(NSRect)dirtyRect
 {
     QBoolBlocker inDrawRect(m_inDrawRect);
     QRect dirty = qt_mac_toQRect(dirtyRect);
+
 #ifndef QT_NO_OPENGL
     if (m_glContext && m_shouldSetGLContextinDrawRect) {
         [m_glContext->nativeContext() setView:self];
@@ -560,14 +572,29 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     // qDebug() << "drawRect window type" << m_window->supportsOpenGL();
 
-    // Request frame from Qt
-    [self triggerQtDrawFrame:dirty];
+    // Request frame from Qt. This is a synchronous call, where Qt
+    // should draw and flush before returning. The excepton is if
+    // this [drawRect:] call was itself triggered by a backingstore
+    // flush; in that case there already is new/up to date backingstore
+    // content.
+    if (!m_inFlushBackingStore)
+        [self sendUpdateRequest:dirty];
 
-    // --> Drawing (by Qt) is done here <---
+    // Now draw the backing store
+    bool usesCustomOpenGLLayer = (m_platformWindow->m_inLayerMode && m_window->supportsOpenGL());
+    if (!usesCustomOpenGLLayer)
+        [self drawBackingStoreUsingCoreGraphics:dirtyRect];
 
-//    qDebug() << "drawRect" << m_backingStore;
+    [self invalidateWindowShadowIfNeeded];
+}
 
-    // For OpenGL content should have been flushed at this point; we're done
+// Draws the backing store content to the QNSView using Core Graphcis.
+// This function assumes that the QNSView is in a configuration that
+// supports Core Graphics, such as non-layer mode or layer mode with
+// the default layer. In particular, using this function with a QCocoaGLLayer
+// backed view won't work.
+- (void) drawBackingStoreUsingCoreGraphics:(NSRect)dirtyRect
+{
     if (!m_backingStore)
         return;
 
@@ -622,8 +649,28 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     CGImageRelease(cleanImg);
     CGImageRelease(subMask);
     CGImageRelease(bsCGImage);
+}
 
-    [self invalidateWindowShadowIfNeeded];
+// Draws the backing store using an QOpenGLPaintDevice. This
+// function assumes that there is a current OpengGL context.
+- (void) drawBackingStoreUsingQOpenGL
+{
+    if (!m_backingStore)
+        return;
+
+    QImage backingStoreImage = m_backingStore->toImage();
+
+    glClearColor(1.0, 0.5, 0.5, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // TODO: draw backingStoreImage on GL context - but how?
+    // Using QOpenGLPaintDevice gives a dependency inversion where
+    // the platform plugin depends on QtGui
+
+    // QOpenGLPaintDevice glDevice;
+    // glDevice.setSize(backingStoreImage.size());
+    // QPainter p(&glDevice);
+    // p.drawImage(QPoint(0, 0), backingStoreImage);
 }
 
 - (BOOL) isFlipped
@@ -2107,7 +2154,7 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
 {
     m_requestUpdateCalled = true;
     if (m_platformWindow->m_inLayerMode) {
-
+        // ### we're currently auto-updating layers.
     } else {
         [self requestCVDisplayLinkUpdate];
     }
@@ -2131,6 +2178,16 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     } else {
         [self requestCVDisplayLinkUpdate];
     }
+}
+
+- (void) sendUpdateRequest:(QRect) dirty
+{
+    m_requestUpdateCalled = false;
+
+    if (!m_platformWindow->isExposed())
+        m_platformWindow->exposeWindow();
+    else
+        m_platformWindow->deliverUpdateRequest(dirty);
 }
 
 - (void) requestCVDisplayLinkUpdate
@@ -2191,7 +2248,7 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     if (!m_requestUpdateCalled)
         return;
     m_requestUpdateCalled = false;
-    QCoreApplication::postEvent(m_window, new QEvent(QEvent::UpdateRequest));
+    [self setNeedsDisplay:true];
 }
 
 CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* now, const CVTimeStamp* outputTime,

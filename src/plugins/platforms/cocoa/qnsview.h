@@ -85,6 +85,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     QHash<int, bool> m_acceptedKeyDowns;
     QSet<Qt::MouseButton> m_acceptedMouseDowns;
     bool m_inDrawRect;
+    bool m_inFlushBackingStore;
 }
 
 - (id)init;
@@ -98,6 +99,8 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 - (void)setMaskRegion:(const QRegion *)region;
 - (void)invalidateWindowShadowIfNeeded;
 - (void)drawRect:(NSRect)dirtyRect;
+- (void)drawBackingStoreUsingCoreGraphics:(NSRect)dirtyRect;
+- (void)drawBackingStoreUsingQOpenGL;
 - (void)updateGeometry;
 - (void)notifyWindowStateChanged:(Qt::WindowState)newState;
 - (void)windowNotification : (NSNotification *) windowNotification;
@@ -147,6 +150,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 - (void) requestUpdate;
 - (void) requestUpdateWithRect:(QRect)rect;
 - (void) requestUpdateWithRegion:(QRegion)region;
+- (void) sendUpdateRequest:(QRect)rect;
 
 @end
 

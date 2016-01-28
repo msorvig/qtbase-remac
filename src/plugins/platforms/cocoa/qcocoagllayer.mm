@@ -106,7 +106,9 @@
 //    qDebug() << "drawInOpenGLContext" << "draw fbo is" << m_drawFbo;
 
     QRect dirty(0,0, 999, 999);
-    [m_qtView triggerQtDrawFrame:dirty];
+    [m_qtView sendUpdateRequest:dirty];
+
+    [m_qtView drawBackingStoreUsingQOpenGL];
 }
 
 @end
