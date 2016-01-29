@@ -64,6 +64,7 @@ public:
     ~QWidgetWindow();
 
     QWidget *widget() const { return m_widget; }
+    void requestNativeUpdate(QWidget *target);
 #ifndef QT_NO_ACCESSIBILITY
     QAccessibleInterface *accessibleRoot() const Q_DECL_OVERRIDE;
 #endif
@@ -124,6 +125,7 @@ private:
 #ifndef QT_NO_DRAGANDDROP
     QPointer<QWidget> m_dragTarget;
 #endif
+    QSet<QWidget *> m_udpateWidgets;
 };
 
 QT_END_NAMESPACE

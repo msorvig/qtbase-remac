@@ -294,6 +294,7 @@ public:
 
     QWidget *window() const;
     QWidget *nativeParentWidget() const;
+    QWidget *nativeWidget() const;
     inline QWidget *topLevelWidget() const { return window(); }
 
     // Widget appearance functions

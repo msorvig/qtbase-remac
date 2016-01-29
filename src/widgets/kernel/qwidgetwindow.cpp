@@ -294,11 +294,13 @@ bool QWidgetWindow::event(QEvent *event)
         break;
 
     case QEvent::UpdateRequest:
-        // This is not the same as an UpdateRequest for a QWidget. That just
-        // syncs the backing store while here we also must mark as dirty.
-        m_widget->repaint();
+        //qDebug() << "QWidgetwindow::updateRequest" << m_udpateWidgets.count();
+        foreach (QWidget *widget, m_udpateWidgets) {
+            QEvent event(QEvent::UpdateRequest);
+            QApplication::sendEvent(widget, &event);
+        }
+        m_udpateWidgets.clear();
         return true;
-
     default:
         break;
     }
@@ -958,6 +960,12 @@ void QWidgetWindow::updateObjectName()
         name = QString::fromUtf8(m_widget->metaObject()->className()) + QStringLiteral("Class");
     name += QStringLiteral("Window");
     setObjectName(name);
+}
+
+void QWidgetWindow::requestNativeUpdate(QWidget *target)
+{
+    m_udpateWidgets.insert(target);
+    requestUpdate();
 }
 
 QT_END_NAMESPACE

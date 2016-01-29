@@ -48,6 +48,7 @@
 #include <private/qapplication_p.h>
 #include <private/qpaintengine_raster_p.h>
 #include <private/qgraphicseffect_p.h>
+#include <private/qwidgetwindow_p.h>
 #include <QtGui/private/qwindow_p.h>
 
 #include <qpa/qplatformbackingstore.h>
@@ -447,10 +448,12 @@ void QWidgetBackingStore::sendUpdateRequest(QWidget *widget, UpdateTime updateTi
         return;
 
     switch (updateTime) {
-    case UpdateLater:
+    case UpdateLater: {
         updateRequestSent = true;
-        QApplication::postEvent(widget, new QEvent(QEvent::UpdateRequest), Qt::LowEventPriority);
+        QWidgetWindow *window = static_cast<QWidgetWindow *>(widget->nativeWidget()->windowHandle());
+        window->requestNativeUpdate(widget);
         break;
+        }
     case UpdateNow: {
         QEvent event(QEvent::UpdateRequest);
         QApplication::sendEvent(widget, &event);

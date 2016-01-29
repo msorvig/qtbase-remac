@@ -4325,6 +4325,25 @@ QWidget *QWidget::nativeParentWidget() const
     return parent;
 }
 
+/*!
+    \since 5.7
+
+    Returns the closest native widget for this widget, i.e closest ancestor widget
+    that has a system identifier, or 0 if it does not have any native parent.
+
+    Unlike nativeParentWidget() this function can return this widget.
+
+    \sa effectiveWinId()
+*/
+QWidget *QWidget::nativeWidget() const
+{
+    QWidget *candidate = const_cast<QWidget *>(this);
+    while (candidate && !candidate->windowHandle())
+        candidate = candidate->parentWidget();
+    return candidate;
+}
+
+
 /*! \fn QWidget *QWidget::topLevelWidget() const
     \obsolete
 
