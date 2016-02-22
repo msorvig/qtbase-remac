@@ -493,11 +493,11 @@ QPlatformOpenGLContext *QCocoaIntegration::createPlatformOpenGLContext(QOpenGLCo
     // print a warning and select a normal context. (The context type selection
     // could be further delayed until first-use if this becomes a problem.)
 
-    QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(targetWindow->handle());
+    QCocoaWindow *cocoaWindow = targetWindow ? static_cast<QCocoaWindow *>(targetWindow->handle()) : nullptr;
     if (!cocoaWindow)
         qWarning() << "QCocoaIntegration::createPlatformOpenGLContext:"
                    << "Can't make layer/no-layer OpenGL context decision."
-                   << "No platform winow for" << targetWindow;
+                   << "No platform window for" << targetWindow;
 
     if (cocoaWindow && cocoaWindow->m_inLayerMode) {
         platformContext = new QCocoaGLLayerContext(context->format(),
