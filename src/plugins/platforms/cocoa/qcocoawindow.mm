@@ -394,8 +394,6 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
         }
         BOOL enable = qt_mac_resolveOption(NO, tlw, "_q_mac_wantsLayer",
                                                      "QT_MAC_WANTS_LAYER");
-        qDebug() << "Enable layer" << enable;
-
         [m_qtView setWantsLayer:enable];
     }
     setGeometry(tlw->geometry());
