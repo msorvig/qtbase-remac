@@ -231,6 +231,9 @@ public:
 
     static QPoint bottomLeftClippedByNSWindowOffsetStatic(QWindow *window);
     QPoint bottomLeftClippedByNSWindowOffset() const;
+    static NSView *transferViewOwnershipStatic(QWindow *window);
+    NSView *transferViewOwnership();
+
 protected:
     void recreateWindow(const QPlatformWindow *parentWindow);
     QCocoaNSWindow *createNSWindow();
@@ -259,6 +262,7 @@ public: // for QNSView
     // TODO merge to one variable if possible
     bool m_contentViewIsEmbedded; // true if the m_contentView is actually embedded in a "foreign" NSView hiearchy
     bool m_contentViewIsToBeEmbedded; // true if the m_contentView is intended to be embedded in a "foreign" NSView hiearchy
+    bool m_ownsQtView;
 
     QCocoaWindow *m_parentCocoaWindow;
     bool m_isNSWindowChild; // this window is a non-top level QWindow with a NSWindow.

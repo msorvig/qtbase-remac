@@ -223,6 +223,8 @@ QFunctionPointer QCocoaNativeInterface::platformFunction(const QByteArray &funct
 {
     if (function == QCocoaWindowFunctions::bottomLeftClippedByNSWindowOffsetIdentifier())
         return QFunctionPointer(QCocoaWindowFunctions::BottomLeftClippedByNSWindowOffset(QCocoaWindow::bottomLeftClippedByNSWindowOffsetStatic));
+    if (function == QCocoaWindowFunctions::getNSViewIdentifier())
+        return QFunctionPointer(QCocoaWindowFunctions::GetNSView(QCocoaWindow::transferViewOwnershipStatic));
 
     return Q_NULLPTR;
 }

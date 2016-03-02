@@ -168,10 +168,13 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
 
 - (void)dealloc
 {
+    if (m_ownsQWindow)
+        delete m_window;
+    m_window = 0;
+
     CGImageRelease(m_maskImage);
     [m_trackingArea release];
     m_maskImage = 0;
-    m_window = 0;
     [m_inputSource release];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [m_mouseMoveHelper release];
@@ -194,6 +197,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     m_sendKeyEvent = false;
     m_trackingArea = nil;
 
+    m_ownsQWindow = !m_platformWindow->m_ownsQtView;
 
     CVDisplayLinkCreateWithActiveCGDisplays(&m_displayLink);
     CVDisplayLinkSetOutputCallback(m_displayLink, &qNsViewDisplayLinkCallback, self);

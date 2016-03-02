@@ -339,6 +339,7 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_forwardWindow(0)
     , m_contentViewIsEmbedded(false)
     , m_contentViewIsToBeEmbedded(false)
+    , m_ownsQtView(true)
     , m_parentCocoaWindow(0)
     , m_isNSWindowChild(false)
     , m_effectivelyMaximized(false)
@@ -1819,6 +1820,46 @@ QPoint QCocoaWindow::bottomLeftClippedByNSWindowOffset() const
     const NSRect visibleRect = [m_contentView visibleRect];
 
     return QPoint(visibleRect.origin.x, -visibleRect.origin.y + (origin.y - visibleRect.size.height));
+}
+
+NSView *QCocoaWindow::transferViewOwnershipStatic(QWindow *window)
+{
+    if (window->handle())
+        return static_cast<QCocoaWindow *>(window->handle())->transferViewOwnership();
+    return 0;
+}
+
+// Transfer ownership of the QNSView instance from the QCocoaWindow/QWindow instance to
+// the caller, and also transfer ownership of the QWindow instance to the QNSView instance.
+NSView *QCocoaWindow::transferViewOwnership()
+{
+    // Already transfered? Return the view and do nothing.
+    if (!m_ownsQtView)
+        return m_qtView;
+
+    // Check if the view actually is a QNSView and not foregin view.
+    // Transferring ownership of the QWindow instance to a foregin view
+    // does not make sense: a generic NSView has no idea what a QWindow is.
+    if (!m_qtView) {
+        qWarning("QCocoaWindow::transferViewOwnership: Could not transfer ownership to a non-QNSView");
+        return 0;
+    }
+
+    // This function must be called instead of showing via the standard QWindow API.
+    if (isExposed()) {
+        qWarning("QCocoaWindow::transferViewOwnership: Could not transfer ownership of a visible window");
+        return 0;
+    }
+
+    // Prepare the window for "embedded" mode.
+    setEmbeddedInForeignView(true);
+
+    // Normally, ~QCocoaWindow() deletes the QNSView instance. Set
+    // ownership flags to prevent this and have [QNSView dealloc]
+    // delete the QWindow (and QCocoaWindow) instead.
+    m_ownsQtView = false;
+    m_qtView->m_ownsQWindow = true;
+    return m_qtView;
 }
 
 QMargins QCocoaWindow::frameMargins() const

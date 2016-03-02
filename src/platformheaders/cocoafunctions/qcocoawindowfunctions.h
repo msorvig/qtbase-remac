@@ -31,14 +31,16 @@
 **
 ****************************************************************************/
 
-#ifndef QXCBWINDOWFUNCTIONS_H
-#define QXCBWINDOWFUNCTIONS_H
+#ifndef QCOCOAWINDOWFUNCTIONS_H
+#define QCOCOAWINDOWFUNCTIONS_H
 
+#include <QtCore/qglobal.h>
 #include <QtPlatformHeaders/QPlatformHeaderHelper>
 
 QT_BEGIN_NAMESPACE
 
 class QWindow;
+Q_FORWARD_DECLARE_OBJC_CLASS(NSView);
 
 class QCocoaWindowFunctions {
 public:
@@ -49,9 +51,20 @@ public:
     {
         return QPlatformHeaderHelper::callPlatformFunction<QPoint, BottomLeftClippedByNSWindowOffset>(bottomLeftClippedByNSWindowOffsetIdentifier(),window);
     }
+
+
+    typedef NSView *(*GetNSView)(QWindow *window);
+    static const QByteArray getNSViewIdentifier() { return QByteArrayLiteral("GetNSView"); }
+
+    static NSView *getNSView(QWindow *window)
+    {
+        window->create();
+        return QPlatformHeaderHelper::callPlatformFunction<NSView *, GetNSView>(getNSViewIdentifier(), window);
+    }
+
 };
 
 
 QT_END_NAMESPACE
 
-#endif // QXCBWINDOWFUNCTIONS_H
+#endif // QCOCOAWINDOWFUNCTIONS_H

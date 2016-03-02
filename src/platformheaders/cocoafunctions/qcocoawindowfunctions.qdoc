@@ -56,3 +56,33 @@
     This is a convenience function that can be used directly instead of resolving the function pointer.
     \a window will be relayed to the function retrieved by QGuiApplication
 */
+
+/*!
+    \typedef QCocoaWindowFunctions::GetNSView
+
+    This is the typedef for the function returned by QGuiApplication::platformFunction when passed getNSViewIdentifier.
+*/
+
+/*!
+    \fn QByteArray QCocoaWindowFunctions::getNSViewIdentifier()
+
+    This function returnes the bytearray that can be used to query
+    QGuiApplication::platformFunction to retrieve the GetNSView function.
+*/
+
+/*!
+    \fn NSView *QCocoaWindowFunctions::getNSView(QWindow *window)
+
+    Returns the NSView for the given \a window. This NSView can be used to
+    embed Qt content in native Cocoa view hierarchies.
+
+    The returned NSView takes ownership of the QWindow. Application code
+    should not delete it, use retain/release (or ARC) on the NSView instead
+    to control window lifetime.
+
+    The view can be resized and repartened as well as shown and hidden.
+
+    This is a convenience function that can be used directly instead of resolving the function pointer.
+    \a window will be relayed to the function retrieved by QGuiApplication
+*/
+
