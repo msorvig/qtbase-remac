@@ -413,6 +413,7 @@ QCocoaWindow::~QCocoaWindow()
 #endif
 
     QMacAutoReleasePool pool;
+    [m_nsWindow makeFirstResponder:nil];
     [m_nsWindow setContentView:nil];
     [m_nsWindow.helper detachFromPlatformWindow];
     if (m_isNSWindowChild) {
