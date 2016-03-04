@@ -58,20 +58,20 @@
 */
 
 /*!
-    \typedef QCocoaWindowFunctions::GetNSView
+    \typedef QCocoaWindowFunctions::TransferNativeView
 
-    This is the typedef for the function returned by QGuiApplication::platformFunction when passed getNSViewIdentifier.
+    This is the typedef for the function returned by QGuiApplication::platformFunction when passed transferNativeViewIdentifier.
 */
 
 /*!
-    \fn QByteArray QCocoaWindowFunctions::getNSViewIdentifier()
+    \fn QByteArray QCocoaWindowFunctions::transferNativeViewIdentifier()
 
     This function returnes the bytearray that can be used to query
-    QGuiApplication::platformFunction to retrieve the GetNSView function.
+    QGuiApplication::platformFunction to retrieve the TransferNativeView function.
 */
 
 /*!
-    \fn NSView *QCocoaWindowFunctions::getNSView(QWindow *window)
+    \fn NSView *QCocoaWindowFunctions::transferNativeView(QWindow *window)
 
     Returns the NSView for the given \a window. This NSView can be used to
     embed Qt content in native Cocoa view hierarchies.

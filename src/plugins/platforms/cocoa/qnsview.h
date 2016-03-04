@@ -86,7 +86,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     QSet<Qt::MouseButton> m_acceptedMouseDowns;
     bool m_inDrawRect;
     bool m_inFlushBackingStore;
-    bool m_ownsQWindow;
+    @public bool m_ownsQWindow;
 }
 
 - (id)init;

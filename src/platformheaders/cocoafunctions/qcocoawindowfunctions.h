@@ -53,13 +53,13 @@ public:
     }
 
 
-    typedef NSView *(*GetNSView)(QWindow *window);
-    static const QByteArray getNSViewIdentifier() { return QByteArrayLiteral("GetNSView"); }
+    typedef NSView *(*TransferNativeView)(QWindow *window);
+    static const QByteArray transferNativeViewIdentifier() { return QByteArrayLiteral("TransferNativeView"); }
 
-    static NSView *getNSView(QWindow *window)
+    static NSView *transferNativeView(QWindow *window)
     {
         window->create();
-        return QPlatformHeaderHelper::callPlatformFunction<NSView *, GetNSView>(getNSViewIdentifier(), window);
+        return QPlatformHeaderHelper::callPlatformFunction<NSView *, TransferNativeView>(transferNativeViewIdentifier(), window);
     }
 
 };
