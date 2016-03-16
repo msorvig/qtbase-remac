@@ -104,6 +104,7 @@ NSPoint qt_mac_flipPoint(const QPoint &p);
 NSPoint qt_mac_flipPoint(const QPointF &p);
 
 NSRect qt_mac_flipRect(const QRect &rect);
+QRect qt_mac_flipRect(const NSRect &rect);
 
 Qt::MouseButton cocoaButton2QtButton(NSInteger buttonNum);
 

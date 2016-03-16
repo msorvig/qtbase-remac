@@ -376,6 +376,16 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
 #endif
     QMacAutoReleasePool pool;
 
+    // At this point QPlatformWindow::geometry() may contain the user-requested
+    // geometry. Call the initalGeometry helper which will give it a default geometry
+    // if there was no user geometry.
+    QPlatformWindow::setGeometry(initialGeometry(window(),
+                                 QPlatformWindow::geometry(), defaultWindowWidth, defaultWindowHeight));
+
+    // Propagate updated geometry back to QWindow. This will cause a call to QCocoaWindow::setGeometry()
+    // but we'll check m_inConstructor and return early.
+    tlw->setGeometry(QPlatformWindow::geometry()); // ### QHighDPI
+
     if (tlw->type() == Qt::ForeignWindow) {
         NSView *foreignView = (NSView *)WId(tlw->property("_q_foreignWinId").value<WId>());
         setContentView(foreignView);
@@ -396,9 +406,13 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
                                                      "QT_MAC_WANTS_LAYER");
         [m_qtView setWantsLayer:enable];
     }
-    setGeometry(tlw->geometry());
+
+
     recreateWindow(parent());
-    tlw->setGeometry(geometry());
+
+
+    setCocoaGeometry(QPlatformWindow::geometry());
+
     if (tlw->isTopLevel())
         setWindowIcon(tlw->icon());
     m_inConstructor = false;
@@ -466,18 +480,26 @@ QSurfaceFormat QCocoaWindow::format() const
 
 void QCocoaWindow::setGeometry(const QRect &rectIn)
 {
-    QBoolBlocker inSetGeometry(m_inSetGeometry, true);
+    // Refuse external geometry updates while in the QCocoaWindow constructor. This
+    // can happen if/when QCocoaWindow wants to update the QWindow geometry.
+    if (m_inConstructor)
+        return;
 
     QRect rect = rectIn;
-    // This means it is a call from QWindow::setFramePosition() and
-    // the coordinates include the frame (size is still the contents rectangle).
+
+    QBoolBlocker inSetGeometry(m_inSetGeometry, true);
+
+    qDebug() << "QCocoaWindow::setGeometry" << rectIn << geometry();
+
+    // Determine if this is a call from QWindow::setFramePosition(). If so,
+    // the position includes the frame. Size is still the content size.
     if (qt_window_private(const_cast<QWindow *>(window()))->positionPolicy
             == QWindowPrivate::WindowFrameInclusive) {
         const QMargins margins = frameMargins();
+
         rect.moveTopLeft(rect.topLeft() + QPoint(margins.left(), margins.top()));
     }
-    if (geometry() == rect)
-        return;
+
 #ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
     qDebug() << "QCocoaWindow::setGeometry" << this << rect;
 #endif
@@ -501,10 +523,39 @@ QRect QCocoaWindow::geometry() const
     return QPlatformWindow::geometry();
 }
 
+//
 void QCocoaWindow::setCocoaGeometry(const QRect &rect)
 {
     QMacAutoReleasePool pool;
 
+#if 1
+    // Special case for child NSWindows where child NSWindow geometry needs to
+    // be clipped against parent NSWindow geometry.
+    if (m_isNSWindowChild) {
+        QPlatformWindow::setGeometry(rect);
+        NSWindow *parentNSWindow = m_parentCocoaWindow->m_nsWindow;
+        NSRect parentWindowFrame = [parentNSWindow contentRectForFrameRect:parentNSWindow.frame];
+        clipWindow(parentWindowFrame);
+
+        // Call this here: updateGeometry in qnsview.mm is a no-op for this case
+        QWindowSystemInterface::handleGeometryChange(window(), rect);
+        return;
+    }
+
+    // Set the native NSView or NSWindow geometry. If there is a NSView then setting
+    // its geometry will also update its content view geometry (if neccesary)
+    if (m_nsWindow) {
+        [m_nsWindow setFrame:[m_nsWindow frameRectForContentRect:qt_mac_flipRect(rect)] display:NO animate:NO];
+    } else {
+        [m_contentView setFrame:qt_mac_toNSRect(rect)];
+    }
+
+    // QPlatformWindow::geometry() will be set by QNSView updateGeometry. However,
+    if (!m_qtView)
+        QPlatformWindow::setGeometry(rect);
+
+
+#else
     if (m_contentViewIsEmbedded) {
         QPlatformWindow::setGeometry(rect);
         return;
@@ -530,6 +581,7 @@ void QCocoaWindow::setCocoaGeometry(const QRect &rect)
         QPlatformWindow::setGeometry(rect);
 
     // will call QPlatformWindow::setGeometry(rect) during resize confirmation (see qnsview.mm)
+#endif
 }
 
 void QCocoaWindow::clipChildWindows()
@@ -1407,8 +1459,7 @@ QCocoaNSWindow * QCocoaWindow::createNSWindow()
 {
     QMacAutoReleasePool pool;
 
-    QRect rect = initialGeometry(window(), windowGeometry(), defaultWindowWidth, defaultWindowHeight);
-    NSRect frame = qt_mac_flipRect(rect);
+    NSRect frame = qt_mac_flipRect(QPlatformWindow::geometry());
 
     Qt::WindowType type = window()->type();
     Qt::WindowFlags flags = window()->flags();
