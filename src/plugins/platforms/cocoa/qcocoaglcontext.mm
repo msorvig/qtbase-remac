@@ -99,7 +99,6 @@ static void updateFormatFromContext(QSurfaceFormat *format)
         format->setOption(QSurfaceFormat::DeprecatedFunctions);
 
     // Debug context option not supported on OS X
-
     if (format->version() < qMakePair(3, 2))
         return;
 
@@ -260,44 +259,95 @@ QVariant QCocoaGLContext::nativeHandle() const
     return QVariant::fromValue<QCocoaNativeContext>(QCocoaNativeContext(m_context));
 }
 
-//
-// QCocoaGLViewContext Implementation
-//
-QCocoaGLViewContext::QCocoaGLViewContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share,
-                                 const QVariant &nativeHandle, QWindow *targetWindow)
-: m_shareContext(nil)
-{
-    m_targetWindow =targetWindow;
+typedef QHash<QWindow *, QCocoaGLContext *> WindowContexts;
+Q_GLOBAL_STATIC(WindowContexts, g_windowContexts);
 
-    if (!nativeHandle.isNull()) {
+QCocoaGLContext::QCocoaGLContext(QOpenGLContext *context, QWindow *targetWindow)
+:m_isLayerContext(false)
+,m_isValid(false)
+//,m_format()
+,m_context(nil)
+,m_shareContext(nil)
+,m_currentWindow(0)
+,m_targetWindow(targetWindow)
+{
+    QVariant nativeHandle = context->nativeHandle();
+    QCocoaGLContext *share = static_cast<QCocoaGLContext *>(context->shareHandle());
+
+    // Inspect any given targetWindow to see if this is a layer-mode context, in which
+    // case set the m_isLayerContext mode switch. If targetWindow is null, or has not
+    // been created yet, this this can stil be determined later when a surface is provided
+    // in makeCurrent().
+    //
+    // In layer mode most methods become no-ops, since CoreAnimation will make the
+    // context current before calling the draw callback and also swap when drawing
+    // is done. One important exception here is defaultFramebufferObject, which
+    // returns the current FBO for the layer.Drawing outside of the callback is not
+    // allowed in layer mode.
+    if (targetWindow) {
+        // Store window -> context acociation, for later lookup by layer initialization.
+        g_windowContexts()->insert(targetWindow, this);
+
+        // Layer mode checks. There are two, since this constructor may be called
+        // before the platform window and native views have been created.
+        if (targetWindow->handle()) {
+            // There is a native QNSView which may be configured for layer mode.
+            QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(targetWindow->handle());
+            m_isLayerContext = cocoaWindow->m_inLayerMode;
+        } else {
+            // Layer mode has been requested for this QWindow, or globally.
+            m_isLayerContext = qt_mac_resolveOption(NO, targetWindow,
+                                                   "_q_mac_wantsLayer", "QT_MAC_WANTS_LAYER");
+        }
+    }
+
+    qDebug() << "QCocoaGLContext target" << targetWindow  << "m_inLayerMode" << m_isLayerContext;
+
+    // In layer mode, native context creation is lazy and we store the format
+    // for later use in the layer context create callback.
+    if (m_isLayerContext) {
+//        m_format = context->format();
+//        setActiveWindow(targetWindow);
+
+//       if (nativeHandle.isValid())
+//            qWarning("QCocoaGLContext: Specifying a native context in layer mode is not supported");
+
+        // Assume we are good until native context creation possibly proves otherwise.
+ //       m_isValid = true;
+    }
+
+    // Handle case where QOpenGLContect has been constructed with an existing
+    // native NSOpenGLContext.
+    if (nativeHandle.isValid()) {
         if (!nativeHandle.canConvert<QCocoaNativeContext>()) {
             qWarning("QCocoaGLContext: Requires a QCocoaNativeContext");
             return;
         }
         QCocoaNativeContext handle = nativeHandle.value<QCocoaNativeContext>();
-        NSOpenGLContext *context = handle.context();
-        if (!context) {
+        m_context = handle.context();
+        if (!m_context) {
             qWarning("QCocoaGLContext: No NSOpenGLContext given");
             return;
         }
-
-        m_context = context;
         [m_context retain];
-        m_shareContext = share ? static_cast<QCocoaGLContext *>(share)->nativeContext() : nil;
+        m_shareContext = share ? share->nativeContext() : nil;
     } else {
+        qDebug() << "CreateGLContext";
         QMacAutoReleasePool pool; // For the SG Canvas render thread
-        m_context = createGLContext(format, share);
+        m_context = createGLContext(context->format(), share);
     }
 
-    // OpenGL surfaces can be ordered either above(default) or below the NSWindow.
-    const GLint order = qt_mac_resolveOption(1, "QT_MAC_OPENGL_SURFACE_ORDER");
-    [m_context setValues:&order forParameter:NSOpenGLCPSurfaceOrder];
+    // NSView OpenGL surfaces can be ordered either above(default) or below the NSWindow.
+    if (!m_isLayerContext) {
+        const GLint order = qt_mac_resolveOption(1, "QT_MAC_OPENGL_SURFACE_ORDER");
+        [m_context setValues:&order forParameter:NSOpenGLCPSurfaceOrder];
+    }
 
     // Update the QSurfaceFormat object to match the actual configuration of the native context.
-    m_format = updateSurfaceFormat(m_context, format);
+    m_format = updateSurfaceFormat(m_context, m_format);
 }
 
-QCocoaGLViewContext::~QCocoaGLViewContext()
+QCocoaGLContext::~QCocoaGLContext()
 {
     if (m_currentWindow && m_currentWindow.data()->handle())
         static_cast<QCocoaWindow *>(m_currentWindow.data()->handle())->setCurrentContext(0);
@@ -305,29 +355,65 @@ QCocoaGLViewContext::~QCocoaGLViewContext()
     [m_context release];
 }
 
-void QCocoaGLViewContext::swapBuffers(QPlatformSurface *surface)
+QCocoaGLContext *QCocoaGLContext::contextForTargetWindow(QWindow *window)
 {
+    return g_windowContexts()->value(window);
+}
+
+void QCocoaGLContext::swapBuffers(QPlatformSurface *surface)
+{
+    if (m_isLayerContext)
+        return;
+
     QWindow *window = static_cast<QCocoaWindow *>(surface)->window();
     setActiveWindow(window);
 
     [m_context flushBuffer];
 }
 
-bool QCocoaGLViewContext::makeCurrent(QPlatformSurface *surface)
+GLuint QCocoaGLContext::defaultFramebufferObject(QPlatformSurface *surface) const
 {
-    Q_ASSERT(surface->surface()->supportsOpenGL());
+    if (!m_isLayerContext)
+        return QPlatformOpenGLContext::defaultFramebufferObject(surface);
+
+    // Cast and dereference our way to the current FBO identifier on the layer
+    QNSView *view = reinterpret_cast<QCocoaWindow* >(m_currentWindow->handle())->qtView();
+    QCocoaOpenGLLayer *layer= (QCocoaOpenGLLayer *)[view layer];
+    return layer->m_drawFbo;
+}
+
+bool QCocoaGLContext::makeCurrent(QPlatformSurface *surface)
+{
     QMacAutoReleasePool pool;
+    QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(surface);
 
-    QWindow *window = static_cast<QCocoaWindow *>(surface)->window();
-    setActiveWindow(window);
+    // A layer mode context is tied to a spesific window. Check that
+    // makeCurrent is not trying to change it.
+    if (m_isLayerContext)
+        Q_ASSERT(m_currentWindow.data() == static_cast<QWindow *>(surface->surface()));
 
-    [m_context makeCurrentContext];
-    update();
+    // This point may be the first time the OpenGL context is connected
+    // to a window. Check if that window is in layer mode and switch if so.
+    if (cocoaWindow->m_inLayerMode)
+        m_isLayerContext = true;
+
+    setActiveWindow(cocoaWindow->window());
+
+    // Normally, Core Animation will have made the context current
+    if (!m_isLayerContext)
+        [m_context makeCurrentContext];
+
+    if (!m_isLayerContext)
+        update();
+
     return true;
 }
 
-void QCocoaGLViewContext::doneCurrent()
+void QCocoaGLContext::doneCurrent()
 {
+    if (m_isLayerContext)
+        return;
+
     if (m_currentWindow && m_currentWindow.data()->handle())
         static_cast<QCocoaWindow *>(m_currentWindow.data()->handle())->setCurrentContext(0);
 
@@ -336,23 +422,29 @@ void QCocoaGLViewContext::doneCurrent()
     [NSOpenGLContext clearCurrentContext];
 }
 
-bool QCocoaGLViewContext::isValid() const
+bool QCocoaGLContext::isValid() const
 {
-    return m_context != nil;
+    return m_isValid || m_context != nil;
 }
 
-bool QCocoaGLViewContext::isSharing() const
+bool QCocoaGLContext::isSharing() const
 {
     return m_shareContext != nil;
 }
 
-void QCocoaGLViewContext::update()
+void QCocoaGLContext::update()
 {
+    if (m_isLayerContext)
+        return;
+
     [m_context update];
 }
 
-void QCocoaGLViewContext::windowWasHidden()
+void QCocoaGLContext::windowWasHidden()
 {
+    if (m_isLayerContext)
+        return;
+
     // If the window is hidden, we need to unset the m_currentWindow
     // variable so that succeeding makeCurrent's will not abort prematurely
     // because of the optimization in setActiveWindow.
@@ -361,7 +453,7 @@ void QCocoaGLViewContext::windowWasHidden()
     m_currentWindow.clear();
 }
 
-void QCocoaGLViewContext::setActiveWindow(QWindow *window)
+void QCocoaGLContext::setActiveWindow(QWindow *window)
 {
     if (window == m_currentWindow.data())
         return;
@@ -376,77 +468,8 @@ void QCocoaGLViewContext::setActiveWindow(QWindow *window)
     QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(window->handle());
     cocoaWindow->setCurrentContext(this);
 
-    [(QNSView *) cocoaWindow->contentView() setQCocoaGLViewContext:this];
-}
-
-//
-// QCocoaGLLayerContext is lazy and does not create the pixel format and
-// native context right away. Instead, the format is stored and the
-// the native context is crated in the context create callback from layer.
-//
-// In addition several of the functions are no-ops, including makeCurrent(),
-// doneCurrent(), and swapBuffers(). This context only supports painting inside
-// the layer callback, at which point the context is already current. In
-// a similar fashion the layer will handle buffer swapping for us.
-//
-// This means that "free" usage of QOpenGLcontext is not supported when Qt
-// is in layer mode. Instead we support something close to QOpenGLWidget:
-// call update when you want to draw, and then actually draw in a paintEvent
-// callback.
-//
-QCocoaGLLayerContext::QCocoaGLLayerContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share,
-                                           const QVariant &nativeHandle, QWindow *targetWindow)
-{
-    if (!nativeHandle.isNull()) {
-        qWarning("QCocoaGLContext: Specifying a native context in layer mode is not supported");
-        return;
-    }
-
-    m_format = format;
-    m_context = 0;
-    m_shareContext = share;
-    m_targetWindow = targetWindow;
-
-    // Assume we are good until native context creation possibly proves otherwise.
-    m_isValid = true;
-}
-
-void QCocoaGLLayerContext::swapBuffers(QPlatformSurface *surface)
-{
-    Q_UNUSED(surface);
-    // No-op: core canimation swaps buffers
-}
-
-GLuint QCocoaGLLayerContext::defaultFramebufferObject(QPlatformSurface *surface) const
-{
-    Q_UNUSED(surface);
-
-    // Cast and dereference our way to the current FBO identifier on the layer
-    QNSView *view = reinterpret_cast<QCocoaWindow* >(m_targetWindow->handle())->qtView();
-    QCocoaOpenGLLayer *layer= (QCocoaOpenGLLayer *)[view layer];
-    return layer->m_drawFbo;
-}
-
-bool QCocoaGLLayerContext::makeCurrent(QPlatformSurface *surface)
-{
-    Q_UNUSED(surface);
-    // No-op: core canimation makes the context current before drawing
-    return true;
-}
-
-void QCocoaGLLayerContext::doneCurrent()
-{
-    // No-op
-}
-
-bool QCocoaGLLayerContext::isSharing() const
-{
-    return m_shareContext != 0;
-}
-
-bool QCocoaGLLayerContext::isValid() const
-{
-    return m_isValid;
+    if (!m_isLayerContext)
+        [(QNSView *) cocoaWindow->contentView() setQCocoaGLContext:this];
 }
 
 QT_END_NAMESPACE

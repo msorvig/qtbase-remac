@@ -48,9 +48,21 @@ class QCocoaGLContext : public QPlatformOpenGLContext
 {
 
 public:
-    void (*getProcAddress(const QByteArray &procName)) () Q_DECL_OVERRIDE;
-    QSurfaceFormat format() const Q_DECL_OVERRIDE;
+    QCocoaGLContext(QOpenGLContext *context, QWindow *targetWindow);
+    ~QCocoaGLContext();
 
+    // QPlatformOpenGLContext API
+    QSurfaceFormat format() const Q_DECL_OVERRIDE;
+    void swapBuffers(QPlatformSurface *surface) Q_DECL_OVERRIDE;
+    GLuint defaultFramebufferObject(QPlatformSurface *surface) const Q_DECL_OVERRIDE;
+    bool makeCurrent(QPlatformSurface *surface) Q_DECL_OVERRIDE;
+    void doneCurrent() Q_DECL_OVERRIDE;
+    bool isSharing() const Q_DECL_OVERRIDE;
+    bool isValid() const Q_DECL_OVERRIDE;
+    void (*getProcAddress(const QByteArray &procName)) () Q_DECL_OVERRIDE;
+
+    // Helpers
+    static QCocoaGLContext *contextForTargetWindow(QWindow *window);
     static NSOpenGLPixelFormat *createPixelFormat(const QSurfaceFormat &format);
     static NSOpenGLContext *createGLContext(QSurfaceFormat format,
                                             QPlatformOpenGLContext *shareContext);
@@ -58,55 +70,21 @@ public:
                                             NSOpenGLContext *shareContext);
     static QSurfaceFormat updateSurfaceFormat(NSOpenGLContext *context, QSurfaceFormat requestedFormat);
 
-    NSOpenGLContext *nativeContext() const;
-    QVariant nativeHandle() const;
-protected:
-    QSurfaceFormat m_format;
-    NSOpenGLContext *m_context;
-    QWindow *m_targetWindow;
-};
-
-// Context implementation for when QCocoaWindow is backed by a NSView
-// with an attached NSOpenGLContext.
-class QCocoaGLViewContext : public QCocoaGLContext
-{
-public:
-    QCocoaGLViewContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share,
-                        const QVariant &nativeHandle, QWindow *targetWindow);
-    ~QCocoaGLViewContext();
-
-    void swapBuffers(QPlatformSurface *surface) Q_DECL_OVERRIDE;
-    bool makeCurrent(QPlatformSurface *surface) Q_DECL_OVERRIDE;
-    void doneCurrent() Q_DECL_OVERRIDE;
-    bool isSharing() const Q_DECL_OVERRIDE;
-    bool isValid() const Q_DECL_OVERRIDE;
-
+    // Misc
     void update();
     void windowWasHidden();
-private:
+    NSOpenGLContext *nativeContext() const;
+    QVariant nativeHandle() const;
     void setActiveWindow(QWindow *window);
 
+private:
+    bool m_isLayerContext;
+    bool m_isValid;
+    QSurfaceFormat m_format;
+    NSOpenGLContext *m_context;
     NSOpenGLContext *m_shareContext;
     QPointer<QWindow> m_currentWindow;
-};
-
-// Context implementation for when QCocoaWindow is backed by a NSOpenGLLayer
-class QCocoaGLLayerContext : public QCocoaGLContext
-{
-public:
-    QCocoaGLLayerContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share,
-                         const QVariant &nativeHandle, QWindow *targetWindow);
-
-    void swapBuffers(QPlatformSurface *surface) Q_DECL_OVERRIDE;
-    GLuint defaultFramebufferObject(QPlatformSurface *surface) const Q_DECL_OVERRIDE;
-    bool makeCurrent(QPlatformSurface *surface) Q_DECL_OVERRIDE;
-    void doneCurrent() Q_DECL_OVERRIDE;
-    bool isSharing() const Q_DECL_OVERRIDE;
-    bool isValid() const Q_DECL_OVERRIDE;
-
-private:
-    QPlatformOpenGLContext *m_shareContext;
-    bool m_isValid;
+    QPointer<QWindow> m_targetWindow;
 };
 
 QT_END_NAMESPACE

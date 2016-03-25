@@ -35,13 +35,14 @@
 #include <OpenGL.h>
 
 @class QNSView;
+class QCocoaWindow;
 
 @interface QCocoaOpenGLLayer : NSOpenGLLayer
 {
     @public GLint m_drawFbo;
-    int frame;
-    QNSView *m_qtView;
+    QNSView *m_view;
+    QCocoaWindow *m_window;
 }
-- (id)initWithQNSView:(QNSView *)qtView;
+- (id)initWithQNSView:(QNSView *)qtView andQCocoaWindow:(QCocoaWindow *)qtWindow;
 
 @end

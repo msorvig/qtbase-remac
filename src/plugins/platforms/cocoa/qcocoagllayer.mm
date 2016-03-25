@@ -30,63 +30,78 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-
 #include "qcocoagllayer.h"
-#include "qnsview.h"
 
 #include <QtCore/qdebug.h>
+
+#include "qnsview.h"
+#include "qcocoawindow.h"
+#include "qcocoaglcontext.h"
+
 #include <OpenGL.h>
 #include <gl.h>
 
 @implementation QCocoaOpenGLLayer
 
-- (id)initWithQNSView:(QNSView *)qtView
+- (id)initWithQNSView:(QNSView *)qtView andQCocoaWindow:(QCocoaWindow *)qtWindow
 {
     [super init];
-    frame = 0;
-    m_qtView = qtView;
+    m_view = qtView;
+    m_window = qtWindow;
+
+    self.asynchronous = NO;
+
     return self;
 }
 
 - (NSOpenGLPixelFormat *)openGLPixelFormatForDisplayMask:(uint32_t)mask
 {
+    NSOpenGLPixelFormat *pixelFormat = 0;
+
     // TODO: according to docs we should use mask and create a NSOpenGLPFAScreenMask... somehow
     // NSOpenGLPFAScreenMask, CGDisplayIDToOpenGLDisplayMask(kCGDirectMainDisplay),
-
     Q_UNUSED(mask)
-    NSOpenGLPixelFormatAttribute attributes [] =
-    {
-        NSOpenGLPFADoubleBuffer,
-        NSOpenGLPFANoRecovery,
-        NSOpenGLPFAAccelerated,
-        0
-    };
 
-    NSOpenGLPixelFormat *pixelFormat = [[NSOpenGLPixelFormat alloc] initWithAttributes:attributes];
+    // Use pixel format from existing context if there is one. This means we respect
+    // the QSurfaceFormat configurtion created by the user.
+    QCocoaGLContext *qtContext = QCocoaGLContext::contextForTargetWindow(m_window->window());
+    if (qtContext) {
+        NSOpenGLContext *context = qtContext->nativeContext();
+        if (context) {
+            CGLContextObj cglContext = [context CGLContextObj];
+            CGLPixelFormatObj cglPixelFormat = CGLGetPixelFormat(cglContext);
+            pixelFormat = [[NSOpenGLPixelFormat alloc] initWithCGLPixelFormatObj:cglPixelFormat];
+        }
+    }
+
+    // Create a default pixel format if there was no context. This is probably not what
+    // was intended by user code, so we should possibly have a qWarning() here.
+    if (!pixelFormat) {
+        qWarning("QCocoaOpenGLLayer openGLPixelFormatForDisplayMask: Using default pixel format");
+
+        NSOpenGLPixelFormatAttribute attributes [] =
+        {
+            NSOpenGLPFADoubleBuffer,
+            NSOpenGLPFANoRecovery,
+            NSOpenGLPFAAccelerated,
+            0
+        };
+
+        pixelFormat = [[NSOpenGLPixelFormat alloc] initWithAttributes:attributes];
+    }
+
     return pixelFormat;
 }
 
 - (NSOpenGLContext *)openGLContextForPixelFormat:(NSOpenGLPixelFormat *)pixelFormat
 {
-    return [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:nil];
-}
-
-- (BOOL)isAsynchronous
-{
-    return YES; // Yes, call canDrawInOpenGLContext (below) at 60 fps
-}
-
-- (BOOL)canDrawInOpenGLContext:(NSOpenGLContext *)context
-                   pixelFormat:(NSOpenGLPixelFormat *)pixelFormat
-                  forLayerTime:(CFTimeInterval)timeInterval
-                   displayTime:(const CVTimeStamp *)timeStamp
-{
-    Q_UNUSED(context);
-    Q_UNUSED(pixelFormat);
-    Q_UNUSED(timeInterval);
-    Q_UNUSED(timeStamp);
-
-    return m_qtView->m_requestUpdateCalled;
+    // Use existing native context if there is one.
+    NSOpenGLContext *context = 0;
+    if (QCocoaGLContext *qtContext = QCocoaGLContext::contextForTargetWindow(m_window->window()))
+        context = qtContext->nativeContext();
+    if (!context)
+        context = [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:nil];
+    return context;
 }
 
 - (void)drawInOpenGLContext:(NSOpenGLContext *)context
@@ -99,16 +114,14 @@
     Q_UNUSED(timeInterval);
     Q_UNUSED(timeStamp);
 
-    ++frame;
-
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &m_drawFbo);
 //    qDebug() << "";
 //    qDebug() << "drawInOpenGLContext" << "draw fbo is" << m_drawFbo;
 
     QRect dirty(0,0, 999, 999);
-    [m_qtView sendUpdateRequest:dirty];
+    [m_view sendUpdateRequest:dirty];
 
-    [m_qtView drawBackingStoreUsingQOpenGL];
+    [m_view drawBackingStoreUsingQOpenGL];
 }
 
 @end

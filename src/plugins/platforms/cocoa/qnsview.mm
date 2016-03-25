@@ -233,7 +233,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 #ifndef QT_NO_OPENGL
 - (CALayer *)makeBackingLayer
 {
-    qDebug() << "makeBackingLayer" << m_platformWindow->m_inLayerMode;
+    qDebug() << "makeBackingLayer";
 
     // This function is called if layer mode is active, which can
     // happen if this view requests a layer, or if a parent view
@@ -245,7 +245,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // non-default framebuffer, the exact one only known at
     // layer draw callback time.
     if (m_window->surfaceType() == QWindow::OpenGLSurface)
-        return [[QCocoaOpenGLLayer alloc] initWithQNSView:self];
+        return [[QCocoaOpenGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
 
     // RasterGLSurface may push either OpenGL or raster content.
     // Since which one isn't known at this point, create an OpenGL
@@ -253,7 +253,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // raster flush path then handles flusing raster content to
     // the OpenGL layer.
     if (m_window->surfaceType() == QWindow::RasterGLSurface)
-        return [[QCocoaOpenGLLayer alloc] initWithQNSView:self];
+        return [[QCocoaOpenGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
 
     // RasterSurface windows could get a raster layer, or use the
     // standard drawRect raster path. Do he latter for now.
@@ -268,7 +268,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 }
 
 #ifndef QT_NO_OPENGL
-- (void) setQCocoaGLViewContext:(QCocoaGLViewContext *)context
+- (void) setQCocoaGLContext:(QCocoaGLContext *)context
 {
     m_glContext = context;
     [m_glContext->nativeContext() setView:self];
@@ -2220,32 +2220,17 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
 
 - (void) requestUpdate
 {
-    m_requestUpdateCalled = true;
-    if (m_platformWindow->m_inLayerMode) {
-        // ### we're currently auto-updating layers.
-    } else {
-        [self requestCVDisplayLinkUpdate];
-    }
+    [self requestCVDisplayLinkUpdate];
 }
 
 - (void) requestUpdateWithRect:(QRect) rect
 {
-    m_requestUpdateCalled = true;
-    if (m_platformWindow->m_inLayerMode) {
-
-    } else {
-        [self requestCVDisplayLinkUpdate];
-    }
+    [self requestCVDisplayLinkUpdate];
 }
 
 - (void) requestUpdateWithRegion:(QRegion) region
 {
-    m_requestUpdateCalled = true;
-    if (m_platformWindow->m_inLayerMode) {
-
-    } else {
-        [self requestCVDisplayLinkUpdate];
-    }
+    [self requestCVDisplayLinkUpdate];
 }
 
 - (void) sendUpdateRequest:(QRect) dirty
@@ -2263,9 +2248,8 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
 
 - (void) requestCVDisplayLinkUpdate
 {
-   // qDebug() << "requestCVDisplayLinkUpdate";
-
     m_requestUpdateCalled = true;
+
     // Start the display link if needed
     if (!CVDisplayLinkIsRunning(m_displayLink))
         CVDisplayLinkStart(m_displayLink);
@@ -2319,7 +2303,15 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     if (!m_requestUpdateCalled)
         return;
     m_requestUpdateCalled = false;
-    [self setNeedsDisplay:true];
+    if (m_platformWindow->m_inLayerMode) {
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[self layer] setNeedsDisplay];
+        });
+
+    } else {
+        [self setNeedsDisplay:true];
+    }
 }
 
 CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeStamp* now, const CVTimeStamp* outputTime,

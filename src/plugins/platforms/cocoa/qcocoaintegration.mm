@@ -486,34 +486,8 @@ QWindow *qsurface_cast<QWindow *>(QSurface *surface)
 
 QPlatformOpenGLContext *QCocoaIntegration::createPlatformOpenGLContext(QOpenGLContext *context, QWindow *targetWindow) const
 {
-    QCocoaGLContext *platformContext = 0;
-
-    // Crate a QCocoaGLContext subclass according to the NSView mode - layer
-    // or normal. This requires a platform window. If one isn't available then
-    // print a warning and select a normal context. (The context type selection
-    // could be further delayed until first-use if this becomes a problem.)
-
     QCocoaWindow *cocoaWindow = targetWindow ? static_cast<QCocoaWindow *>(targetWindow->handle()) : nullptr;
-    if (!cocoaWindow)
-        qWarning() << "QCocoaIntegration::createPlatformOpenGLContext:"
-                   << "Can't make layer/no-layer OpenGL context decision."
-                   << "No platform window for" << targetWindow;
-
-    if (cocoaWindow && cocoaWindow->m_inLayerMode) {
-        platformContext = new QCocoaGLLayerContext(context->format(),
-                                                   context->shareHandle(),
-                                                   context->nativeHandle(),
-                                                   targetWindow);
-    } else {
-        platformContext = new QCocoaGLViewContext(context->format(),
-                                                  context->shareHandle(),
-                                                  context->nativeHandle(),
-                                                  targetWindow);
-    }
-
-    // Propagate the native context up to QtGui. Note that in
-    // layer mode the native context has not been created yet
-    // and will be null.
+    QCocoaGLContext *platformContext = new QCocoaGLContext(context, targetWindow);
     context->setNativeHandle(platformContext->nativeHandle());
 
     return platformContext;
