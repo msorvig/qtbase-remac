@@ -62,6 +62,21 @@ public:
         return QPlatformHeaderHelper::callPlatformFunction<NSView *, TransferNativeView>(transferNativeViewIdentifier(), window);
     }
 
+    typedef const CVTimeStamp *(*DisplayLinkNowTime)(QWindow *window);
+    static const QByteArray displayLinkNowTimeIdentifier() { return QByteArrayLiteral("DisplayLinkNowTime"); }
+
+    static const CVTimeStamp *displayLinkNowTime(QWindow *window)
+    {
+        return QPlatformHeaderHelper::callPlatformFunction<const CVTimeStamp *, DisplayLinkNowTime>(displayLinkNowTimeIdentifier(), window);
+    }
+
+    typedef const CVTimeStamp *(*DisplayLinkOutputTime)(QWindow *window);
+    static const QByteArray displayLinkOutputTimeIdentifier() { return QByteArrayLiteral("DisplayLinkOutputTime"); }
+
+    static const CVTimeStamp *displayLinkOutputTime(QWindow *window)
+    {
+        return QPlatformHeaderHelper::callPlatformFunction<const CVTimeStamp *, DisplayLinkOutputTime>(displayLinkOutputTimeIdentifier(), window);
+    }
 };
 
 

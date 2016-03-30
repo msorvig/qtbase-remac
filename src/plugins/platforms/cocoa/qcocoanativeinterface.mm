@@ -228,6 +228,10 @@ QFunctionPointer QCocoaNativeInterface::platformFunction(const QByteArray &funct
         return QFunctionPointer(QCocoaWindowFunctions::BottomLeftClippedByNSWindowOffset(QCocoaWindow::bottomLeftClippedByNSWindowOffsetStatic));
     if (function == QCocoaWindowFunctions::transferNativeViewIdentifier())
         return QFunctionPointer(QCocoaWindowFunctions::TransferNativeView(QCocoaWindow::transferViewOwnershipStatic));
+    if (function == QCocoaWindowFunctions::displayLinkNowTimeIdentifier())
+        return QFunctionPointer(QCocoaWindowFunctions::TransferNativeView(QCocoaWindow::displayLinkNowTimeStatic));
+    if (function == QCocoaWindowFunctions::displayLinkOutputTimeIdentifier())
+        return QFunctionPointer(QCocoaWindowFunctions::TransferNativeView(QCocoaWindow::displayLinkOutputTimeStatic));
 
     return Q_NULLPTR;
 }

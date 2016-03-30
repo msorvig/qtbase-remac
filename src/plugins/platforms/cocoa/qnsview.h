@@ -36,7 +36,9 @@
 
 #include <AppKit/AppKit.h>
 
+#include <QtCore/QMutex>
 #include <QtCore/QPointer>
+#include <QtCore/QWaitCondition>
 #include <QtGui/QImage>
 #include <QtGui/QAccessible>
 
@@ -75,7 +77,13 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     NSTimer *m_displayLinkStopTimer;
     int m_displayLinkSerial;
     int m_displayLinkSerialAtTimerSchedule;
-    @public bool m_requestUpdateCalled;
+    bool m_requestUpdateCalled;
+    QMutex m_displayLinkMutex;
+    QWaitCondition m_displayLinkWait;
+    @public const CVTimeStamp *m_displayLinkNowTime;
+    @public const CVTimeStamp *m_displayLinkOutputTime;
+    bool m_displayLinkDisable;
+    bool m_isDisplayLinkUpdate;
 
     NSString *m_inputSource;
     QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper) *m_mouseMoveHelper;
@@ -155,6 +163,8 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 - (void) requestUpdateWithRect:(QRect)rect;
 - (void) requestUpdateWithRegion:(QRegion)region;
 - (void) sendUpdateRequest:(QRect)rect;
+
+- (void) triggerUpdateRequest:(const CVTimeStamp *) now output:(const CVTimeStamp *)target;
 
 @end
 

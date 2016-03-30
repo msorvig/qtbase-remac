@@ -407,9 +407,7 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
         [m_qtView setWantsLayer:enable];
     }
 
-
     recreateWindow(parent());
-
 
     setCocoaGeometry(QPlatformWindow::geometry());
 
@@ -420,11 +418,12 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
 
 QCocoaWindow::~QCocoaWindow()
 {
+     qDebug() << "QCocoaWindow::~QCocoaWindow" << this;
 #ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
-    qDebug() << "QCocoaWindow::~QCocoaWindow" << this;
-#endif
 
+#endif
     QMacAutoReleasePool pool;
+
     [m_nsWindow makeFirstResponder:nil];
     [m_nsWindow setContentView:nil];
     [m_nsWindow.helper detachFromPlatformWindow];
@@ -550,7 +549,8 @@ void QCocoaWindow::setCocoaGeometry(const QRect &rect)
         [m_contentView setFrame:qt_mac_toNSRect(rect)];
     }
 
-    // QPlatformWindow::geometry() will be set by QNSView updateGeometry. However,
+    // QPlatformWindow::geometry() will be set by QNSView updateGeometry, unless
+    // the NSView for the this QWindow is a foregin window.
     if (!m_qtView)
         QPlatformWindow::setGeometry(rect);
 
@@ -1903,7 +1903,7 @@ NSView *QCocoaWindow::transferViewOwnership()
         return 0;
     }
 
-    // This function must be called instead of showing via the standard QWindow API.
+    // This function must be called instead of showing the window via the standard QWindow API.
     if (isExposed()) {
         qWarning("QCocoaWindow::transferViewOwnership: Could not transfer ownership of a visible window");
         return 0;
@@ -1918,6 +1918,35 @@ NSView *QCocoaWindow::transferViewOwnership()
     m_ownsQtView = false;
     m_qtView->m_ownsQWindow = true;
     return m_qtView;
+}
+
+const CVTimeStamp *QCocoaWindow::displayLinkNowTimeStatic(QWindow *window)
+{
+    if (window->handle())
+         return static_cast<QCocoaWindow *>(window->handle())->displayLinkNowTime();
+    return nullptr;
+}
+
+const CVTimeStamp *QCocoaWindow::displayLinkNowTime() const
+{
+    if (!m_qtView)
+        return 0;
+    return m_qtView->m_displayLinkNowTime;
+}
+
+const CVTimeStamp *QCocoaWindow::displayLinkOutputTimeStatic(QWindow *window)
+{
+    if (window->handle())
+         return static_cast<QCocoaWindow *>(window->handle())->displayLinkOutputTime();
+    return nullptr;
+}
+
+const CVTimeStamp *QCocoaWindow::displayLinkOutputTime() const
+{
+    if (!m_qtView)
+        return 0;
+
+    return m_qtView->m_displayLinkOutputTime;
 }
 
 QMargins QCocoaWindow::frameMargins() const

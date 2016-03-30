@@ -172,6 +172,17 @@ static NSString *_q_NSWindowDidChangeOcclusionStateNotification = nil;
         delete m_window;
     m_window = 0;
 
+    // Stop any running display link and the display link stop timer.
+    {
+        QMutexLocker lock(&m_displayLinkMutex);
+        m_displayLinkDisable = true;
+        m_displayLinkWait.wakeAll();
+    }
+    CVDisplayLinkStop(m_displayLink);
+    [m_displayLinkStopTimer invalidate];
+    // [m_displayLinkStopTimer release]; ??
+    m_displayLinkStopTimer = 0;
+
     CGImageRelease(m_maskImage);
     [m_trackingArea release];
     m_maskImage = 0;
@@ -199,11 +210,15 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     m_ownsQWindow = !m_platformWindow->m_ownsQtView;
 
+    // Display link setup
     CVDisplayLinkCreateWithActiveCGDisplays(&m_displayLink);
     CVDisplayLinkSetOutputCallback(m_displayLink, &qNsViewDisplayLinkCallback, self);
     m_displayLinkSerial = 0;
     m_displayLinkSerialAtTimerSchedule = 0;
     m_requestUpdateCalled = false;
+    m_displayLinkDisable = false;
+    m_isDisplayLinkUpdate = false;
+
 
 #ifdef QT_COCOA_ENABLE_ACCESSIBILITY_INSPECTOR
     // prevent rift in space-time continuum, disable
@@ -486,11 +501,13 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     } else if (notificationName == NSWindowDidChangeScreenNotification) {
 
-        // Update display link
-        // ### correct screen
+        // Update displaylink display to match the new screen.
         NSScreen *screen = self.window.screen;
-        CVDisplayLinkSetCurrentCGDisplay(m_displayLink, kCGDirectMainDisplay);
+        NSNumber *screenNumber = [[screen deviceDescription] objectForKey:@"NSScreenNumber"];
+        CGDirectDisplayID screenDisplayID = (CGDirectDisplayID) [screenNumber intValue];
+        CVDisplayLinkSetCurrentCGDisplay(m_displayLink, screenDisplayID);
 
+        // Send screen change notification to Qt
         if (m_window) {
             NSUInteger screenIndex = [[NSScreen screens] indexOfObject:self.window.screen];
             if (screenIndex != NSNotFound) {
@@ -2233,26 +2250,15 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     [self requestCVDisplayLinkUpdate];
 }
 
-- (void) sendUpdateRequest:(QRect) dirty
-{
-    m_requestUpdateCalled = false;
-
-    // maintain exposed state (initial expose or geometry change)
-    QSize viewSize = qt_mac_toQSize(self.frame.size);
-    qreal dpr = m_platformWindow->devicePixelRatio();
-    bool exposeEventSent = m_platformWindow->updateExposedState(viewSize, dpr);
-
-    if (!exposeEventSent)
-        m_platformWindow->deliverUpdateRequest(dirty);
-}
-
 - (void) requestCVDisplayLinkUpdate
 {
     m_requestUpdateCalled = true;
 
     // Start the display link if needed
-    if (!CVDisplayLinkIsRunning(m_displayLink))
+    if (!CVDisplayLinkIsRunning(m_displayLink)) {
+        m_displayLinkDisable = false;
         CVDisplayLinkStart(m_displayLink);
+    }
 
     ++m_displayLinkSerial;
 
@@ -2290,27 +2296,21 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     // The dislplay link can be stopped if there was no requestUpdate
     // calls since the timer was scheduled.
     if (m_displayLinkSerial == m_displayLinkSerialAtTimerSchedule) {
+
+        // Calling CVDisplayLinkStop() while the display link thread is in
+        // the callback will block until the callback returns. Wake it to
+        // prevent deadlocking if the display link thread is waiting for
+        // the GUI thread.
+        {
+            QMutexLocker lock(&m_displayLinkMutex);
+            m_displayLinkDisable = true;
+            m_displayLinkWait.wakeAll();
+        }
         CVDisplayLinkStop(m_displayLink);
     } else {
-        // Othervise we don't know; we could never get a requestUpdate
-        // call again. Schedule the timer here to catch that case.
+        // Othervise we assume the displaylink should keep running
+        // and schedule the timer to check again.
         [self scheduleStopDisplayLinkTimer];
-    }
-}
-
-- (void) callRequestAnimationCallback
-{
-    if (!m_requestUpdateCalled)
-        return;
-    m_requestUpdateCalled = false;
-    if (m_platformWindow->m_inLayerMode) {
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [[self layer] setNeedsDisplay];
-        });
-
-    } else {
-        [self setNeedsDisplay:true];
     }
 }
 
@@ -2323,8 +2323,95 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     Q_UNUSED(flagsIn);
     Q_UNUSED(flagsOut);
 
-    [(QNSView*)displayLinkContext callRequestAnimationCallback];
+    // Debug
+#if 0
+    qDebug() << "qNsViewDisplayLinkCallback now" << now->hostTime / CVGetHostClockFrequency();
+    qDebug() << "qNsViewDisplayLinkCallback output Time" << outputTime->hostTime / CVGetHostClockFrequency();
+    uint64_t delta = outputTime->hostTime - now->hostTime;
+    qDebug() << "delta" << delta / CVGetHostClockFrequency();
+#endif
+
+    [(QNSView*) displayLinkContext triggerUpdateRequest:now output:outputTime];
     return kCVReturnSuccess;
+}
+
+- (void) triggerUpdateRequest:(const CVTimeStamp *) now output:(const CVTimeStamp *)output
+{
+    QMutexLocker lock(&m_displayLinkMutex);
+
+    if (m_displayLinkDisable)
+        return;
+
+    // Store timing value pointers for the GUI thread.
+    m_displayLinkNowTime = now;
+    m_displayLinkOutputTime = output;
+
+    // Trigger native view/layer update, which will call sendUpdateRequest below
+    // on the GUI thread.
+    if (m_platformWindow->m_inLayerMode) {
+        // Layer setNeedsDisplay seems to repaint immediately using the the
+        // calling thread. Schedule call on GUI thread.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            m_isDisplayLinkUpdate = true;
+            [[self layer] setNeedsDisplay];
+            [[self layer] displayIfNeeded];
+            m_isDisplayLinkUpdate = false;
+        });
+    } else {
+        // view setNeedsDisplay repaints later on the GUI thread.
+        [self setNeedsDisplay:true];
+    }
+
+    // Wait until the GUI thread has finished processing the update.
+    // This provides rate limiting in case the GUI thread falls behind
+    // and also keeps the CVTimeStamp pointers valid for the duration
+    // of the update event.
+    m_displayLinkWait.wait(&m_displayLinkMutex);
+
+    m_displayLinkNowTime = 0;
+    m_displayLinkOutputTime = 0;
+}
+
+- (void) sendUpdateRequest:(QRect) dirty
+{
+    // Hold the mutex for the duration of this function, also when
+    // calling out to Qt and delivering the update request. The GUI
+    // thread is then free to access the shared CVTimeStamp pointers
+    // at any time.
+    QMutexLocker lock(&m_displayLinkMutex);
+
+    // This function may be called either from the displaylink calback or in response
+    // to window visibility or geometry change events. Separate the handling of the
+    // cases
+    if (m_isDisplayLinkUpdate) {
+        //
+        if (m_displayLinkDisable) {
+            qDebug() << "Display link update request dropped: display link was disabled";
+            return;
+        }
+
+        // Drop update if user code did not request it.
+        if (!m_requestUpdateCalled) {
+            qDebug() << "Display link update request dropped: m_requestUpdateCalled was false";
+            return;
+        }
+
+        // Send update to Qt. This is a synchronous call.
+        m_requestUpdateCalled = false;
+        m_platformWindow->deliverUpdateRequest(dirty);
+
+        // Wake the displaylink thread, allowing it to return from the displaylink callback.
+        m_displayLinkWait.wakeAll();
+    } else {
+        // Send other updates as expose events.
+        QSize viewSize = qt_mac_toQSize(self.frame.size);
+        qreal dpr = m_platformWindow->devicePixelRatio();
+        bool didSendExpose =  m_platformWindow->updateExposedState(viewSize, dpr);
+
+        // But we really need to provide a frame.  (At least when using a CAopenGLLayer)
+        if (!didSendExpose)
+            m_platformWindow->deliverUpdateRequest(dirty);
+    }
 }
 
 @end

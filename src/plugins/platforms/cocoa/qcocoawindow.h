@@ -38,6 +38,7 @@
 
 #include <qpa/qplatformwindow.h>
 #include <QRect>
+#include <QWaitCondition>
 
 #ifndef QT_NO_OPENGL
 #include "qcocoaglcontext.h"
@@ -233,6 +234,11 @@ public:
     QPoint bottomLeftClippedByNSWindowOffset() const;
     static NSView *transferViewOwnershipStatic(QWindow *window);
     NSView *transferViewOwnership();
+
+    static const CVTimeStamp *displayLinkNowTimeStatic(QWindow *window);
+    const CVTimeStamp *displayLinkNowTime() const;
+    static const CVTimeStamp *displayLinkOutputTimeStatic(QWindow *window);
+    const CVTimeStamp *displayLinkOutputTime() const;
 
 protected:
     void recreateWindow(const QPlatformWindow *parentWindow);
