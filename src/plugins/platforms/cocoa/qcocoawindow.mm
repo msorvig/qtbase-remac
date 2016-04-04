@@ -111,7 +111,7 @@ static bool isMouseEvent(NSEvent *ev)
     QCocoaWindow *pw = self.platformWindow;
     if (_watcher && pw && pw->m_forwardWindow) {
         if (theEvent.type == NSLeftMouseUp || theEvent.type == NSLeftMouseDragged) {
-            QNSView *forwardView = pw->m_qtView;
+            QNSView *forwardView = pw->qtView();
             if (theEvent.type == NSLeftMouseUp) {
                 [forwardView mouseUp:theEvent];
                 pw->m_forwardWindow = 0;
@@ -345,6 +345,8 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_qtView(nil)
     , m_nsWindow(0)
     , m_forwardWindow(0)
+    , m_lazyNativeViewAndWindows(false)
+    , m_lazyNativeViewAndWindowsCreated(false)
     , m_contentViewIsEmbedded(false)
     , m_contentViewIsToBeEmbedded(false)
     , m_ownsQtView(true)
@@ -397,24 +399,12 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
         NSView *foreignView = (NSView *)WId(tlw->property("_q_foreignWinId").value<WId>());
         setContentView(foreignView);
     } else {
-        m_qtView = [[QNSView alloc] initWithQWindow:tlw platformWindow:this];
-        m_contentView = m_qtView;
-        // Enable high-dpi OpenGL for retina displays. Enabling has the side
-        // effect that Cocoa will start calling glViewport(0, 0, width, height),
-        // overriding any glViewport calls in application code. This is usually not a
-        // problem, except if the appilcation wants to have a "custom" viewport.
-        // (like the hellogl example)
-        if (tlw->supportsOpenGL()) {
-            BOOL enable = qt_mac_resolveOption(YES, tlw, "_q_mac_wantsBestResolutionOpenGLSurface",
-                                                          "QT_MAC_WANTS_BEST_RESOLUTION_OPENGL_SURFACE");
-            [m_qtView setWantsBestResolutionOpenGLSurface:enable];
-        }
-        BOOL enable = qt_mac_resolveOption(NO, tlw, "_q_mac_wantsLayer",
-                                                     "QT_MAC_WANTS_LAYER");
-        [m_qtView setWantsLayer:enable];
+        if (!m_lazyNativeViewAndWindows)
+            createNativeView();
     }
 
-    recreateWindow(parent());
+    if (!m_lazyNativeViewAndWindows)
+        createNativeWindow();
 
     setCocoaGeometry(QPlatformWindow::geometry());
 
@@ -434,8 +424,8 @@ QCocoaWindow::~QCocoaWindow()
     if (m_isNSWindowChild) {
         if (m_parentCocoaWindow)
             m_parentCocoaWindow->removeChildWindow(this);
-    } else if ([m_contentView superview]) {
-        [m_contentView removeFromSuperview];
+    } else if ([contentView() superview]) {
+        [contentView() removeFromSuperview];
     }
 
     removeMonitor();
@@ -461,7 +451,7 @@ QCocoaWindow::~QCocoaWindow()
     }
 
     foreach (QCocoaWindow *child, m_childWindows) {
-       [m_nsWindow removeChildWindow:child->m_nsWindow];
+        [m_nsWindow removeChildWindow:child->nativeWindow()];
         child->m_parentCocoaWindow = 0;
     }
 
@@ -521,11 +511,11 @@ QRect QCocoaWindow::geometry() const
     // top-level from Qt's point of view but are not from Cocoa's point
     // of view. Embedded QWindows get global (screen) geometry.
     if (m_contentViewIsEmbedded) {
-        NSPoint windowPoint = [m_contentView convertPoint:NSMakePoint(0, 0) toView:nil];
-        NSRect screenRect = [[m_contentView window] convertRectToScreen:NSMakeRect(windowPoint.x, windowPoint.y, 1, 1)];
+        NSPoint windowPoint = [contentView() convertPoint:NSMakePoint(0, 0) toView:nil];
+        NSRect screenRect = [[contentView() window] convertRectToScreen:NSMakeRect(windowPoint.x, windowPoint.y, 1, 1)];
         NSPoint screenPoint = screenRect.origin;
         QPoint position = qt_mac_flipPoint(screenPoint).toPoint();
-        QSize size = qt_mac_toQRect([m_contentView bounds]).size();
+        QSize size = qt_mac_toQRect([contentView() bounds]).size();
         return QRect(position, size);
     }
 
@@ -541,7 +531,7 @@ void QCocoaWindow::setCocoaGeometry(const QRect &rect)
     // be clipped against parent NSWindow geometry.
     if (m_isNSWindowChild) {
         QPlatformWindow::setGeometry(rect);
-        NSWindow *parentNSWindow = m_parentCocoaWindow->m_nsWindow;
+        NSWindow *parentNSWindow = m_parentCocoaWindow->nativeWindow();
         NSRect parentWindowFrame = [parentNSWindow contentRectForFrameRect:parentNSWindow.frame];
         clipWindow(parentWindowFrame);
 
@@ -565,19 +555,19 @@ void QCocoaWindow::setCocoaGeometry(const QRect &rect)
                                                          display:display
                                                          animate:NO];
     } else {
-        [m_contentView setFrame:qt_mac_toNSRect(rect)];
+        [contentView() setFrame:qt_mac_toNSRect(rect)];
     }
 
     // Set QPlatformWindow geometry if the controlled NSView is a 'foreign' view
     // and not a QNSView. (For the QNSView case this is done in [QNSView updateGeometry].)
-    if (!m_qtView)
+    if (!qtView())
         QPlatformWindow::setGeometry(rect);
 }
 
 void QCocoaWindow::clipChildWindows()
 {
     foreach (QCocoaWindow *childWindow, m_childWindows) {
-        childWindow->clipWindow(m_nsWindow.frame);
+        childWindow->clipWindow(nativeWindow().frame);
     }
 }
 
@@ -593,21 +583,21 @@ void QCocoaWindow::clipWindow(const NSRect &clipRect)
         // Clipping top/left offsets the content. Move it back.
         NSPoint contentViewOffset = NSMakePoint(qMax(CGFloat(0), NSMinX(clippedWindowRect) - NSMinX(windowFrame)),
                                                 qMax(CGFloat(0), NSMaxY(windowFrame) - NSMaxY(clippedWindowRect)));
-        [m_contentView setBoundsOrigin:contentViewOffset];
+        [contentView() setBoundsOrigin:contentViewOffset];
     }
 
     if (NSIsEmptyRect(clippedWindowRect)) {
         if (!m_hiddenByClipping) {
             // We dont call hide() here as we will recurse further down
-            [m_nsWindow orderOut:nil];
+            [nativeWindow() orderOut:nil];
             m_hiddenByClipping = true;
         }
     } else {
-        [m_nsWindow setFrame:clippedWindowRect display:YES animate:NO];
+        [nativeWindow() setFrame:clippedWindowRect display:YES animate:NO];
         if (m_hiddenByClipping) {
             m_hiddenByClipping = false;
             if (!m_hiddenByAncestor) {
-                [m_nsWindow orderFront:nil];
+                [nativeWindow() orderFront:nil];
                 m_parentCocoaWindow->reinsertChildWindow(this);
             }
         }
@@ -621,7 +611,7 @@ void QCocoaWindow::clipWindow(const NSRect &clipRect)
 
 void QCocoaWindow::hide(bool becauseOfAncestor)
 {
-    bool visible = [m_nsWindow isVisible];
+    bool visible = [nativeWindow() isVisible];
 
     if (!m_hiddenByAncestor && !visible) // Already explicitly hidden
         return;
@@ -636,15 +626,15 @@ void QCocoaWindow::hide(bool becauseOfAncestor)
     foreach (QCocoaWindow *childWindow, m_childWindows)
         childWindow->hide(true);
 
-    [m_nsWindow orderOut:nil];
+    [nativeWindow() orderOut:nil];
 }
 
 void QCocoaWindow::show(bool becauseOfAncestor)
 {
-    if ([m_nsWindow isVisible])
+    if ([nativeWindow() isVisible])
         return;
 
-    if (m_parentCocoaWindow && ![m_parentCocoaWindow->m_nsWindow isVisible]) {
+    if (m_parentCocoaWindow && ![m_parentCocoaWindow->nativeWindow() isVisible]) {
         m_hiddenByAncestor = true; // Parent still hidden, don't show now
     } else if ((becauseOfAncestor == m_hiddenByAncestor) // Was NEITHER explicitly hidden
                && !m_hiddenByClipping) { // ... NOR clipped
@@ -653,7 +643,7 @@ void QCocoaWindow::show(bool becauseOfAncestor)
             setCocoaGeometry(windowGeometry());
         }
         if (!m_hiddenByClipping) { // setCocoaGeometry() can change the clipping status
-            [m_nsWindow orderFront:nil];
+            [nativeWindow() orderFront:nil];
             if (m_isNSWindowChild)
                 m_parentCocoaWindow->reinsertChildWindow(this);
             foreach (QCocoaWindow *childWindow, m_childWindows)
@@ -677,6 +667,15 @@ void QCocoaWindow::setVisible(bool visible)
         parentCocoaWindow = static_cast<QCocoaWindow *>(window()->transientParent()->handle());
 
     if (visible) {
+
+        // Native views and windows are needed to make the window visible. Create
+        // them if this has not already been done.
+        if (m_lazyNativeViewAndWindows && !m_lazyNativeViewAndWindowsCreated) {
+            createNativeView();
+            createNativeWindow();
+            m_lazyNativeViewAndWindowsCreated = true;
+        }
+
         // We need to recreate if the modality has changed as the style mask will need updating
         if (m_windowModality != window()->modality())
             recreateWindow(parent());
@@ -694,10 +693,10 @@ void QCocoaWindow::setVisible(bool visible)
             if (window()->type() == Qt::Popup) {
                 // QTBUG-30266: a window should not be resizable while a transient popup is open
                 // Since this isn't a native popup, the window manager doesn't close the popup when you click outside
-                NSUInteger parentStyleMask = [parentCocoaWindow->m_nsWindow styleMask];
+                NSUInteger parentStyleMask = [parentCocoaWindow->nativeWindow() styleMask];
                 if ((m_resizableTransientParent = (parentStyleMask & NSResizableWindowMask))
-                    && !([parentCocoaWindow->m_nsWindow styleMask] & NSFullScreenWindowMask))
-                    [parentCocoaWindow->m_nsWindow setStyleMask:parentStyleMask & ~NSResizableWindowMask];
+                    && !([parentCocoaWindow->nativeWindow() styleMask] & NSFullScreenWindowMask))
+                    [parentCocoaWindow->nativeWindow() setStyleMask:parentStyleMask & ~NSResizableWindowMask];
             }
 
         }
@@ -712,7 +711,7 @@ void QCocoaWindow::setVisible(bool visible)
                      || window()->type() == Qt::Sheet)
                         && parentCocoaWindow) {
                     // show the window as a sheet
-                    [NSApp beginSheet:m_nsWindow modalForWindow:parentCocoaWindow->m_nsWindow modalDelegate:nil didEndSelector:nil contextInfo:nil];
+                    [NSApp beginSheet:nativeWindow() modalForWindow:parentCocoaWindow->nativeWindow() modalDelegate:nil didEndSelector:nil contextInfo:nil];
                 } else if (window()->modality() != Qt::NonModal) {
                     // show the window as application modal
                     QCocoaEventDispatcher *cocoaEventDispatcher = qobject_cast<QCocoaEventDispatcher *>(QGuiApplication::instance()->eventDispatcher());
@@ -720,16 +719,16 @@ void QCocoaWindow::setVisible(bool visible)
                     QCocoaEventDispatcherPrivate *cocoaEventDispatcherPrivate = static_cast<QCocoaEventDispatcherPrivate *>(QObjectPrivate::get(cocoaEventDispatcher));
                     cocoaEventDispatcherPrivate->beginModalSession(window());
                     m_hasModalSession = true;
-                } else if ([m_nsWindow canBecomeKeyWindow]) {
+                } else if ([nativeWindow() canBecomeKeyWindow]) {
                     QCocoaEventDispatcher *cocoaEventDispatcher = qobject_cast<QCocoaEventDispatcher *>(QGuiApplication::instance()->eventDispatcher());
                     QCocoaEventDispatcherPrivate *cocoaEventDispatcherPrivate = 0;
                     if (cocoaEventDispatcher)
                         cocoaEventDispatcherPrivate = static_cast<QCocoaEventDispatcherPrivate *>(QObjectPrivate::get(cocoaEventDispatcher));
 
                     if (!(cocoaEventDispatcherPrivate && cocoaEventDispatcherPrivate->currentModalSession()))
-                        [m_nsWindow makeKeyAndOrderFront:nil];
+                        [nativeWindow() makeKeyAndOrderFront:nil];
                     else
-                        [m_nsWindow orderFront:nil];
+                        [nativeWindow() orderFront:nil];
 
                     foreach (QCocoaWindow *childWindow, m_childWindows)
                         childWindow->show(true);
@@ -739,8 +738,8 @@ void QCocoaWindow::setVisible(bool visible)
 
                 // We want the events to properly reach the popup, dialog, and tool
                 if ((window()->type() == Qt::Popup || window()->type() == Qt::Dialog || window()->type() == Qt::Tool)
-                    && [m_nsWindow isKindOfClass:[NSPanel class]]) {
-                    [(NSPanel *)m_nsWindow setWorksWhenModal:YES];
+                    && [nativeWindow() isKindOfClass:[NSPanel class]]) {
+                    [(NSPanel *)nativeWindow() setWorksWhenModal:YES];
                     if (!(parentCocoaWindow && window()->transientParent()->isActive()) && window()->type() == Qt::Popup) {
                         removeMonitor();
                         monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSLeftMouseDownMask|NSRightMouseDownMask|NSOtherMouseDownMask|NSMouseMovedMask handler:^(NSEvent *e) {
@@ -755,8 +754,8 @@ void QCocoaWindow::setVisible(bool visible)
         // In some cases, e.g. QDockWidget, the content view is hidden before moving to its own
         // Cocoa window, and then shown again. Therefore, we test for the view being hidden even
         // if it's attached to an NSWindow.
-        if ([m_contentView isHidden])
-            [m_contentView setHidden:NO];
+        if ([contentView() isHidden])
+            [contentView() setHidden:NO];
     } else {
         // qDebug() << "close" << this;
 #ifndef QT_NO_OPENGL
@@ -767,18 +766,18 @@ void QCocoaWindow::setVisible(bool visible)
         QCocoaEventDispatcherPrivate *cocoaEventDispatcherPrivate = 0;
         if (cocoaEventDispatcher)
             cocoaEventDispatcherPrivate = static_cast<QCocoaEventDispatcherPrivate *>(QObjectPrivate::get(cocoaEventDispatcher));
-        if (m_nsWindow) {
+        if (nativeWindow()) {
             if (m_hasModalSession) {
                 if (cocoaEventDispatcherPrivate)
                     cocoaEventDispatcherPrivate->endModalSession(window());
                 m_hasModalSession = false;
             } else {
-                if ([m_nsWindow isSheet])
-                    [NSApp endSheet:m_nsWindow];
+                if ([nativeWindow() isSheet])
+                    [NSApp endSheet:nativeWindow()];
             }
 
             hide();
-            if (m_nsWindow == [NSApp keyWindow]
+            if (nativeWindow() == [NSApp keyWindow]
                 && !(cocoaEventDispatcherPrivate && cocoaEventDispatcherPrivate->currentModalSession())) {
                 // Probably because we call runModalSession: outside [NSApp run] in QCocoaEventDispatcher
                 // (e.g., when show()-ing a modal QDialog instead of exec()-ing it), it can happen that
@@ -789,7 +788,7 @@ void QCocoaWindow::setVisible(bool visible)
                     [mainWindow makeKeyWindow];
             }
         } else {
-            [m_contentView setHidden:YES];
+            [contentView() setHidden:YES];
         }
         removeMonitor();
 
@@ -798,9 +797,9 @@ void QCocoaWindow::setVisible(bool visible)
 
         if (parentCocoaWindow && window()->type() == Qt::Popup) {
             if (m_resizableTransientParent
-                && !([parentCocoaWindow->m_nsWindow styleMask] & NSFullScreenWindowMask))
+                && !([parentCocoaWindow->nativeWindow() styleMask] & NSFullScreenWindowMask))
                 // QTBUG-30266: a window should not be resizable while a transient popup is open
-                [parentCocoaWindow->m_nsWindow setStyleMask:[parentCocoaWindow->m_nsWindow styleMask] | NSResizableWindowMask];
+                [parentCocoaWindow->nativeWindow() setStyleMask:[parentCocoaWindow->nativeWindow() styleMask] | NSResizableWindowMask];
         }
     }
 
@@ -830,7 +829,7 @@ NSInteger QCocoaWindow::windowLevel(Qt::WindowFlags flags)
         const QWindow * const transientParent = window()->transientParent();
         const QCocoaWindow * const transientParentWindow = transientParent ? static_cast<QCocoaWindow *>(transientParent->handle()) : 0;
         if (transientParentWindow)
-            windowLevel = qMax([transientParentWindow->m_nsWindow level], windowLevel);
+            windowLevel = qMax([transientParentWindow->nativeWindow() level], windowLevel);
     }
 
     return windowLevel;
@@ -893,7 +892,7 @@ NSUInteger QCocoaWindow::windowStyleMask(Qt::WindowFlags flags)
 void QCocoaWindow::setWindowShadow(Qt::WindowFlags flags)
 {
     bool keepShadow = !(flags & Qt::NoDropShadowWindowHint);
-    [m_nsWindow setHasShadow:(keepShadow ? YES : NO)];
+    [nativeWindow() setHasShadow:(keepShadow ? YES : NO)];
 }
 
 void QCocoaWindow::setWindowZoomButton(Qt::WindowFlags flags)
@@ -905,20 +904,20 @@ void QCocoaWindow::setWindowZoomButton(Qt::WindowFlags flags)
     bool fixedSizeNoZoom = (windowMinimumSize().isValid() && windowMaximumSize().isValid()
                             && windowMinimumSize() == windowMaximumSize());
     bool customizeNoZoom = ((flags & Qt::CustomizeWindowHint) && !(flags & Qt::WindowMaximizeButtonHint));
-    [[m_nsWindow standardWindowButton:NSWindowZoomButton] setEnabled:!(fixedSizeNoZoom || customizeNoZoom)];
+    [[nativeWindow() standardWindowButton:NSWindowZoomButton] setEnabled:!(fixedSizeNoZoom || customizeNoZoom)];
 }
 
 void QCocoaWindow::setWindowFlags(Qt::WindowFlags flags)
 {
-    if (m_nsWindow && !m_isNSWindowChild) {
+    if (nativeWindow() && !m_isNSWindowChild) {
         NSUInteger styleMask = windowStyleMask(flags);
         NSInteger level = this->windowLevel(flags);
         // While setting style mask we can have -updateGeometry calls on a content
         // view with null geometry, reporting an invalid coordinates as a result.
         m_inSetStyleMask = true;
-        [m_nsWindow setStyleMask:styleMask];
+        [nativeWindow() setStyleMask:styleMask];
         m_inSetStyleMask = false;
-        [m_nsWindow setLevel:level];
+        [nativeWindow() setLevel:level];
         setWindowShadow(flags);
         if (!(flags & Qt::FramelessWindowHint)) {
             setWindowTitle(window()->title());
@@ -926,7 +925,7 @@ void QCocoaWindow::setWindowFlags(Qt::WindowFlags flags)
 
         Qt::WindowType type = window()->type();
         if ((type & Qt::Popup) != Qt::Popup && (type & Qt::Dialog) != Qt::Dialog) {
-            NSWindowCollectionBehavior behavior = [m_nsWindow collectionBehavior];
+            NSWindowCollectionBehavior behavior = [nativeWindow() collectionBehavior];
             if (flags & Qt::WindowFullscreenButtonHint) {
                 behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
                 behavior &= ~NSWindowCollectionBehaviorFullScreenAuxiliary;
@@ -934,7 +933,7 @@ void QCocoaWindow::setWindowFlags(Qt::WindowFlags flags)
                 behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
                 behavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
             }
-            [m_nsWindow setCollectionBehavior:behavior];
+            [nativeWindow() setCollectionBehavior:behavior];
         }
         setWindowZoomButton(flags);
     }
@@ -951,35 +950,35 @@ void QCocoaWindow::setWindowState(Qt::WindowState state)
 void QCocoaWindow::setWindowTitle(const QString &title)
 {
     QMacAutoReleasePool pool;
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return;
 
     CFStringRef windowTitle = QCFString::toCFStringRef(title);
-    [m_nsWindow setTitle: const_cast<NSString *>(reinterpret_cast<const NSString *>(windowTitle))];
+    [nativeWindow() setTitle: const_cast<NSString *>(reinterpret_cast<const NSString *>(windowTitle))];
     CFRelease(windowTitle);
 }
 
 void QCocoaWindow::setWindowFilePath(const QString &filePath)
 {
     QMacAutoReleasePool pool;
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return;
 
     QFileInfo fi(filePath);
-    [m_nsWindow setRepresentedFilename: fi.exists() ? QCFString::toNSString(filePath) : @""];
+    [nativeWindow() setRepresentedFilename: fi.exists() ? QCFString::toNSString(filePath) : @""];
 }
 
 void QCocoaWindow::setWindowIcon(const QIcon &icon)
 {
     QMacAutoReleasePool pool;
 
-    NSButton *iconButton = [m_nsWindow standardWindowButton:NSWindowDocumentIconButton];
+    NSButton *iconButton = [nativeWindow() standardWindowButton:NSWindowDocumentIconButton];
     if (iconButton == nil) {
         if (icon.isNull())
             return;
         NSString *title = QCFString::toNSString(window()->title());
-        [m_nsWindow setRepresentedURL:[NSURL fileURLWithPath:title]];
-        iconButton = [m_nsWindow standardWindowButton:NSWindowDocumentIconButton];
+        [nativeWindow() setRepresentedURL:[NSURL fileURLWithPath:title]];
+        iconButton = [nativeWindow() standardWindowButton:NSWindowDocumentIconButton];
     }
     if (icon.isNull()) {
         [iconButton setImage:nil];
@@ -1011,7 +1010,7 @@ void QCocoaWindow::raise()
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::raise" << window();
 
     // ### handle spaces (see Qt 4 raise_sys in qwidget_mac.mm)
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return;
     if (m_isNSWindowChild) {
         QList<QCocoaWindow *> &siblings = m_parentCocoaWindow->m_childWindows;
@@ -1020,14 +1019,14 @@ void QCocoaWindow::raise()
         if (m_hiddenByClipping)
             return;
     }
-    if ([m_nsWindow isVisible]) {
+    if ([nativeWindow() isVisible]) {
         if (m_isNSWindowChild) {
             // -[NSWindow orderFront:] doesn't work with attached windows.
             // The only solution is to remove and add the child window.
             // This will place it on top of all the other NSWindows.
-            NSWindow *parentNSWindow = m_parentCocoaWindow->m_nsWindow;
-            [parentNSWindow removeChildWindow:m_nsWindow];
-            [parentNSWindow addChildWindow:m_nsWindow ordered:NSWindowAbove];
+            NSWindow *parentNSWindow = m_parentCocoaWindow->nativeWindow();
+            [parentNSWindow removeChildWindow:nativeWindow()];
+            [parentNSWindow addChildWindow:nativeWindow() ordered:NSWindowAbove];
         } else {
             {
                 // Clean up autoreleased temp objects from orderFront immediately.
@@ -1036,7 +1035,7 @@ void QCocoaWindow::raise()
                 // construct-show-raise-hide-delete cyle), counter to expected autoreleasepool
                 // behavior.
                 QMacAutoReleasePool pool;
-                [m_nsWindow orderFront: m_nsWindow];
+                [nativeWindow() orderFront: nativeWindow()];
             }
             static bool raiseProcess = qt_mac_resolveOption(true, "QT_MAC_SET_RAISE_PROCESS");
             if (raiseProcess) {
@@ -1051,7 +1050,7 @@ void QCocoaWindow::raise()
 void QCocoaWindow::lower()
 {
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::lower" << window();
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return;
     if (m_isNSWindowChild) {
         QList<QCocoaWindow *> &siblings = m_parentCocoaWindow->m_childWindows;
@@ -1060,21 +1059,21 @@ void QCocoaWindow::lower()
         if (m_hiddenByClipping)
             return;
     }
-    if ([m_nsWindow isVisible]) {
+    if ([nativeWindow() isVisible]) {
         if (m_isNSWindowChild) {
             // -[NSWindow orderBack:] doesn't work with attached windows.
             // The only solution is to remove and add all the child windows except this one.
             // This will keep the current window at the bottom while adding the others on top of it,
             // hopefully in the same order (this is not documented anywhere in the Cocoa documentation).
-            NSWindow *parentNSWindow = m_parentCocoaWindow->m_nsWindow;
+            NSWindow *parentNSWindow = m_parentCocoaWindow->nativeWindow();
             NSArray *children = [parentNSWindow.childWindows copy];
             for (NSWindow *child in children)
-                if (m_nsWindow != child) {
+                if (nativeWindow() != child) {
                     [parentNSWindow removeChildWindow:child];
                     [parentNSWindow addChildWindow:child ordered:NSWindowAbove];
                 }
         } else {
-            [m_nsWindow orderBack: m_nsWindow];
+            [nativeWindow() orderBack: nativeWindow()];
         }
     }
 }
@@ -1092,7 +1091,7 @@ bool QCocoaWindow::isOpaque() const
 
     bool translucent = (window()->format().alphaBufferSize() > 0
                         || window()->opacity() < 1
-                        || (m_qtView && [m_qtView hasMask]))
+                        || (qtView() && [qtView() hasMask]))
                         || (surface()->supportsOpenGL() && openglSourfaceOrder == -1);
     return !translucent;
 }
@@ -1100,7 +1099,7 @@ bool QCocoaWindow::isOpaque() const
 void QCocoaWindow::propagateSizeHints()
 {
     QMacAutoReleasePool pool;
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return;
 
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::propagateSizeHints" << window() << "\n"
@@ -1112,12 +1111,12 @@ void QCocoaWindow::propagateSizeHints()
     // Set the minimum content size.
     const QSize minimumSize = windowMinimumSize();
     if (!minimumSize.isValid()) // minimumSize is (-1, -1) when not set. Make that (0, 0) for Cocoa.
-        [m_nsWindow setContentMinSize : NSMakeSize(0.0, 0.0)];
-    [m_nsWindow setContentMinSize : NSMakeSize(minimumSize.width(), minimumSize.height())];
+        [nativeWindow() setContentMinSize : NSMakeSize(0.0, 0.0)];
+    [nativeWindow() setContentMinSize : NSMakeSize(minimumSize.width(), minimumSize.height())];
 
     // Set the maximum content size.
     const QSize maximumSize = windowMaximumSize();
-    [m_nsWindow setContentMaxSize : NSMakeSize(maximumSize.width(), maximumSize.height())];
+    [nativeWindow() setContentMaxSize : NSMakeSize(maximumSize.width(), maximumSize.height())];
 
     // The window may end up with a fixed size; in this case the zoom button should be disabled.
     setWindowZoomButton(m_windowFlags);
@@ -1126,65 +1125,69 @@ void QCocoaWindow::propagateSizeHints()
     // resizable and that have no specific size increment set. Cocoa expects (1.0, 1.0) in this case.
     const QSize sizeIncrement = windowSizeIncrement();
     if (!sizeIncrement.isEmpty())
-        [m_nsWindow setResizeIncrements : qt_mac_toNSSize(sizeIncrement)];
+        [nativeWindow() setResizeIncrements : qt_mac_toNSSize(sizeIncrement)];
     else
-        [m_nsWindow setResizeIncrements : NSMakeSize(1.0, 1.0)];
+        [nativeWindow() setResizeIncrements : NSMakeSize(1.0, 1.0)];
 
     QRect rect = geometry();
     QSize baseSize = windowBaseSize();
     if (!baseSize.isNull() && baseSize.isValid()) {
+        [m_nsWindow setFrame:NSMakeRect(rect.x(), rect.y(), baseSize.width(), baseSize.height()) display:YES];
+        [nativeWindow() setFrame:NSMakeRect(rect.x(), rect.y(), baseSize.width(), baseSize.height()) display:NO];
         [m_nsWindow setFrame:NSMakeRect(rect.x(), rect.y(), baseSize.width(), baseSize.height()) display:NO];
     }
+
+    qDebug() << "propagateSizeHints" << [nativeWindow() isVisible];
 }
 
 void QCocoaWindow::setOpacity(qreal level)
 {
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setOpacity" << level;
-    if (m_nsWindow) {
-        [m_nsWindow setAlphaValue:level];
-        [m_nsWindow setOpaque: isOpaque()];
+    if (nativeWindow()) {
+        [nativeWindow() setAlphaValue:level];
+        [nativeWindow() setOpaque: isOpaque()];
     }
 }
 
 void QCocoaWindow::setMask(const QRegion &region)
 {
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setMask" << window() << region;
-    if (m_nsWindow)
-        [m_nsWindow setBackgroundColor:[NSColor clearColor]];
+    if (nativeWindow())
+        [nativeWindow() setBackgroundColor:[NSColor clearColor]];
 
-    [m_qtView setMaskRegion:&region];
-    [m_nsWindow setOpaque: isOpaque()];
+    [qtView() setMaskRegion:&region];
+    [nativeWindow() setOpaque: isOpaque()];
 }
 
 bool QCocoaWindow::setKeyboardGrabEnabled(bool grab)
 {
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setKeyboardGrabEnabled" << window() << grab;
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return false;
 
-    if (grab && ![m_nsWindow isKeyWindow])
-        [m_nsWindow makeKeyWindow];
-    else if (!grab && [m_nsWindow isKeyWindow])
-        [m_nsWindow resignKeyWindow];
+    if (grab && ![nativeWindow() isKeyWindow])
+        [nativeWindow() makeKeyWindow];
+    else if (!grab && [nativeWindow() isKeyWindow])
+        [nativeWindow() resignKeyWindow];
     return true;
 }
 
 bool QCocoaWindow::setMouseGrabEnabled(bool grab)
 {
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setMouseGrabEnabled" << window() << grab;
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return false;
 
-    if (grab && ![m_nsWindow isKeyWindow])
-        [m_nsWindow makeKeyWindow];
-    else if (!grab && [m_nsWindow isKeyWindow])
-        [m_nsWindow resignKeyWindow];
+    if (grab && ![nativeWindow() isKeyWindow])
+        [nativeWindow() makeKeyWindow];
+    else if (!grab && [nativeWindow() isKeyWindow])
+        [nativeWindow() resignKeyWindow];
     return true;
 }
 
 WId QCocoaWindow::winId() const
 {
-    return WId(m_contentView);
+    return WId(contentView());
 }
 
 void QCocoaWindow::setParent(const QPlatformWindow *parentWindow)
@@ -1192,20 +1195,60 @@ void QCocoaWindow::setParent(const QPlatformWindow *parentWindow)
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setParent" << window() << (parentWindow ? parentWindow->window() : 0);
 
     // recreate the window for compatibility
-    bool unhideAfterRecreate = parentWindow && !m_contentViewIsToBeEmbedded && ![m_contentView isHidden];
+    bool unhideAfterRecreate = parentWindow && !m_contentViewIsToBeEmbedded && ![contentView() isHidden];
     recreateWindow(parentWindow);
     if (unhideAfterRecreate)
-        [m_contentView setHidden:NO];
+        [contentView() setHidden:NO];
     setCocoaGeometry(geometry());
 }
 
+// Creates a QNSView for this window.
+void QCocoaWindow::createNativeView()
+{
+    m_qtView = [[QNSView alloc] initWithQWindow:window() platformWindow:this];
+    m_contentView = m_qtView;
+
+    // Enable high-dpi OpenGL for retina displays. Enabling has the side
+    // effect that Cocoa will start calling glViewport(0, 0, width, height),
+    // overriding any glViewport calls in application code. This is usually not a
+    // problem, except if the appilcation wants to have a "custom" viewport.
+    // (like the hellogl example)
+    if (window()->supportsOpenGL()) {
+        BOOL enable = qt_mac_resolveOption(YES, window(), "_q_mac_wantsBestResolutionOpenGLSurface",
+                                                          "QT_MAC_WANTS_BEST_RESOLUTION_OPENGL_SURFACE");
+        [m_contentView setWantsBestResolutionOpenGLSurface:enable];
+    }
+    BOOL enable = qt_mac_resolveOption(NO, window(), "_q_mac_wantsLayer",
+                                                     "QT_MAC_WANTS_LAYER");
+    [m_contentView setWantsLayer:enable];
+}
+
+// Creates a NSWindow/NSPanel for this window.
+void QCocoaWindow::createNativeWindow()
+{
+   recreateWindow(parent());
+}
+
+// Returns the native NSView instance for this window. In lazy mode creates
+// a QNSView if neccesary.
 NSView *QCocoaWindow::contentView() const
 {
+    if (!m_lazyNativeViewAndWindows || m_lazyNativeViewAndWindowsCreated)
+        return m_contentView;
+
+    if (m_contentView)
+         const_cast<QCocoaWindow *>(this)->createNativeView();
+
     return m_contentView;
 }
 
+// Sets the native NSView instance for this window. This function
+// is used when making QWindow control a foreign NSView.
 void QCocoaWindow::setContentView(NSView *contentView)
 {
+    // This counts as running the view creation logic.
+    m_lazyNativeViewAndWindowsCreated = true;
+
     // Remove and release the previous content view
     [m_contentView removeFromSuperview];
     [m_contentView release];
@@ -1217,14 +1260,31 @@ void QCocoaWindow::setContentView(NSView *contentView)
     recreateWindow(parent()); // Adds the content view to parent NSView
 }
 
+// Returns the native QNSView for this window. In lazy mode creates
+// a QNSView if neccesary.
 QNSView *QCocoaWindow::qtView() const
 {
+    if (!m_lazyNativeViewAndWindows || m_lazyNativeViewAndWindowsCreated)
+        return m_qtView;
+
+    // Don't create a QNSView if this QWindow is managing a foregin NSView.
+    if (m_contentView)
+        return nil;
+
+    if (!m_qtView)
+         const_cast<QCocoaWindow *>(this)->createNativeView();
+
     return m_qtView;
 }
 
+// Returns the native NSWindow for this window. In lazy mode creates
+// it if neccesary.
 NSWindow *QCocoaWindow::nativeWindow() const
 {
-    return m_nsWindow;
+    if (!m_lazyNativeViewAndWindows || m_lazyNativeViewAndWindowsCreated)
+        return m_nsWindow;
+
+    const_cast<QCocoaWindow *>(this)->createNativeWindow();
 }
 
 void QCocoaWindow::setEmbeddedInForeignView(bool embedded)
@@ -1249,26 +1309,26 @@ void QCocoaWindow::windowDidMove()
     if (m_isNSWindowChild)
         return;
 
-    [m_qtView updateGeometry];
+    [qtView() updateGeometry];
 }
 
 void QCocoaWindow::windowDidResize()
 {
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return;
 
     if (m_isNSWindowChild)
         return;
 
     clipChildWindows();
-    [m_qtView updateGeometry];
+    [qtView() updateGeometry];
 }
 
 void QCocoaWindow::windowDidEndLiveResize()
 {
-    if (m_synchedWindowState == Qt::WindowMaximized && ![m_nsWindow isZoomed]) {
+    if (m_synchedWindowState == Qt::WindowMaximized && ![nativeWindow() isZoomed]) {
         m_effectivelyMaximized = false;
-        [m_qtView notifyWindowStateChanged:Qt::WindowNoState];
+        [qtView() notifyWindowStateChanged:Qt::WindowNoState];
     }
 }
 
@@ -1337,8 +1397,8 @@ void QCocoaWindow::recreateWindow(const QPlatformWindow *parentWindow)
     bool usesNSPanel = [m_nsWindow isKindOfClass:[QNSPanel class]];
 
     // No child QNSWindow should notify its QNSView
-    if (m_nsWindow && m_qtView && m_parentCocoaWindow && !oldParentCocoaWindow)
-        [[NSNotificationCenter defaultCenter] removeObserver:m_qtView
+    if (m_nsWindow && qtView() && m_parentCocoaWindow && !oldParentCocoaWindow)
+        [[NSNotificationCenter defaultCenter] removeObserver:qtView()
                                               name:nil object:m_nsWindow];
 
     // Remove current window (if any)
@@ -1356,8 +1416,8 @@ void QCocoaWindow::recreateWindow(const QPlatformWindow *parentWindow)
 
         // Only non-child QNSWindows should notify their QNSViews
         // (but don't register more than once).
-        if (m_qtView && (noPreviousWindow || (wasNSWindowChild && !m_isNSWindowChild)))
-            [[NSNotificationCenter defaultCenter] addObserver:m_qtView
+        if (qtView() && (noPreviousWindow || (wasNSWindowChild && !m_isNSWindowChild)))
+            [[NSNotificationCenter defaultCenter] addObserver:qtView()
                                                   selector:@selector(windowNotification:)
                                                   name:nil // Get all notifications
                                                   object:m_nsWindow];
@@ -1401,18 +1461,18 @@ void QCocoaWindow::recreateWindow(const QPlatformWindow *parentWindow)
         }
     } else {
         // Child windows have no NSWindow, link the NSViews instead.
-        if ([m_contentView superview])
-            [m_contentView removeFromSuperview];
+        if ([contentView() superview])
+            [contentView() removeFromSuperview];
 
-        [m_parentCocoaWindow->m_contentView addSubview : m_contentView];
+        [m_parentCocoaWindow->contentView() addSubview : contentView()];
         QRect rect = windowGeometry();
         // Prevent setting a (0,0) window size; causes opengl context
         // "Invalid Drawable" warnings.
         if (rect.isNull())
             rect.setSize(QSize(1, 1));
         NSRect frame = NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height());
-        [m_contentView setFrame:frame];
-        [m_contentView setHidden: YES];
+        [contentView() setFrame:frame];
+        [contentView() setHidden: YES];
     }
 
     m_nsWindow.ignoresMouseEvents =
@@ -1434,17 +1494,17 @@ void QCocoaWindow::reinsertChildWindow(QCocoaWindow *child)
     Q_ASSERT(childIndex != -1);
 
     for (int i = childIndex; i < m_childWindows.size(); i++) {
-        NSWindow *nsChild = m_childWindows[i]->m_nsWindow;
+        NSWindow *nsChild = m_childWindows[i]->nativeWindow();
         if (i != childIndex)
-            [m_nsWindow removeChildWindow:nsChild];
-        [m_nsWindow addChildWindow:nsChild ordered:NSWindowAbove];
+            [nativeWindow() removeChildWindow:nsChild];
+        [nativeWindow() addChildWindow:nsChild ordered:NSWindowAbove];
     }
 }
 
 void QCocoaWindow::requestActivateWindow()
 {
-    NSWindow *window = [m_contentView window];
-    [ window makeFirstResponder : m_contentView ];
+    NSWindow *window = [contentView() window];
+    [ window makeFirstResponder : contentView() ];
     [ window makeKeyWindow ];
 }
 
@@ -1529,21 +1589,21 @@ QCocoaNSWindow * QCocoaWindow::createNSWindow()
 
 void QCocoaWindow::setNSWindow(QCocoaNSWindow *window)
 {
-    if (window.contentView != m_contentView) {
-        [m_contentView setPostsFrameChangedNotifications: NO];
-        [m_contentView retain];
-        if (m_contentView.superview) // m_contentView comes from another NSWindow
-            [m_contentView removeFromSuperview];
-        [window setContentView:m_contentView];
-        [m_contentView release];
-        [m_contentView setPostsFrameChangedNotifications: YES];
+    if (window.contentView != contentView()) {
+        [contentView() setPostsFrameChangedNotifications: NO];
+        [contentView() retain];
+        if (contentView().superview) // contentView() comes from another NSWindow
+            [contentView() removeFromSuperview];
+        [window setContentView:contentView()];
+        [contentView() release];
+        [contentView() setPostsFrameChangedNotifications: YES];
     }
 }
 
 void QCocoaWindow::removeChildWindow(QCocoaWindow *child)
 {
     m_childWindows.removeOne(child);
-    [m_nsWindow removeChildWindow:child->m_nsWindow];
+    [nativeWindow() removeChildWindow:child->nativeWindow()];
 }
 
 void QCocoaWindow::removeMonitor()
@@ -1557,10 +1617,10 @@ void QCocoaWindow::removeMonitor()
 // Returns the current global screen geometry for the nswindow associated with this window.
 QRect QCocoaWindow::nativeWindowGeometry() const
 {
-    if (!m_nsWindow || m_isNSWindowChild)
+    if (!nativeWindow() || m_isNSWindowChild)
         return geometry();
 
-    NSRect rect = [m_nsWindow frame];
+    NSRect rect = [nativeWindow() frame];
     QPlatformScreen *onScreen = QPlatformScreen::platformScreenForWindow(window());
     int flippedY = onScreen->geometry().height() - rect.origin.y - rect.size.height;  // account for nswindow inverted y.
     QRect qRect = QRect(rect.origin.x, flippedY, rect.size.width, rect.size.height);
@@ -1579,7 +1639,7 @@ QCocoaWindow *QCocoaWindow::parentCocoaWindow() const
 // Syncs the NSWindow minimize/maximize/fullscreen state with the current QWindow state
 void QCocoaWindow::syncWindowState(Qt::WindowState newState)
 {
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return;
     // if content view width or height is 0 then the window animations will crash so
     // do nothing except set the new state
@@ -1592,31 +1652,31 @@ void QCocoaWindow::syncWindowState(Qt::WindowState newState)
 
     Qt::WindowState predictedState = newState;
     if ((m_synchedWindowState & Qt::WindowMaximized) != (newState & Qt::WindowMaximized)) {
-        const int styleMask = [m_nsWindow styleMask];
+        const int styleMask = [nativeWindow() styleMask];
         const bool usePerform = styleMask & NSResizableWindowMask;
-        [m_nsWindow setStyleMask:styleMask | NSResizableWindowMask];
+        [nativeWindow() setStyleMask:styleMask | NSResizableWindowMask];
         if (usePerform)
-            [m_nsWindow performZoom : m_nsWindow]; // toggles
+            [nativeWindow() performZoom : nativeWindow()]; // toggles
         else
-            [m_nsWindow zoom : m_nsWindow]; // toggles
-        [m_nsWindow setStyleMask:styleMask];
+            [nativeWindow() zoom : nativeWindow()]; // toggles
+        [nativeWindow() setStyleMask:styleMask];
     }
 
     if ((m_synchedWindowState & Qt::WindowMinimized) != (newState & Qt::WindowMinimized)) {
         if (newState & Qt::WindowMinimized) {
-            if ([m_nsWindow styleMask] & NSMiniaturizableWindowMask)
-                [m_nsWindow performMiniaturize : m_nsWindow];
+            if ([nativeWindow() styleMask] & NSMiniaturizableWindowMask)
+                [nativeWindow() performMiniaturize : nativeWindow()];
             else
-                [m_nsWindow miniaturize : m_nsWindow];
+                [nativeWindow() miniaturize : nativeWindow()];
         } else {
-            [m_nsWindow deminiaturize : m_nsWindow];
+            [nativeWindow() deminiaturize : nativeWindow()];
         }
     }
 
     const bool effMax = m_effectivelyMaximized;
     if ((m_synchedWindowState & Qt::WindowMaximized) != (newState & Qt::WindowMaximized) || (m_effectivelyMaximized && newState == Qt::WindowNoState)) {
         if ((m_synchedWindowState & Qt::WindowFullScreen) == (newState & Qt::WindowFullScreen)) {
-            [m_nsWindow zoom : m_nsWindow]; // toggles
+            [nativeWindow() zoom : nativeWindow()]; // toggles
             m_effectivelyMaximized = !effMax;
         } else if (!(newState & Qt::WindowMaximized)) {
             // it would be nice to change the target geometry that toggleFullScreen will animate toward
@@ -1630,7 +1690,7 @@ void QCocoaWindow::syncWindowState(Qt::WindowState newState)
         if (window()->flags() & Qt::WindowFullscreenButtonHint) {
             if (m_effectivelyMaximized && m_synchedWindowState == Qt::WindowFullScreen)
                 predictedState = Qt::WindowMaximized;
-            [m_nsWindow toggleFullScreen : m_nsWindow];
+            [nativeWindow() toggleFullScreen : nativeWindow()];
         } else {
             if (newState & Qt::WindowFullScreen) {
                 QScreen *screen = window()->screen();
@@ -1659,9 +1719,9 @@ void QCocoaWindow::syncWindowState(Qt::WindowState newState)
 
 bool QCocoaWindow::setWindowModified(bool modified)
 {
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return false;
-    [m_nsWindow setDocumentEdited:(modified?YES:NO)];
+    [nativeWindow() setDocumentEdited:(modified?YES:NO)];
     return true;
 }
 
@@ -1692,8 +1752,8 @@ void QCocoaWindow::setWindowCursor(NSCursor *cursor)
     // Othervise, set the cursor if this window is under the mouse. In
     // this case QNSView::cursorUpdate will set the cursor as the pointer
     // moves.
-    if (m_nsWindow && m_qtView) {
-        [m_nsWindow invalidateCursorRectsForView : m_qtView];
+    if (nativeWindow() && qtView()) {
+        [nativeWindow() invalidateCursorRectsForView : qtView()];
     } else {
         if (m_windowUnderMouse)
             [cursor set];
@@ -1704,9 +1764,9 @@ void QCocoaWindow::registerTouch(bool enable)
 {
     m_registerTouchCount += enable ? 1 : -1;
     if (enable && m_registerTouchCount == 1)
-        [m_contentView setAcceptsTouchEvents:YES];
+        [contentView() setAcceptsTouchEvents:YES];
     else if (m_registerTouchCount == 0)
-        [m_contentView setAcceptsTouchEvents:NO];
+        [contentView() setAcceptsTouchEvents:NO];
 }
 
 void QCocoaWindow::setContentBorderThickness(int topThickness, int bottomThickness)
@@ -1716,25 +1776,25 @@ void QCocoaWindow::setContentBorderThickness(int topThickness, int bottomThickne
     bool enable = (topThickness > 0 || bottomThickness > 0);
     m_drawContentBorderGradient = enable;
 
-    applyContentBorderThickness(m_nsWindow);
+    applyContentBorderThickness(nativeWindow());
 }
 
 void QCocoaWindow::registerContentBorderArea(quintptr identifier, int upper, int lower)
 {
     m_contentBorderAreas.insert(identifier, BorderRange(identifier, upper, lower));
-    applyContentBorderThickness(m_nsWindow);
+    applyContentBorderThickness(nativeWindow());
 }
 
 void QCocoaWindow::setContentBorderAreaEnabled(quintptr identifier, bool enable)
 {
     m_enabledContentBorderAreas.insert(identifier, enable);
-    applyContentBorderThickness(m_nsWindow);
+    applyContentBorderThickness(nativeWindow());
 }
 
 void QCocoaWindow::setContentBorderEnabled(bool enable)
 {
     m_drawContentBorderGradient = enable;
-    applyContentBorderThickness(m_nsWindow);
+    applyContentBorderThickness(nativeWindow());
 }
 
 void QCocoaWindow::applyContentBorderThickness(NSWindow *window)
@@ -1781,22 +1841,22 @@ void QCocoaWindow::applyContentBorderThickness(NSWindow *window)
 
 void QCocoaWindow::updateNSToolbar()
 {
-    if (!m_nsWindow)
+    if (!nativeWindow())
         return;
 
     NSToolbar *toolbar = QCocoaIntegration::instance()->toolbar(window());
 
-    if ([m_nsWindow toolbar] == toolbar)
+    if ([nativeWindow() toolbar] == toolbar)
        return;
 
-    [m_nsWindow setToolbar: toolbar];
-    [m_nsWindow setShowsToolbarButton:YES];
+    [nativeWindow() setToolbar: toolbar];
+    [nativeWindow() setShowsToolbarButton:YES];
 }
 
 bool QCocoaWindow::testContentBorderAreaPosition(int position) const
 {
-    return m_nsWindow && m_drawContentBorderGradient &&
-            0 <= position && position < [m_nsWindow contentBorderThicknessForEdge: NSMaxYEdge];
+    return nativeWindow() && m_drawContentBorderGradient &&
+            0 <= position && position < [nativeWindow() contentBorderThicknessForEdge: NSMaxYEdge];
 }
 
 qreal QCocoaWindow::devicePixelRatio() const
@@ -1806,7 +1866,7 @@ qreal QCocoaWindow::devicePixelRatio() const
     // methods such as [NSWindow backingScaleFacor] might not give the correct
     // result, for example if setWantsBestResolutionOpenGLSurface is not set or
     // or ignored by the OpenGL driver.
-    NSSize backingSize = [m_contentView convertSizeToBacking:NSMakeSize(1.0, 1.0)];
+    NSSize backingSize = [contentView() convertSizeToBacking:NSMakeSize(1.0, 1.0)];
     return backingSize.height;
 }
 
@@ -1837,7 +1897,7 @@ bool QCocoaWindow::updateExposedState(QSize windowSize, const qreal devicePixelR
     // time, and we won't get a NSWindowDidChangeScreenNotification
     // on show. The case where the window is initially displayed
     // on a non-primary screen needs special handling here.
-    NSUInteger screenIndex = [[NSScreen screens] indexOfObject:m_nsWindow.screen];
+    NSUInteger screenIndex = [[NSScreen screens] indexOfObject:nativeWindow().screen];
     if (screenIndex != NSNotFound) {
         QCocoaScreen *cocoaScreen = QCocoaIntegration::instance()->screenAtIndex(screenIndex);
         if (cocoaScreen)
@@ -1894,11 +1954,11 @@ QPoint QCocoaWindow::bottomLeftClippedByNSWindowOffsetStatic(QWindow *window)
 
 QPoint QCocoaWindow::bottomLeftClippedByNSWindowOffset() const
 {
-    if (!m_contentView)
+    if (!contentView())
         return QPoint();
-    const NSPoint origin = [m_contentView isFlipped] ? NSMakePoint(0, [m_contentView frame].size.height)
+    const NSPoint origin = [contentView() isFlipped] ? NSMakePoint(0, [contentView() frame].size.height)
                                                      : NSMakePoint(0,                                 0);
-    const NSRect visibleRect = [m_contentView visibleRect];
+    const NSRect visibleRect = [contentView() visibleRect];
 
     return QPoint(visibleRect.origin.x, -visibleRect.origin.y + (origin.y - visibleRect.size.height));
 }
@@ -1996,8 +2056,8 @@ GLuint QCocoaWindow::defaultFramebufferObject() const
 
 QMargins QCocoaWindow::frameMargins() const
 {
-    NSRect frameW = [m_nsWindow frame];
-    NSRect frameC = [m_nsWindow contentRectForFrameRect:frameW];
+    NSRect frameW = [nativeWindow() frame];
+    NSRect frameC = [nativeWindow() contentRectForFrameRect:frameW];
 
     return QMargins(frameW.origin.x - frameC.origin.x,
         (frameW.origin.y + frameW.size.height) - (frameC.origin.y + frameC.size.height),

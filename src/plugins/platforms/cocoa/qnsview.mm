@@ -607,8 +607,11 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 - (void)invalidateWindowShadowIfNeeded
 {
-    if (m_shouldInvalidateWindowShadow && m_platformWindow->m_nsWindow) {
-        [m_platformWindow->m_nsWindow invalidateShadow];
+    if (!m_shouldInvalidateWindowShadow)
+        return;
+
+    if (NSWindow *window = m_platformWindow->nativeWindow()) {
+        [window invalidateShadow];
         m_shouldInvalidateWindowShadow = false;
     }
 }
@@ -711,7 +714,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // Optimization: Copy frame buffer content instead of blending for
     // top-level windows where Qt fills the entire window content area.
     // (But don't overpaint the title-bar gradient)
-    if (m_platformWindow->m_nsWindow && !m_platformWindow->m_drawContentBorderGradient)
+    if (m_platformWindow->nativeWindow() && !m_platformWindow->m_drawContentBorderGradient)
         CGContextSetBlendMode(cgContext, kCGBlendModeCopy);
 
     CGContextDrawImage(cgContext, dirtyWindowRect, cleanImg);
@@ -1162,7 +1165,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 {
     Q_UNUSED(theEvent)
     // Set the cursor manually if there is no NSWindow.
-    if (!m_platformWindow->m_nsWindow && m_platformWindow->m_windowCursor)
+    if (!m_platformWindow->nativeWindow() && m_platformWindow->m_windowCursor)
         [m_platformWindow->m_windowCursor set];
     else
         [super cursorUpdate:theEvent];
@@ -1171,7 +1174,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 -(void)resetCursorRects
 {
     // Use the cursor rect API if there is a NSWindow
-    if (m_platformWindow->m_nsWindow && m_platformWindow->m_windowCursor)
+    if (m_platformWindow->nativeWindow() && m_platformWindow->m_windowCursor)
         [self addCursorRect:[self visibleRect] cursor:m_platformWindow->m_windowCursor];
 }
 
@@ -1190,7 +1193,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // the time of the leave. This is dificult to accomplish by
     // handling mouseEnter and mouseLeave envents, since they are sent
     // individually to different views.
-    if (m_platformWindow->m_nsWindow && childWindow) {
+    if (m_platformWindow->nativeWindow() && childWindow) {
         if (childWindow != m_platformWindow->m_enterLeaveTargetWindow) {
             QWindowSystemInterface::handleEnterLeaveEvent(childWindow, m_platformWindow->m_enterLeaveTargetWindow, windowPoint, screenPoint);
             m_platformWindow->m_enterLeaveTargetWindow = childWindow;
@@ -1214,7 +1217,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         return;
 
     // Top-level windows generate enter events for sub-windows.
-    if (!m_platformWindow->m_nsWindow)
+    if (!m_platformWindow->nativeWindow())
         return;
 
     QPointF windowPoint;
@@ -1233,7 +1236,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         return;
 
     // Top-level windows generate leave events for sub-windows.
-    if (!m_platformWindow->m_nsWindow)
+    if (!m_platformWindow->nativeWindow())
         return;
 
     QWindowSystemInterface::handleLeaveEvent(m_platformWindow->m_enterLeaveTargetWindow);

@@ -183,6 +183,8 @@ public:
     WId winId() const Q_DECL_OVERRIDE;
     void setParent(const QPlatformWindow *window) Q_DECL_OVERRIDE;
 
+    void createNativeView();
+    void createNativeWindow();
     NSView *contentView() const;
     void setContentView(NSView *contentView);
     QNSView *qtView() const;
@@ -272,10 +274,16 @@ public: // for QNSView
 
     void removeMonitor();
 
+    // Native view and windows. Depending on QCococaWindow configuration
+    // these may be nil or hold a pointer to a native instnace. The "lazy"
+    // flags are set if lazy creation is enabled and if the creation code
+    // has benen run.
     NSView *m_contentView;
     QNSView *m_qtView;
     QCocoaNSWindow *m_nsWindow;
     QCocoaWindow *m_forwardWindow;
+    bool m_lazyNativeViewAndWindows;
+    bool m_lazyNativeViewAndWindowsCreated;
 
     // TODO merge to one variable if possible
     bool m_contentViewIsEmbedded; // true if the m_contentView is actually embedded in a "foreign" NSView hiearchy
