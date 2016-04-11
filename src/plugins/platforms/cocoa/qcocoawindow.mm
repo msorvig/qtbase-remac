@@ -345,8 +345,9 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_qtView(nil)
     , m_nsWindow(0)
     , m_forwardWindow(0)
-    , m_lazyNativeViewAndWindows(false)
-    , m_lazyNativeViewAndWindowsCreated(false)
+    , m_lazyNativeViewAndWindows(true)
+    , m_lazyNativeViewCreated(false)
+    , m_lazyNativeWindowCreated(false)
     , m_contentViewIsEmbedded(false)
     , m_contentViewIsToBeEmbedded(false)
     , m_ownsQtView(true)
@@ -403,13 +404,12 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
             createNativeView();
     }
 
-    if (!m_lazyNativeViewAndWindows)
+    if (!m_lazyNativeViewAndWindows) {
         createNativeWindow();
-
-    setCocoaGeometry(QPlatformWindow::geometry());
-
-    if (tlw->isTopLevel())
-        setWindowIcon(tlw->icon());
+        setCocoaGeometry(QPlatformWindow::geometry());
+        if (tlw->isTopLevel())
+            setWindowIcon(tlw->icon());
+    }
     m_inConstructor = false;
 }
 
@@ -500,6 +500,11 @@ void QCocoaWindow::setGeometry(const QRect &rectIn)
         const QMargins margins = frameMargins();
 
         rect.moveTopLeft(rect.topLeft() + QPoint(margins.left(), margins.top()));
+    }
+
+    if (m_lazyNativeViewAndWindows && !m_lazyNativeViewCreated) {
+        QPlatformWindow::setGeometry(rect);
+        return;
     }
 
     setCocoaGeometry(rect);
@@ -670,10 +675,9 @@ void QCocoaWindow::setVisible(bool visible)
 
         // Native views and windows are needed to make the window visible. Create
         // them if this has not already been done.
-        if (m_lazyNativeViewAndWindows && !m_lazyNativeViewAndWindowsCreated) {
+        if (m_lazyNativeViewAndWindows && !m_lazyNativeViewCreated) {
             createNativeView();
             createNativeWindow();
-            m_lazyNativeViewAndWindowsCreated = true;
         }
 
         // We need to recreate if the modality has changed as the style mask will need updating
@@ -1099,7 +1103,11 @@ bool QCocoaWindow::isOpaque() const
 void QCocoaWindow::propagateSizeHints()
 {
     QMacAutoReleasePool pool;
-    if (!nativeWindow())
+
+    // Don't propagate if the there is no native NSWindow or it has not been
+    // created yet. In the latter case this function will be called again
+    // at native window creation time.
+    if (!m_nsWindow)
         return;
 
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::propagateSizeHints" << window() << "\n"
@@ -1111,12 +1119,12 @@ void QCocoaWindow::propagateSizeHints()
     // Set the minimum content size.
     const QSize minimumSize = windowMinimumSize();
     if (!minimumSize.isValid()) // minimumSize is (-1, -1) when not set. Make that (0, 0) for Cocoa.
-        [nativeWindow() setContentMinSize : NSMakeSize(0.0, 0.0)];
-    [nativeWindow() setContentMinSize : NSMakeSize(minimumSize.width(), minimumSize.height())];
+        [m_nsWindow setContentMinSize : NSMakeSize(0.0, 0.0)];
+    [m_nsWindow setContentMinSize : NSMakeSize(minimumSize.width(), minimumSize.height())];
 
     // Set the maximum content size.
     const QSize maximumSize = windowMaximumSize();
-    [nativeWindow() setContentMaxSize : NSMakeSize(maximumSize.width(), maximumSize.height())];
+    [m_nsWindow setContentMaxSize : NSMakeSize(maximumSize.width(), maximumSize.height())];
 
     // The window may end up with a fixed size; in this case the zoom button should be disabled.
     setWindowZoomButton(m_windowFlags);
@@ -1125,19 +1133,15 @@ void QCocoaWindow::propagateSizeHints()
     // resizable and that have no specific size increment set. Cocoa expects (1.0, 1.0) in this case.
     const QSize sizeIncrement = windowSizeIncrement();
     if (!sizeIncrement.isEmpty())
-        [nativeWindow() setResizeIncrements : qt_mac_toNSSize(sizeIncrement)];
+        [m_nsWindow setResizeIncrements : qt_mac_toNSSize(sizeIncrement)];
     else
-        [nativeWindow() setResizeIncrements : NSMakeSize(1.0, 1.0)];
+        [m_nsWindow setResizeIncrements : NSMakeSize(1.0, 1.0)];
 
     QRect rect = geometry();
     QSize baseSize = windowBaseSize();
     if (!baseSize.isNull() && baseSize.isValid()) {
-        [m_nsWindow setFrame:NSMakeRect(rect.x(), rect.y(), baseSize.width(), baseSize.height()) display:YES];
-        [nativeWindow() setFrame:NSMakeRect(rect.x(), rect.y(), baseSize.width(), baseSize.height()) display:NO];
         [m_nsWindow setFrame:NSMakeRect(rect.x(), rect.y(), baseSize.width(), baseSize.height()) display:NO];
     }
-
-    qDebug() << "propagateSizeHints" << [nativeWindow() isVisible];
 }
 
 void QCocoaWindow::setOpacity(qreal level)
@@ -1205,6 +1209,7 @@ void QCocoaWindow::setParent(const QPlatformWindow *parentWindow)
 // Creates a QNSView for this window.
 void QCocoaWindow::createNativeView()
 {
+    m_lazyNativeViewCreated = true;
     m_qtView = [[QNSView alloc] initWithQWindow:window() platformWindow:this];
     m_contentView = m_qtView;
 
@@ -1226,17 +1231,18 @@ void QCocoaWindow::createNativeView()
 // Creates a NSWindow/NSPanel for this window.
 void QCocoaWindow::createNativeWindow()
 {
-   recreateWindow(parent());
+    m_lazyNativeWindowCreated = true;
+    recreateWindow(parent());
 }
 
 // Returns the native NSView instance for this window. In lazy mode creates
 // a QNSView if neccesary.
 NSView *QCocoaWindow::contentView() const
 {
-    if (!m_lazyNativeViewAndWindows || m_lazyNativeViewAndWindowsCreated)
+    if (!m_lazyNativeViewAndWindows || m_lazyNativeViewCreated)
         return m_contentView;
 
-    if (m_contentView)
+    if (!m_contentView)
          const_cast<QCocoaWindow *>(this)->createNativeView();
 
     return m_contentView;
@@ -1247,7 +1253,7 @@ NSView *QCocoaWindow::contentView() const
 void QCocoaWindow::setContentView(NSView *contentView)
 {
     // This counts as running the view creation logic.
-    m_lazyNativeViewAndWindowsCreated = true;
+    m_lazyNativeViewCreated = true;
 
     // Remove and release the previous content view
     [m_contentView removeFromSuperview];
@@ -1264,7 +1270,7 @@ void QCocoaWindow::setContentView(NSView *contentView)
 // a QNSView if neccesary.
 QNSView *QCocoaWindow::qtView() const
 {
-    if (!m_lazyNativeViewAndWindows || m_lazyNativeViewAndWindowsCreated)
+    if (!m_lazyNativeViewAndWindows || m_lazyNativeViewCreated)
         return m_qtView;
 
     // Don't create a QNSView if this QWindow is managing a foreign NSView.
@@ -1281,10 +1287,11 @@ QNSView *QCocoaWindow::qtView() const
 // it if neccesary.
 NSWindow *QCocoaWindow::nativeWindow() const
 {
-    if (!m_lazyNativeViewAndWindows || m_lazyNativeViewAndWindowsCreated)
+    if (!m_lazyNativeViewAndWindows || m_lazyNativeWindowCreated)
         return m_nsWindow;
 
     const_cast<QCocoaWindow *>(this)->createNativeWindow();
+    return m_nsWindow;
 }
 
 void QCocoaWindow::setEmbeddedInForeignView(bool embedded)
@@ -1382,7 +1389,7 @@ void QCocoaWindow::recreateWindow(const QPlatformWindow *parentWindow)
     BOOL requestNSWindowChild = qt_mac_resolveOption(NO, window(), "_q_platform_MacUseNSWindow",
                                                                    "QT_MAC_USE_NSWINDOW");
     m_isNSWindowChild = parentWindow && requestNSWindowChild;
-    bool needsNSWindow = m_isNSWindowChild || !parentWindow;
+    bool needsNSWindow = m_isNSWindowChild || (!parentWindow && !m_contentViewIsToBeEmbedded);
 
     QCocoaWindow *oldParentCocoaWindow = m_parentCocoaWindow;
     m_parentCocoaWindow = const_cast<QCocoaWindow *>(static_cast<const QCocoaWindow *>(parentWindow));
@@ -1972,14 +1979,17 @@ NSView *QCocoaWindow::transferViewOwnershipStatic(QWindow *window)
 // the caller, and also transfer ownership of the QWindow instance to the QNSView instance.
 NSView *QCocoaWindow::transferViewOwnership()
 {
+    // Create the native view if needed.
+    QNSView *view = qtView();
+
     // Already transfered? Return the view and do nothing.
     if (!m_ownsQtView)
-        return m_qtView;
+        return view;
 
     // Check if the view actually is a QNSView and not foreign view.
     // Transferring ownership of the QWindow instance to a foreign view
     // does not make sense: a generic NSView has no idea what a QWindow is.
-    if (!m_qtView) {
+    if (!view) {
         qWarning("QCocoaWindow::transferViewOwnership: Could not transfer ownership to a non-QNSView");
         return 0;
     }
@@ -1997,8 +2007,8 @@ NSView *QCocoaWindow::transferViewOwnership()
     // ownership flags to prevent this and have [QNSView dealloc]
     // delete the QWindow (and QCocoaWindow) instead.
     m_ownsQtView = false;
-    m_qtView->m_ownsQWindow = true;
-    return m_qtView;
+    view->m_ownsQWindow = true;
+    return view;
 }
 
 const CVTimeStamp *QCocoaWindow::displayLinkNowTimeStatic(QWindow *window)
@@ -2054,8 +2064,11 @@ GLuint QCocoaWindow::defaultFramebufferObject() const
 
 QMargins QCocoaWindow::frameMargins() const
 {
-    NSRect frameW = [nativeWindow() frame];
-    NSRect frameC = [nativeWindow() contentRectForFrameRect:frameW];
+    if (!m_nsWindow)
+        return QMargins();
+
+    NSRect frameW = [m_nsWindow frame];
+    NSRect frameC = [m_nsWindow contentRectForFrameRect:frameW];
 
     return QMargins(frameW.origin.x - frameC.origin.x,
         (frameW.origin.y + frameW.size.height) - (frameC.origin.y + frameC.size.height),
