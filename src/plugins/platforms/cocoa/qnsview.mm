@@ -557,16 +557,20 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // application flushes the backing store outside of UpdateRequest or ExposeEvent
     // callbacks. This code path is susceptible to performance issues if flush is
     // called more often than ~60 times per second.
-    bool usesCustomOpenGLLayer = (m_platformWindow->m_inLayerMode && m_window->supportsOpenGL());
-    if (!usesCustomOpenGLLayer) {
+    bool inLayerMode = m_platformWindow->m_inLayerMode;
+    bool usesCustomOpenGLLayer = (inLayerMode && m_window->supportsOpenGL());
+    bool usesRasterLayerUpdate = m_platformWindow->m_useRasterLayerUpdate;
+    if (inLayerMode && usesCustomOpenGLLayer) {
+        // OpenGL layer mode is async
+        m_requestUpdateCalled = true;
+    } else if (inLayerMode && usesRasterLayerUpdate) {
+        [self.layer setNeedsDisplay];
+    } else {
         m_inFlushBackingStore = true;
         foreach (QRect rect, region.rects())
             [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
         [self displayIfNeeded];
         m_inFlushBackingStore = false;
-    } else {
-        // OpenGL layer mode is async
-        m_requestUpdateCalled = true;
     }
 }
 
@@ -624,6 +628,13 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         [m_platformWindow->m_nsWindow invalidateShadow];
         m_shouldInvalidateWindowShadow = false;
     }
+}
+
+- (void) displayLayer:(CALayer *)layer
+{
+   //  qCDebug(lcQpaCocoaWindow) << "[QNSView displayLayer:]" << m_window;
+    if (m_backingStore)
+        layer.contents = (__bridge id) qt_mac_toCGImage(m_backingStore->toImage());
 }
 
 - (void) drawRect:(NSRect)dirtyRect

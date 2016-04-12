@@ -302,6 +302,7 @@ public: // for QNSView
     bool m_hiddenByClipping;
     bool m_hiddenByAncestor;
     bool m_inLayerMode;
+    bool m_useRasterLayerUpdate;
 
     static const int NoAlertRequest;
     NSInteger m_alertRequest;
