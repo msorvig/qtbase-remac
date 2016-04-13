@@ -37,6 +37,8 @@
 #include <QtCore/qglobal.h>
 #include <QtPlatformHeaders/QPlatformHeaderHelper>
 
+#include <CoreVideo/CVBase.h>
+
 QT_BEGIN_NAMESPACE
 
 class QWindow;
