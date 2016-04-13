@@ -373,12 +373,25 @@ void QCocoaGLContext::swapBuffers(QPlatformSurface *surface)
 
 GLuint QCocoaGLContext::defaultFramebufferObject(QPlatformSurface *surface) const
 {
+    // ### this is clearly ridicolous
     if (!m_isLayerContext)
+        return QPlatformOpenGLContext::defaultFramebufferObject(surface);
+
+    if (surface->surface()->surfaceClass() == QSurface::Offscreen)
+        return QPlatformOpenGLContext::defaultFramebufferObject(surface);
+
+    if (!m_currentWindow || !m_currentWindow->handle())
         return QPlatformOpenGLContext::defaultFramebufferObject(surface);
 
     // Cast and dereference our way to the current FBO identifier on the layer
     QNSView *view = reinterpret_cast<QCocoaWindow* >(m_currentWindow->handle())->qtView();
+    if (!view)
+        return QPlatformOpenGLContext::defaultFramebufferObject(surface);
+
     QCocoaOpenGLLayer *layer= (QCocoaOpenGLLayer *)[view layer];
+    if (!layer)
+        return QPlatformOpenGLContext::defaultFramebufferObject(surface);
+
     return layer->m_drawFbo;
 }
 
