@@ -1978,14 +1978,20 @@ void QCocoaWindow::setFrameStrutEventsEnabled(bool enabled)
 
 void QCocoaWindow::requestUpdate()
 {
+    if (!window()->isVisible())
+        return;
     [m_qtView requestUpdate];
 }
 void QCocoaWindow::requestUpdate(const QRect &rect)
 {
+    if (!window()->isVisible())
+        return;
     [m_qtView requestUpdateWithRect:rect];
 }
 
 void QCocoaWindow::requestUpdate(const QRegion &region)
 {
+    if (!window()->isVisible())
+        return;
     [m_qtView requestUpdateWithRegion:region];
 }
