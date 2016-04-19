@@ -104,6 +104,24 @@ void QPaintDeviceWindow::update(const QRegion &region)
 }
 
 /*!
+    Marks the window as dirty and immediately repaints.
+
+    \note This function will block and not return until the repaint has
+    happended and the pixels have been flushed to the windowing system.
+
+    \note Calling this function for non-exposed windows has no effect.
+*/
+void QPaintDeviceWindow::repaint()
+{
+    Q_D(QPaintDeviceWindow);
+    if (!isExposed())
+        return;
+
+    d->markWindowAsDirty();
+    d->doFlush(QRect(QPoint(0, 0), size()));
+}
+
+/*!
     Handles paint events passed in the \a event parameter.
 
     The default implementation does nothing. Reimplement this function to

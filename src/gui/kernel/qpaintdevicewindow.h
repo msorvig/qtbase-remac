@@ -50,6 +50,7 @@ class Q_GUI_EXPORT QPaintDeviceWindow : public QWindow, public QPaintDevice
 public:
     void update(const QRect &rect);
     void update(const QRegion &region);
+    void repaint();
 
     using QWindow::width;
     using QWindow::height;
