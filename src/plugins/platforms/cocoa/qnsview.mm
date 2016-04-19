@@ -369,7 +369,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         // Get interior (content) geometry in the Qt coordinate system
         newGeometry = qt_mac_flipRect([nativeWindow contentRectForFrameRect:[nativeWindow frame]]);
     } else {
-        // QNSView is isFLipped
+        // QNSView is isFLipped, no qt_mac_flipRect needed.
         newGeometry = qt_mac_toQRect([self frame]);
     }
 
@@ -550,6 +550,10 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // request from [drawRect:] then we are done - there is a displyIfNeeded in progress
     // and we don't want to trigger a new one. This is the "good", performant code path.
     if (m_inDrawRect)
+        return;
+
+    // Let Cocoa handle updates during window resizing.
+    if (self.inLiveResize)
         return;
 
     // If not trigger a drawRect call by invalidating the view and triggering a
@@ -2385,16 +2389,17 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 - (void) sendUpdateRequest:(QRect) dirty
 {
-    // Hold the mutex for the duration of this function, also when
-    // calling out to Qt and delivering the update request. The GUI
-    // thread is then free to access the shared CVTimeStamp pointers
-    // at any time.
-    QMutexLocker lock(&m_displayLinkMutex);
-
     // This function may be called either from the displaylink calback or in response
     // to window visibility or geometry change events. Separate the handling of the
     // cases
     if (m_isDisplayLinkUpdate) {
+
+        // Hold the mutex for the duration of this function, also when
+        // calling out to Qt and delivering the update request. The GUI
+        // thread is then free to access the shared CVTimeStamp pointers
+        // at any time.
+        QMutexLocker lock(&m_displayLinkMutex);
+
         //
         if (m_displayLinkDisable) {
             qDebug() << "Display link update request dropped: display link was disabled";
