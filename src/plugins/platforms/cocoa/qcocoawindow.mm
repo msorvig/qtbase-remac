@@ -1814,6 +1814,16 @@ qreal QCocoaWindow::devicePixelRatio() const
     return backingSize.height;
 }
 
+// Requests exposing the window. This is done via setNeedsDisplay/drawRect,
+// but only if the window is not already exposed. The benefit of this is that
+// no extra expose or paint events for already exposed window are generated.
+void QCocoaWindow::requestExpose()
+{
+    if (m_exposedSize.isValid())
+        return;
+    [m_qtView setNeedsDisplay:YES];
+}
+
 // Updates the exposed state of a window by sending Expose events when
 // window geometry or devicePixelRatio changes. Call this method with an
 // empty rect on window hide.

@@ -226,6 +226,7 @@ public:
     void updateNSToolbar();
 
     qreal devicePixelRatio() const Q_DECL_OVERRIDE;
+    void requestExpose();
     bool updateExposedState(QSize windowSize, const qreal devicePixelRatio = 1);
     QWindow *childWindowAt(QPoint windowPoint);
     bool shouldRefuseKeyWindowAndFirstResponder();

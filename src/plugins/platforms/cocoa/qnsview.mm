@@ -496,7 +496,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
             m_platformWindow->updateExposedState(QSize());
         } else {
             m_requestUpdateCalled = true;
-            [self setNeedsDisplay:true];
+            m_platformWindow->requestExpose();
         }
 
     } else if (notificationName == NSWindowDidChangeScreenNotification) {
