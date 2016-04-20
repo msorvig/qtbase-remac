@@ -211,6 +211,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     m_ownsQWindow = !m_platformWindow->m_ownsQtView;
 
     // Display link setup
+    m_displayLinkEnable = true;
     CVDisplayLinkCreateWithActiveCGDisplays(&m_displayLink);
     CVDisplayLinkSetOutputCallback(m_displayLink, &qNsViewDisplayLinkCallback, self);
     m_displayLinkSerial = 0;
@@ -2252,17 +2253,37 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
 
 - (void) requestUpdate
 {
-    [self requestCVDisplayLinkUpdate];
+    if (m_displayLinkEnable) {
+        QMutexLocker lock(&m_displayLinkMutex);
+        m_displayLinkDirty = QRegion(QRect(QPoint(0, 0), m_platformWindow->geometry().size()));
+        [self requestCVDisplayLinkUpdate];
+    } else {
+        // TODO: use timer like QPlatformWindow::requestUpdate
+        [self setNeedsDisplay:YES];
+    }
 }
 
 - (void) requestUpdateWithRect:(QRect) rect
 {
-    [self requestCVDisplayLinkUpdate];
+    if (m_displayLinkEnable) {
+        QMutexLocker lock(&m_displayLinkMutex);
+        m_displayLinkDirty = QRegion(rect);
+        [self requestCVDisplayLinkUpdate];
+    } else {
+        [self setNeedsDisplayInRect:qt_mac_toNSRect(rect)];
+    }
 }
 
 - (void) requestUpdateWithRegion:(QRegion) region
 {
-    [self requestCVDisplayLinkUpdate];
+    if (m_displayLinkEnable) {
+        QMutexLocker lock(&m_displayLinkMutex);
+        m_displayLinkDirty = region;
+        [self requestCVDisplayLinkUpdate];
+    } else {
+        foreach (QRect rect, region.rects())
+            [self setNeedsDisplayInRect:qt_mac_toNSRect(rect)];
+    }
 }
 
 - (void) requestCVDisplayLinkUpdate
@@ -2373,8 +2394,9 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
             m_isDisplayLinkUpdate = false;
         });
     } else {
-        // view setNeedsDisplay repaints later on the GUI thread.
-        [self setNeedsDisplay:true];
+        // Call setNeedsDisplay which repaints later on the GUI thread.
+        foreach (QRect rect, m_displayLinkDirty.rects())
+            [self setNeedsDisplayInRect:qt_mac_toNSRect(rect)];
     }
 
     // Wait until the GUI thread has finished processing the update.

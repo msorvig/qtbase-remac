@@ -73,6 +73,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     bool m_shouldSetGLContextinDrawRect;
 #endif
 
+    bool m_displayLinkEnable;
     CVDisplayLinkRef m_displayLink;
     NSTimer *m_displayLinkStopTimer;
     int m_displayLinkSerial;
@@ -84,6 +85,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     @public const CVTimeStamp *m_displayLinkOutputTime;
     bool m_displayLinkDisable;
     bool m_isDisplayLinkUpdate;
+    QRegion m_displayLinkDirty;
 
     NSString *m_inputSource;
     QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper) *m_mouseMoveHelper;
