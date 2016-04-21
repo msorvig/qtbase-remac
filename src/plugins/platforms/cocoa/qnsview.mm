@@ -635,11 +635,16 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     }
 }
 
-- (void) displayLayer:(CALayer *)layer
+-(BOOL) wantsUpdateLayer
 {
-   //  qCDebug(lcQpaCocoaWindow) << "[QNSView displayLayer:]" << m_window;
+    return m_platformWindow->m_useRasterLayerUpdate;
+}
+
+- (void) updateLayer
+{
+    // Set the layer contents to be the backing store image
     if (m_backingStore)
-        layer.contents = (__bridge id) qt_mac_toCGImage(m_backingStore->toImage());
+        self.layer.contents = (__bridge id) qt_mac_toCGImage(m_backingStore->toImage());
 }
 
 - (void) drawRect:(NSRect)dirtyRect
