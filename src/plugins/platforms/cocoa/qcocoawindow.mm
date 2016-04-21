@@ -419,7 +419,7 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
 
 QCocoaWindow::~QCocoaWindow()
 {
-     qDebug() << "QCocoaWindow::~QCocoaWindow" << this;
+    //     qDebug() << "QCocoaWindow::~QCocoaWindow" << this;
 #ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
 
 #endif
