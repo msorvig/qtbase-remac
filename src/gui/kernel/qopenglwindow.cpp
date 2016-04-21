@@ -340,7 +340,6 @@ QOpenGLWindow::QOpenGLWindow(QOpenGLWindow::UpdateBehavior updateBehavior, QWind
     : QPaintDeviceWindow(*(new QOpenGLWindowPrivate(Q_NULLPTR, updateBehavior)), parent)
 {
     setSurfaceType(QSurface::OpenGLSurface);
-    d_func()->initialize(); // ### remac: moved up to create context before platform window
 }
 
 /*!
@@ -352,7 +351,6 @@ QOpenGLWindow::QOpenGLWindow(QOpenGLContext *shareContext, UpdateBehavior update
     : QPaintDeviceWindow(*(new QOpenGLWindowPrivate(shareContext, updateBehavior)), parent)
 {
     setSurfaceType(QSurface::OpenGLSurface);
-    d_func()->initialize(); // ### remac: moved up to create context before platform window
 }
 
 /*!
