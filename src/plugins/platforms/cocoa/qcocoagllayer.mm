@@ -64,7 +64,10 @@
 
     // Use pixel format from existing context if there is one. This means we respect
     // the QSurfaceFormat configurtion created by the user.
-    QCocoaGLContext *qtContext = QCocoaGLContext::contextForTargetWindow(m_window->window());
+#if 0
+    QCocoaGLContext *qtContext = 0;
+    if (m_window)
+        qtContext = QCocoaGLContext::contextForTargetWindow(m_window->window());
     if (qtContext) {
         NSOpenGLContext *context = qtContext->nativeContext();
         if (context) {
@@ -73,7 +76,7 @@
             pixelFormat = [[NSOpenGLPixelFormat alloc] initWithCGLPixelFormatObj:cglPixelFormat];
         }
     }
-
+#endif
     // Create a default pixel format if there was no context. This is probably not what
     // was intended by user code, so we should possibly have a qWarning() here.
     if (!pixelFormat) {
@@ -97,8 +100,11 @@
 {
     // Use existing native context if there is one.
     NSOpenGLContext *context = 0;
-    if (QCocoaGLContext *qtContext = QCocoaGLContext::contextForTargetWindow(m_window->window()))
-        context = qtContext->nativeContext();
+#if 0
+    if (m_window)
+        if (QCocoaGLContext *qtContext = QCocoaGLContext::contextForTargetWindow(m_window->window()))
+            context = qtContext->nativeContext();
+#endif
     if (!context)
         context = [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:nil];
     return context;
