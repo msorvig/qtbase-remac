@@ -542,10 +542,20 @@ void QCocoaWindow::setCocoaGeometry(const QRect &rect)
         return;
     }
 
-    // Set the native NSView or NSWindow geometry. If there is a NSView then setting
-    // its geometry will also update its content view geometry (if neccesary)
+    // Set the native NSView or NSWindow geometry. If there is a NSWindow then
+    // setting its geometry will also update its content view geometry.
     if (m_nsWindow) {
-        [m_nsWindow setFrame:[m_nsWindow frameRectForContentRect:qt_mac_flipRect(rect)] display:NO animate:NO];
+
+        // Triggering an immediate display here seems to be the only way to
+        // have flicker-free window size animations. However, this will also
+        // send drawRect calls for hidden windows, which we don't want since
+        // they might cause QNSView to send expose events and/or make the window
+        // visible. Only ask to display if the native window is visible.
+        bool display = (m_nsWindow.occlusionState & NSWindowOcclusionStateVisible);
+
+        [m_nsWindow setFrame:[m_nsWindow frameRectForContentRect:qt_mac_flipRect(rect)]
+                                                         display:display
+                                                         animate:NO];
     } else {
         [m_contentView setFrame:qt_mac_toNSRect(rect)];
     }
