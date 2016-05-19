@@ -2428,11 +2428,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
             return;
         }
 
-        // Drop update if user code did not request it.
-        if (!m_requestUpdateCalled) {
-            qDebug() << "Display link update request dropped: m_requestUpdateCalled was false";
-            return;
-        }
 
         // Send update to Qt. This is a synchronous call.
         m_requestUpdateCalled = false;
