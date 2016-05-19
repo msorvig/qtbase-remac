@@ -346,14 +346,19 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 // GeometryChange event to Qt.
 - (void)updateGeometry
 {
-#if 1
     // Don't react to geometry updates during QCocoaWindow construction. Shuffling the NSViews and
     // NSWindows into place may generate spurious geometry updates. There should be no real updates
     // here: we want the native geometry to be the geometry determined by the QCocoaWindow constructor.
     if (m_platformWindow->m_inConstructor)
         return;
 
-    // Child NSWindow windows are Very Special (se setCocoaGeometry)
+    // It can happen that self.window is nil (if we are changing
+    // styleMask from/to borderless and content view is being re-parented)
+    // - this results in an invalid coordinates.
+    if (m_platformWindow->m_inSetStyleMask && !self.window)
+        return;
+
+    // Child NSWindow windows are special-cased (see QCocoaWindow::setCocoaGeometry)
     if (m_platformWindow->m_isNSWindowChild)
         return;
 
@@ -361,12 +366,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // NSView geometry.
     QRect newGeometry;
     NSWindow *nativeWindow = m_platformWindow->m_nsWindow;
-
     if (nativeWindow) {
-        // NSWindow geometry has some extra complications:
-        //   - top-level NSWindows should report global coordinates
-        //   - also exclude the window decorations for top-levels
-
         // Get interior (content) geometry in the Qt coordinate system
         newGeometry = qt_mac_flipRect([nativeWindow contentRectForFrameRect:[nativeWindow frame]]);
     } else {
@@ -389,67 +389,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // Store new geometry and notify Qt of the change
     m_platformWindow->QPlatformWindow::setGeometry(newGeometry);
     QWindowSystemInterface::handleGeometryChange(m_window, m_platformWindow->QCocoaWindow::geometry());
-
-#else
-    QRect geometry;
-
-    if (m_platformWindow->m_isNSWindowChild) {
-         return;
-#if 0
-        //geometry = qt_mac_toQRect([self frame]);
-        qDebug() << "nsview updateGeometry" << m_platformWindow->window();
-        QRect screenRect = qt_mac_toQRect([m_platformWindow->m_nsWindow convertRectToScreen:[self frame]]);
-        qDebug() << "screenRect" << screenRect;
-
-        screenRect.moveTop(qt_mac_flipYCoordinate(screenRect.y() + screenRect.height()));
-        geometry = QRect(m_platformWindow->window()->parent()->mapFromGlobal(screenRect.topLeft()), screenRect.size());
-        qDebug() << "geometry" << geometry;
-#endif
-        //geometry = QRect(screenRect.origin.x, qt_mac_flipYCoordinate(screenRect.origin.y + screenRect.size.height), screenRect.size.width, screenRect.size.height);
-    } else if (m_platformWindow->m_nsWindow) {
-        // top level window, get window rect and flip y.
-        NSRect rect = [self frame];
-        NSRect windowRect = [[self window] frame];
-        geometry = QRect(windowRect.origin.x, qt_mac_flipYCoordinate(windowRect.origin.y + rect.size.height), rect.size.width, rect.size.height);
-
-
-    } else if (m_platformWindow->m_contentViewIsToBeEmbedded) {
-        // embedded child window, use the frame rect ### merge with case below
-        geometry = qt_mac_toQRect([self bounds]);
-    } else {
-        // child window, use the frame rect
-        geometry = qt_mac_toQRect([self frame]);
-    }
-
-    if (m_platformWindow->m_nsWindow && geometry == m_platformWindow->geometry())
-        return;
-
-    // It can happen that self.window is nil (if we are changing
-    // styleMask from/to borderless and content view is being re-parented)
-    // - this results in an invalid coordinates.
-    if (m_platformWindow->m_inSetStyleMask && !self.window)
-        return;
-
-#ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
-    qDebug() << "QNSView::udpateGeometry" << m_platformWindow << geometry;
-#endif
-
-    // Call setGeometry on QPlatformWindow. (not on QCocoaWindow,
-    // doing that will initiate a geometry change it and possibly create
-    // an infinite loop when this notification is triggered again.)
-    m_platformWindow->QPlatformWindow::setGeometry(geometry);
-
-    // Don't send the geometry change if the QWindow is designated to be
-    // embedded in a foreign view hiearchy but has not actually been
-    // embedded yet - it's too early.
-    if (m_platformWindow->m_contentViewIsToBeEmbedded && !m_platformWindow->m_contentViewIsEmbedded)
-        return;
-
-    // Send a geometry change event to Qt, if it's ready to handle events
-    if (!m_platformWindow->m_inConstructor) {
-        QWindowSystemInterface::handleGeometryChange(m_window, geometry);
-    }
-#endif
 }
 
 - (void)notifyWindowStateChanged:(Qt::WindowState)newState

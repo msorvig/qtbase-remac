@@ -523,12 +523,10 @@ QRect QCocoaWindow::geometry() const
     return QPlatformWindow::geometry();
 }
 
-//
 void QCocoaWindow::setCocoaGeometry(const QRect &rect)
 {
     QMacAutoReleasePool pool;
 
-#if 1
     // Special case for child NSWindows where child NSWindow geometry needs to
     // be clipped against parent NSWindow geometry.
     if (m_isNSWindowChild) {
@@ -560,39 +558,10 @@ void QCocoaWindow::setCocoaGeometry(const QRect &rect)
         [m_contentView setFrame:qt_mac_toNSRect(rect)];
     }
 
-    // QPlatformWindow::geometry() will be set by QNSView updateGeometry, unless
-    // the NSView for the this QWindow is a foregin window.
+    // Set QPlatformWindow geometry if the controlled NSView is a 'foreign' view
+    // and not a QNSView. (For the QNSView case this is done in [QNSView updateGeometry].)
     if (!m_qtView)
         QPlatformWindow::setGeometry(rect);
-
-
-#else
-    if (m_contentViewIsEmbedded) {
-        QPlatformWindow::setGeometry(rect);
-        return;
-    }
-
-    if (m_isNSWindowChild) {
-        QPlatformWindow::setGeometry(rect);
-        NSWindow *parentNSWindow = m_parentCocoaWindow->m_nsWindow;
-        NSRect parentWindowFrame = [parentNSWindow contentRectForFrameRect:parentNSWindow.frame];
-        clipWindow(parentWindowFrame);
-
-        // call this here: updateGeometry in qnsview.mm is a no-op for this case
-        QWindowSystemInterface::handleGeometryChange(window(), rect);
-        QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(0, 0), rect.size()));
-    } else if (m_nsWindow) {
-        NSRect bounds = qt_mac_flipRect(rect);
-        [m_nsWindow setFrame:[m_nsWindow frameRectForContentRect:bounds] display:YES animate:NO];
-    } else {
-        [m_contentView setFrame : NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
-    }
-
-    if (!m_qtView)
-        QPlatformWindow::setGeometry(rect);
-
-    // will call QPlatformWindow::setGeometry(rect) during resize confirmation (see qnsview.mm)
-#endif
 }
 
 void QCocoaWindow::clipChildWindows()
