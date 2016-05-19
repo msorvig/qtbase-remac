@@ -127,12 +127,14 @@ void *qcgl_createNSOpenGLPixelFormat(const QSurfaceFormat &format)
 
     attrs << NSOpenGLPFAAllowOfflineRenderers;
 
-    QByteArray useLayer = qgetenv("QT_MAC_WANTS_LAYER");
-    if (!useLayer.isEmpty() && useLayer.toInt() > 0) {
+    // TODO: Maybe want to test layer window attrubute here as well.
+    // TODO: Can/should we enable this unconditionally?
+    //QByteArray useLayer = qgetenv("QT_MAC_WANTS_LAYER");
+    //if (!useLayer.isEmpty() && useLayer.toInt() > 0) {
         // Disable the software rendering fallback. This makes compositing
         // OpenGL and raster NSViews using Core Animation layers possible.
         attrs << NSOpenGLPFANoRecovery;
-    }
+    //}
 
     attrs << 0;
 
