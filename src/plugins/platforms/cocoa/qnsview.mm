@@ -665,7 +665,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     // qDebug() << "drawRect window type" << m_window->supportsOpenGL();
 
-    // Request frame from Qt. This is a synchronous call, where Qt
+    // Request a frame from Qt. This is a synchronous call, where Qt
     // should draw and flush before returning. The excepton is if
     // this [drawRect:] call was itself triggered by a backingstore
     // flush; in that case there already is new/up to date backingstore
@@ -2421,15 +2421,12 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // cases
     if (m_isDisplayLinkUpdate) {
 
-
-        //
         if (m_displayLinkDisable) {
             qDebug() << "Display link update request dropped: display link was disabled";
             return;
         }
 
-
-        // Send update to Qt. This is a synchronous call.
+        // Send update request to Qt. This is a synchronous call.
         m_requestUpdateCalled = false;
         m_platformWindow->deliverUpdateRequest(dirty);
 
