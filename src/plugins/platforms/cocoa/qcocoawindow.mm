@@ -1952,6 +1952,8 @@ const CVTimeStamp *QCocoaWindow::displayLinkNowTime() const
 {
     if (!m_qtView)
         return 0;
+
+    QMutexLocker lock(&m_qtView->m_displayLinkMutex);
     return m_qtView->m_displayLinkNowTime;
 }
 
@@ -1967,6 +1969,7 @@ const CVTimeStamp *QCocoaWindow::displayLinkOutputTime() const
     if (!m_qtView)
         return 0;
 
+    QMutexLocker lock(&m_qtView->m_displayLinkMutex);
     return m_qtView->m_displayLinkOutputTime;
 }
 

@@ -79,7 +79,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     int m_displayLinkSerial;
     int m_displayLinkSerialAtTimerSchedule;
     bool m_requestUpdateCalled;
-    QMutex m_displayLinkMutex;
+    @public QMutex m_displayLinkMutex;
     QWaitCondition m_displayLinkWait;
     @public const CVTimeStamp *m_displayLinkNowTime;
     @public const CVTimeStamp *m_displayLinkOutputTime;

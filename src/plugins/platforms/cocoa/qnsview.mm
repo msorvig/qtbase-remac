@@ -2421,11 +2421,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // cases
     if (m_isDisplayLinkUpdate) {
 
-        // Hold the mutex for the duration of this function, also when
-        // calling out to Qt and delivering the update request. The GUI
-        // thread is then free to access the shared CVTimeStamp pointers
-        // at any time.
-        QMutexLocker lock(&m_displayLinkMutex);
 
         //
         if (m_displayLinkDisable) {
