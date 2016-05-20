@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -35,7 +41,7 @@
 #define QWINDOWSCONTEXT_H
 
 #include "qtwindowsglobal.h"
-#include "qtwindows_additional.h"
+#include <QtCore/qt_windows.h>
 
 #include <QtCore/QScopedPointer>
 #include <QtCore/QSharedPointer>
@@ -73,35 +79,22 @@ class QPoint;
 class QKeyEvent;
 class QTouchDevice;
 
-#ifndef Q_OS_WINCE
 struct QWindowsUser32DLL
 {
     QWindowsUser32DLL();
     inline void init();
     inline bool initTouch();
 
-    typedef BOOL (WINAPI *IsTouchWindow)(HWND, PULONG);
+    typedef BOOL (WINAPI *IsTouchWindow)(HWND, PULONG); // Windows 7
     typedef BOOL (WINAPI *RegisterTouchWindow)(HWND, ULONG);
     typedef BOOL (WINAPI *UnregisterTouchWindow)(HWND);
     typedef BOOL (WINAPI *GetTouchInputInfo)(HANDLE, UINT, PVOID, int);
     typedef BOOL (WINAPI *CloseTouchInputHandle)(HANDLE);
-    typedef BOOL (WINAPI *SetLayeredWindowAttributes)(HWND, COLORREF, BYTE, DWORD);
-    typedef BOOL (WINAPI *UpdateLayeredWindow)(HWND, HDC , const POINT *,
-                 const SIZE *, HDC, const POINT *, COLORREF,
-                 const BLENDFUNCTION *, DWORD);
-    typedef BOOL (WINAPI *UpdateLayeredWindowIndirect)(HWND, const UPDATELAYEREDWINDOWINFO *);
-    typedef BOOL (WINAPI *IsHungAppWindow)(HWND);
     typedef BOOL (WINAPI *SetProcessDPIAware)();
     typedef BOOL (WINAPI *AddClipboardFormatListener)(HWND);
     typedef BOOL (WINAPI *RemoveClipboardFormatListener)(HWND);
-
-    // Functions missing in Q_CC_GNU stub libraries.
-    SetLayeredWindowAttributes setLayeredWindowAttributes;
-    UpdateLayeredWindow updateLayeredWindow;
-
-    // Functions missing in older versions of Windows
-    UpdateLayeredWindowIndirect updateLayeredWindowIndirect;
-    IsHungAppWindow isHungAppWindow;
+    typedef BOOL (WINAPI *GetDisplayAutoRotationPreferences)(DWORD *);
+    typedef BOOL (WINAPI *SetDisplayAutoRotationPreferences)(DWORD);
 
     // Touch functions from Windows 7 onwards (also for use with Q_CC_MSVC).
     IsTouchWindow isTouchWindow;
@@ -113,27 +106,14 @@ struct QWindowsUser32DLL
     // Windows Vista onwards
     SetProcessDPIAware setProcessDPIAware;
 
-    // Clipboard listeners, Windows Vista onwards
+    // Clipboard listeners are present on Windows Vista onwards
+    // but missing in MinGW 4.9 stub libs. Can be removed in MinGW 5.
     AddClipboardFormatListener addClipboardFormatListener;
     RemoveClipboardFormatListener removeClipboardFormatListener;
-};
 
-struct QWindowsShell32DLL
-{
-    QWindowsShell32DLL();
-    inline void init();
-
-    typedef HRESULT (WINAPI *SHCreateItemFromParsingName)(PCWSTR, IBindCtx *, const GUID&, void **);
-    typedef HRESULT (WINAPI *SHGetKnownFolderIDList)(const GUID &, DWORD, HANDLE, PIDLIST_ABSOLUTE *);
-    typedef HRESULT (WINAPI *SHGetStockIconInfo)(int , int , _SHSTOCKICONINFO *);
-    typedef HRESULT (WINAPI *SHGetImageList)(int, REFIID , void **);
-    typedef HRESULT (WINAPI *SHCreateItemFromIDList)(PCIDLIST_ABSOLUTE, REFIID, void **);
-
-    SHCreateItemFromParsingName sHCreateItemFromParsingName;
-    SHGetKnownFolderIDList sHGetKnownFolderIDList;
-    SHGetStockIconInfo sHGetStockIconInfo;
-    SHGetImageList sHGetImageList;
-    SHCreateItemFromIDList sHCreateItemFromIDList;
+    // Rotation API
+    GetDisplayAutoRotationPreferences getDisplayAutoRotationPreferences;
+    SetDisplayAutoRotationPreferences setDisplayAutoRotationPreferences;
 };
 
 // Shell scaling library (Windows 8.1 onwards)
@@ -142,7 +122,7 @@ struct QWindowsShcoreDLL {
     void init();
     inline bool isValid() const { return getProcessDpiAwareness && setProcessDpiAwareness && getDpiForMonitor; }
 
-    typedef HRESULT (WINAPI *GetProcessDpiAwareness)(HANDLE,int);
+    typedef HRESULT (WINAPI *GetProcessDpiAwareness)(HANDLE,int *);
     typedef HRESULT (WINAPI *SetProcessDpiAwareness)(int);
     typedef HRESULT (WINAPI *GetDpiForMonitor)(HMONITOR,int,UINT *,UINT *);
 
@@ -150,8 +130,6 @@ struct QWindowsShcoreDLL {
     SetProcessDpiAwareness setProcessDpiAwareness;
     GetDpiForMonitor getDpiForMonitor;
 };
-
-#endif // Q_OS_WINCE
 
 class QWindowsContext
 {
@@ -169,6 +147,9 @@ public:
 
     explicit QWindowsContext();
     ~QWindowsContext();
+
+    bool initTouch();
+    bool initTouch(unsigned integrationOptions); // For calls from QWindowsIntegration::QWindowsIntegration() only.
 
     int defaultDPI() const;
 
@@ -210,6 +191,7 @@ public:
 
     void setTabletAbsoluteRange(int a);
     void setProcessDpiAwareness(QtWindows::ProcessDpiAwareness dpiAwareness);
+    static int processDpiAwareness();
 
     // Returns a combination of SystemInfoFlags
     unsigned systemInfo() const;
@@ -220,11 +202,9 @@ public:
     QWindowsMimeConverter &mimeConverter() const;
     QWindowsScreenManager &screenManager();
     QWindowsTabletSupport *tabletSupport() const;
-#ifndef Q_OS_WINCE
+
     static QWindowsUser32DLL user32dll;
-    static QWindowsShell32DLL shell32dll;
     static QWindowsShcoreDLL shcoredll;
-#endif
 
     static QByteArray comErrorString(HRESULT hr);
     bool asyncExpose() const;

@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -93,14 +100,8 @@ static QHostAddress addressFromSockaddr(sockaddr *sa, int ifindex = 0, const QSt
             // this is the most likely scenario:
             // a scope ID in a socket is that of the interface this address came from
             address.setScopeId(ifname);
-        } else  if (scope) {
-#ifndef QT_NO_IPV6IFNAME
-            char scopeid[IFNAMSIZ];
-            if (::if_indextoname(scope, scopeid)) {
-                address.setScopeId(QLatin1String(scopeid));
-            } else
-#endif
-                address.setScopeId(QString::number(uint(scope)));
+        } else if (scope) {
+            address.setScopeId(QNetworkInterfaceManager::interfaceNameFromIndex(scope));
         }
     }
     return address;
@@ -122,6 +123,53 @@ static QNetworkInterface::InterfaceFlags convertFlags(uint rawFlags)
     flags |= (rawFlags & IFF_MULTICAST) ? QNetworkInterface::CanMulticast : QNetworkInterface::InterfaceFlag(0);
 #endif
     return flags;
+}
+
+uint QNetworkInterfaceManager::interfaceIndexFromName(const QString &name)
+{
+#ifndef QT_NO_IPV6IFNAME
+    return ::if_nametoindex(name.toLatin1());
+#elif defined(SIOCGIFINDEX)
+    struct ifreq req;
+    int socket = qt_safe_socket(AF_INET, SOCK_STREAM, 0);
+    if (socket < 0)
+        return 0;
+
+    QByteArray name8bit = name.toLatin1();
+    memset(&req, 0, sizeof(ifreq));
+    memcpy(req.ifr_name, name8bit, qMin<int>(name8bit.length() + 1, sizeof(req.ifr_name) - 1));
+
+    uint id = 0;
+    if (qt_safe_ioctl(socket, SIOCGIFINDEX, &req) >= 0)
+        id = req.ifr_ifindex;
+    qt_safe_close(socket);
+    return id;
+#else
+    return 0;
+#endif
+}
+
+QString QNetworkInterfaceManager::interfaceNameFromIndex(uint index)
+{
+#ifndef QT_NO_IPV6IFNAME
+    char buf[IF_NAMESIZE];
+    if (::if_indextoname(index, buf))
+        return QString::fromLatin1(buf);
+#elif defined(SIOCGIFNAME)
+    struct ifreq req;
+    int socket = qt_safe_socket(AF_INET, SOCK_STREAM, 0);
+    if (socket >= 0) {
+        memset(&req, 0, sizeof(ifreq));
+        req.ifr_ifindex = index;
+
+        if (qt_safe_ioctl(socket, SIOCGIFNAME, &req) >= 0) {
+            qt_safe_close(socket);
+            return QString::fromLatin1(req.ifr_name);
+        }
+        qt_safe_close(socket);
+    }
+#endif
+    return QString::number(uint(index));
 }
 
 #ifdef QT_NO_GETIFADDRS
@@ -189,7 +237,11 @@ static QNetworkInterfacePrivate *findInterface(int socket, QList<QNetworkInterfa
     // Get the interface index
 #  ifdef SIOCGIFINDEX
     if (qt_safe_ioctl(socket, SIOCGIFINDEX, &req) >= 0)
+#    if defined(Q_OS_HAIKU)
+        ifindex = req.ifr_index;
+#    else
         ifindex = req.ifr_ifindex;
+#    endif
 #  else
     ifindex = if_nametoindex(req.ifr_name);
 #  endif
@@ -268,29 +320,29 @@ static QList<QNetworkInterfacePrivate *> interfaceListing()
         }
 #endif
 
-        // Get the interface broadcast address
-        QNetworkAddressEntry entry;
-        if (iface->flags & QNetworkInterface::CanBroadcast) {
-            if (qt_safe_ioctl(socket, SIOCGIFBRDADDR, &req) >= 0) {
-                sockaddr *sa = &req.ifr_addr;
-                if (sa->sa_family == AF_INET)
-                    entry.setBroadcast(addressFromSockaddr(sa));
-            }
-        }
-
         // Get the address of the interface
+        QNetworkAddressEntry entry;
         if (qt_safe_ioctl(socket, SIOCGIFADDR, &req) >= 0) {
             sockaddr *sa = &req.ifr_addr;
             entry.setIp(addressFromSockaddr(sa));
-        }
 
-        // Get the interface netmask
-        if (qt_safe_ioctl(socket, SIOCGIFNETMASK, &req) >= 0) {
-            sockaddr *sa = &req.ifr_addr;
-            entry.setNetmask(addressFromSockaddr(sa));
-        }
+            // Get the interface broadcast address
+            if (iface->flags & QNetworkInterface::CanBroadcast) {
+                if (qt_safe_ioctl(socket, SIOCGIFBRDADDR, &req) >= 0) {
+                    sockaddr *sa = &req.ifr_addr;
+                    if (sa->sa_family == AF_INET)
+                        entry.setBroadcast(addressFromSockaddr(sa));
+                }
+            }
 
-        iface->addressEntries << entry;
+            // Get the interface netmask
+            if (qt_safe_ioctl(socket, SIOCGIFNETMASK, &req) >= 0) {
+                sockaddr *sa = &req.ifr_addr;
+                entry.setNetmask(addressFromSockaddr(sa));
+            }
+
+            iface->addressEntries << entry;
+        }
     }
 
     ::close(socket);
@@ -314,10 +366,15 @@ static QList<QNetworkInterfacePrivate *> createInterfaces(ifaddrs *rawList)
 {
     QList<QNetworkInterfacePrivate *> interfaces;
     QSet<QString> seenInterfaces;
+    QVarLengthArray<int, 16> seenIndexes;   // faster than QSet<int>
 
-    // on Linux, AF_PACKET addresses carry the hardware address and interface index;
-    // scan for them first (they're usually first, but we have no guarantee this
-    // will be the case forever)
+    // On Linux, glibc, uClibc and MUSL obtain the address listing via two
+    // netlink calls: first an RTM_GETLINK to obtain the interface listing,
+    // then one RTM_GETADDR to get all the addresses (uClibc implementation is
+    // copied from glibc; Bionic currently doesn't support getifaddrs). They
+    // synthesize AF_PACKET addresses from the RTM_GETLINK responses, which
+    // means by construction they currently show up first in the interface
+    // listing.
     for (ifaddrs *ptr = rawList; ptr; ptr = ptr->ifa_next) {
         if (ptr->ifa_addr && ptr->ifa_addr->sa_family == AF_PACKET) {
             sockaddr_ll *sll = (sockaddr_ll *)ptr->ifa_addr;
@@ -328,23 +385,30 @@ static QList<QNetworkInterfacePrivate *> createInterfaces(ifaddrs *rawList)
             iface->flags = convertFlags(ptr->ifa_flags);
             iface->hardwareAddress = iface->makeHwAddress(sll->sll_halen, (uchar*)sll->sll_addr);
 
+            Q_ASSERT(!seenIndexes.contains(iface->index));
+            seenIndexes.append(iface->index);
             seenInterfaces.insert(iface->name);
         }
     }
 
     // see if we missed anything:
-    // virtual interfaces with no HW address have no AF_PACKET
+    // - virtual interfaces with no HW address have no AF_PACKET
+    // - interface labels have no AF_PACKET, but shouldn't be shown as a new interface
     for (ifaddrs *ptr = rawList; ptr; ptr = ptr->ifa_next) {
-        if (ptr->ifa_addr && ptr->ifa_addr->sa_family != AF_PACKET) {
+        if (!ptr->ifa_addr || ptr->ifa_addr->sa_family != AF_PACKET) {
             QString name = QString::fromLatin1(ptr->ifa_name);
             if (seenInterfaces.contains(name))
+                continue;
+
+            int ifindex = if_nametoindex(ptr->ifa_name);
+            if (seenIndexes.contains(ifindex))
                 continue;
 
             QNetworkInterfacePrivate *iface = new QNetworkInterfacePrivate;
             interfaces << iface;
             iface->name = name;
             iface->flags = convertFlags(ptr->ifa_flags);
-            iface->index = if_nametoindex(ptr->ifa_name);
+            iface->index = ifindex;
         }
     }
 
@@ -423,7 +487,7 @@ static QList<QNetworkInterfacePrivate *> interfaceListing()
 
     interfaces = createInterfaces(interfaceListing);
     for (ifaddrs *ptr = interfaceListing; ptr; ptr = ptr->ifa_next) {
-        // Get the interface index
+        // Find the interface
         QString name = QString::fromLatin1(ptr->ifa_name);
         QNetworkInterfacePrivate *iface = 0;
         QList<QNetworkInterfacePrivate *>::Iterator if_it = interfaces.begin();
@@ -433,6 +497,18 @@ static QList<QNetworkInterfacePrivate *> interfaceListing()
                 iface = *if_it;
                 break;
             }
+
+        if (!iface) {
+            // it may be an interface label, search by interface index
+            int ifindex = if_nametoindex(ptr->ifa_name);
+            for (if_it = interfaces.begin(); if_it != interfaces.end(); ++if_it)
+                if ((*if_it)->index == ifindex) {
+                    // found this interface already
+                    iface = *if_it;
+                    break;
+                }
+        }
+
         if (!iface) {
             // skip all non-IP interfaces
             continue;

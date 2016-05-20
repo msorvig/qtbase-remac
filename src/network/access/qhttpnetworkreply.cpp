@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,8 +39,6 @@
 
 #include "qhttpnetworkreply_p.h"
 #include "qhttpnetworkconnection_p.h"
-
-#include <qbytearraymatcher.h>
 
 #ifndef QT_NO_HTTP
 
@@ -264,6 +268,17 @@ char* QHttpNetworkReply::userProvidedDownloadBuffer()
     return d->userProvidedDownloadBuffer;
 }
 
+void QHttpNetworkReply::abort()
+{
+    Q_D(QHttpNetworkReply);
+    d->state = QHttpNetworkReplyPrivate::Aborted;
+}
+
+bool QHttpNetworkReply::isAborted() const
+{
+    return d_func()->state == QHttpNetworkReplyPrivate::Aborted;
+}
+
 bool QHttpNetworkReply::isFinished() const
 {
     return d_func()->state == QHttpNetworkReplyPrivate::AllDoneState;
@@ -469,8 +484,7 @@ qint64 QHttpNetworkReplyPrivate::readStatus(QAbstractSocket *socket)
         }
 
         // is this a valid reply?
-        if (fragment.length() >= 5 && !fragment.startsWith("HTTP/"))
-        {
+        if (fragment.length() == 5 && !fragment.startsWith("HTTP/")) {
             fragment.clear();
             return -1;
         }
@@ -543,9 +557,8 @@ qint64 QHttpNetworkReplyPrivate::readHeader(QAbstractSocket *socket)
             if (c == '\n') {
                 // check for possible header endings. As per HTTP rfc,
                 // the header endings will be marked by CRLFCRLF. But
-                // we will allow CRLFCRLF, CRLFLF, LFLF
-                if (fragment.endsWith("\r\n\r\n")
-                    || fragment.endsWith("\r\n\n")
+                // we will allow CRLFCRLF, CRLFLF, LFCRLF, LFLF
+                if (fragment.endsWith("\n\r\n")
                     || fragment.endsWith("\n\n"))
                     allHeaders = true;
 
@@ -594,11 +607,9 @@ void QHttpNetworkReplyPrivate::parseHeader(const QByteArray &header)
 {
     // see rfc2616, sec 4 for information about HTTP/1.1 headers.
     // allows relaxed parsing here, accepts both CRLF & LF line endings
-    const QByteArrayMatcher lf("\n");
-    const QByteArrayMatcher colon(":");
     int i = 0;
     while (i < header.count()) {
-        int j = colon.indexIn(header, i); // field-name
+        int j = header.indexOf(':', i); // field-name
         if (j == -1)
             break;
         const QByteArray field = header.mid(i, j - i).trimmed();
@@ -606,7 +617,7 @@ void QHttpNetworkReplyPrivate::parseHeader(const QByteArray &header)
         // any number of LWS is allowed before and after the value
         QByteArray value;
         do {
-            i = lf.indexIn(header, j);
+            i = header.indexOf('\n', j);
             if (i == -1)
                 break;
             if (!value.isEmpty())
@@ -727,6 +738,8 @@ qint64 QHttpNetworkReplyPrivate::readBody(QAbstractSocket *socket, QByteDataBuff
 #ifndef QT_NO_COMPRESS
 int QHttpNetworkReplyPrivate::initializeInflateStream()
 {
+    Q_ASSERT(inflateStrm);
+
     inflateStrm->zalloc = Z_NULL;
     inflateStrm->zfree = Z_NULL;
     inflateStrm->opaque = Z_NULL;

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -74,7 +80,7 @@ QT_BEGIN_NAMESPACE
        \l{http://standards.freedesktop.org/systemtray-spec/systemtray-spec-0.2.html freedesktop.org}
        XEmbed system tray specification.
     \li All X11 desktop environments that implement the D-Bus
-       \l{http://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/ StatusNotifierItem}
+       \l{http://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/StatusNotifierItem}
        specification, including recent versions of KDE and Unity.
     \li All supported versions of OS X. Note that the Growl
        notification system must be installed for
@@ -135,7 +141,7 @@ QSystemTrayIcon::QSystemTrayIcon(QObject *parent)
     \sa visible
 */
 QSystemTrayIcon::QSystemTrayIcon(const QIcon &icon, QObject *parent)
-: QObject(*new QSystemTrayIconPrivate(), parent)
+    : QSystemTrayIcon(parent)
 {
     setIcon(icon);
 }
@@ -264,7 +270,7 @@ void QSystemTrayIcon::setVisible(bool visible)
     Q_D(QSystemTrayIcon);
     if (visible == d->visible)
         return;
-    if (d->icon.isNull() && visible)
+    if (Q_UNLIKELY(visible && d->icon.isNull()))
         qWarning("QSystemTrayIcon::setVisible: No Icon set");
     d->visible = visible;
     if (d->visible)
@@ -284,12 +290,6 @@ bool QSystemTrayIcon::isVisible() const
 */
 bool QSystemTrayIcon::event(QEvent *e)
 {
-#if defined(Q_DEAD_CODE_FROM_QT4_X11)
-    if (e->type() == QEvent::ToolTip) {
-        Q_D(QSystemTrayIcon);
-        return d->sys->deliverToolTipEvent(e);
-    }
-#endif
     return QObject::event(e);
 }
 
@@ -446,19 +446,11 @@ QBalloonTip::QBalloonTip(QSystemTrayIcon::MessageIcon icon, const QString& title
     titleLabel->setText(title);
     QFont f = titleLabel->font();
     f.setBold(true);
-#ifdef Q_OS_WINCE
-    f.setPointSize(f.pointSize() - 2);
-#endif
     titleLabel->setFont(f);
     titleLabel->setTextFormat(Qt::PlainText); // to maintain compat with windows
 
-#ifdef Q_OS_WINCE
-    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize);
-    const int closeButtonSize = style()->pixelMetric(QStyle::PM_SmallIconSize) - 2;
-#else
     const int iconSize = 18;
     const int closeButtonSize = 15;
-#endif
 
     QPushButton *closeButton = new QPushButton;
     closeButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
@@ -468,21 +460,13 @@ QBalloonTip::QBalloonTip(QSystemTrayIcon::MessageIcon icon, const QString& title
     QObject::connect(closeButton, SIGNAL(clicked()), this, SLOT(close()));
 
     QLabel *msgLabel = new QLabel;
-#ifdef Q_OS_WINCE
-    f.setBold(false);
-    msgLabel->setFont(f);
-#endif
     msgLabel->installEventFilter(this);
     msgLabel->setText(message);
     msgLabel->setTextFormat(Qt::PlainText);
     msgLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
 
     // smart size for the message label
-#ifdef Q_OS_WINCE
-    int limit = QApplication::desktop()->availableGeometry(msgLabel).size().width() / 2;
-#else
     int limit = QApplication::desktop()->availableGeometry(msgLabel).size().width() / 3;
-#endif
     if (msgLabel->sizeHint().width() > limit) {
         msgLabel->setWordWrap(true);
         if (msgLabel->sizeHint().width() > limit) {
@@ -493,15 +477,9 @@ QBalloonTip::QBalloonTip(QSystemTrayIcon::MessageIcon icon, const QString& title
                 control->document()->setDefaultTextOption(opt);
             }
         }
-#ifdef Q_OS_WINCE
-        // Make sure that the text isn't wrapped "somewhere" in the balloon widget
-        // in the case that we have a long title label.
-        setMaximumWidth(limit);
-#else
         // Here we allow the text being much smaller than the balloon widget
         // to emulate the weird standard windows behavior.
         msgLabel->setFixedSize(limit, msgLabel->heightForWidth(limit));
-#endif
     }
 
     QIcon si;
@@ -693,6 +671,10 @@ void QSystemTrayIconPrivate::install_sys_qpa()
 
 void QSystemTrayIconPrivate::remove_sys_qpa()
 {
+    QObject::disconnect(qpa_sys, SIGNAL(activated(QPlatformSystemTrayIcon::ActivationReason)),
+                        q_func(), SLOT(_q_emitActivated(QPlatformSystemTrayIcon::ActivationReason)));
+    QObject::disconnect(qpa_sys, &QPlatformSystemTrayIcon::messageClicked,
+                        q_func(), &QSystemTrayIcon::messageClicked);
     qpa_sys->cleanup();
 }
 
@@ -768,3 +750,4 @@ QT_END_NAMESPACE
 #endif // QT_NO_SYSTEMTRAYICON
 
 #include "moc_qsystemtrayicon.cpp"
+#include "moc_qsystemtrayicon_p.cpp"

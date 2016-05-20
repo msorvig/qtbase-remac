@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -112,7 +118,7 @@ void QWidgetLineControl::updateDisplayText(bool forceUpdate)
     // characters)
     QChar* uc = str.data();
     for (int i = 0; i < (int)str.length(); ++i) {
-        if ((uc[i] < 0x20 && uc[i] != 0x09)
+        if ((uc[i].unicode() < 0x20 && uc[i].unicode() != 0x09)
             || uc[i] == QChar::LineSeparator
             || uc[i] == QChar::ParagraphSeparator
             || uc[i] == QChar::ObjectReplacementCharacter)
@@ -147,10 +153,7 @@ void QWidgetLineControl::copy(QClipboard::Mode mode) const
 {
     QString t = selectedText();
     if (!t.isEmpty() && m_echoMode == QLineEdit::Normal) {
-        disconnect(QApplication::clipboard(), SIGNAL(selectionChanged()), this, 0);
         QApplication::clipboard()->setText(t, mode);
-        connect(QApplication::clipboard(), SIGNAL(selectionChanged()),
-                   this, SLOT(_q_clipboardChanged()));
     }
 }
 
@@ -309,7 +312,7 @@ void QWidgetLineControl::setSelection(int start, int length)
 {
     commitPreedit();
 
-    if(start < 0 || start > (int)m_text.length()){
+    if (Q_UNLIKELY(start < 0 || start > m_text.size())) {
         qWarning("QWidgetLineControl::setSelection: Invalid start position");
         return;
     }
@@ -337,10 +340,6 @@ void QWidgetLineControl::setSelection(int start, int length)
     }
     emit selectionChanged();
     emitCursorPositionChanged();
-}
-
-void QWidgetLineControl::_q_clipboardChanged()
-{
 }
 
 void QWidgetLineControl::_q_deleteSelected()
@@ -408,20 +407,41 @@ int QWidgetLineControl::xToPos(int x, QTextLine::CursorPosition betweenOrOn) con
 /*!
     \internal
 
+    Returns the bounds of the given text position.
+*/
+QRect QWidgetLineControl::rectForPos(int pos) const
+{
+    QTextLine l = textLayout()->lineAt(0);
+    if (m_preeditCursor != -1)
+        pos += m_preeditCursor;
+    int cix = qRound(l.cursorToX(pos));
+    int w = m_cursorWidth;
+    int ch = l.height() + 1;
+
+    return QRect(cix-5, 0, w+9, ch);
+}
+
+/*!
+    \internal
+
     Returns the bounds of the current cursor, as defined as a
     between characters cursor.
 */
 QRect QWidgetLineControl::cursorRect() const
 {
-    QTextLine l = textLayout()->lineAt(0);
-    int c = m_cursor;
-    if (m_preeditCursor != -1)
-        c += m_preeditCursor;
-    int cix = qRound(l.cursorToX(c));
-    int w = m_cursorWidth;
-    int ch = l.height() + 1;
+    return rectForPos(m_cursor);
+}
 
-    return QRect(cix-5, 0, w+9, ch);
+/*!
+    \internal
+
+    Returns the bounds of the current anchor
+*/
+QRect QWidgetLineControl::anchorRect() const
+{
+    if (!hasSelectedText())
+        return cursorRect();
+    return rectForPos(m_selstart < m_selend ? m_selstart : m_selend);
 }
 
 /*!
@@ -616,7 +636,7 @@ void QWidgetLineControl::draw(QPainter *painter, const QPoint &offset, const QRe
             o.format.setForeground(m_palette.brush(QPalette::HighlightedText));
         } else {
             // mask selection
-            if(!m_blinkPeriod || m_blinkStatus){
+            if (m_blinkStatus){
                 o.start = m_cursor;
                 o.length = 1;
                 o.format.setBackground(m_palette.brush(QPalette::Text));
@@ -633,7 +653,7 @@ void QWidgetLineControl::draw(QPainter *painter, const QPoint &offset, const QRe
         int cursor = m_cursor;
         if (m_preeditCursor != -1)
             cursor += m_preeditCursor;
-        if (!m_hideCursor && (!m_blinkPeriod || m_blinkStatus))
+        if (!m_hideCursor && m_blinkStatus)
             textLayout()->drawCursor(painter, offset, cursor, m_cursorWidth);
     }
 }
@@ -1181,14 +1201,14 @@ QString QWidgetLineControl::maskString(uint pos, const QString &str, bool clear)
                     int n = findInMask(i, true, true, str[(int)strIndex]);
                     if (n != -1) {
                         if (str.length() != 1 || i == 0 || (i > 0 && (!m_maskData[i-1].separator || m_maskData[i-1].maskChar != str[(int)strIndex]))) {
-                            s += fill.mid(i, n-i+1);
+                            s += fill.midRef(i, n - i + 1);
                             i = n + 1; // update i to find + 1
                         }
                     } else {
                         // search for valid m_blank if not
                         n = findInMask(i, true, false, str[(int)strIndex]);
                         if (n != -1) {
-                            s += fill.mid(i, n-i);
+                            s += fill.midRef(i, n - i);
                             switch (m_maskData[n].caseMode) {
                             case MaskInputData::Upper:
                                 s += str[(int)strIndex].toUpper();
@@ -1466,38 +1486,55 @@ void QWidgetLineControl::complete(int key)
 
 void QWidgetLineControl::setReadOnly(bool enable)
 {
+    if (m_readOnly == enable)
+        return;
+
     m_readOnly = enable;
-    if (enable)
-        setCursorBlinkPeriod(0);
-    else
-        setCursorBlinkPeriod(QApplication::cursorFlashTime());
+    updateCursorBlinking();
 }
 
-void QWidgetLineControl::setCursorBlinkPeriod(int msec)
+void QWidgetLineControl::setBlinkingCursorEnabled(bool enable)
 {
-    if (msec == m_blinkPeriod)
+    if (m_blinkEnabled == enable)
         return;
+
+    m_blinkEnabled = enable;
+
+    if (enable)
+        connect(qApp->styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetLineControl::updateCursorBlinking);
+    else
+        disconnect(qApp->styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetLineControl::updateCursorBlinking);
+
+    updateCursorBlinking();
+}
+
+void QWidgetLineControl::updateCursorBlinking()
+{
     if (m_blinkTimer) {
         killTimer(m_blinkTimer);
-    }
-    if (msec > 0 && !m_readOnly) {
-        m_blinkTimer = startTimer(msec / 2);
-        m_blinkStatus = 1;
-    } else {
         m_blinkTimer = 0;
-        if (m_blinkStatus == 1)
-            emit updateNeeded(inputMask().isEmpty() ? cursorRect() : QRect());
     }
-    m_blinkPeriod = msec;
+
+    if (m_blinkEnabled && !m_readOnly) {
+        int flashTime = QGuiApplication::styleHints()->cursorFlashTime();
+        if (flashTime >= 2)
+            m_blinkTimer = startTimer(flashTime / 2);
+    }
+
+    m_blinkStatus = 1;
+    emit updateNeeded(inputMask().isEmpty() ? cursorRect() : QRect());
 }
 
 // This is still used by QDeclarativeTextInput in the qtquick1 repo
 void QWidgetLineControl::resetCursorBlinkTimer()
 {
-    if (m_blinkPeriod == 0 || m_blinkTimer == 0)
+    if (!m_blinkEnabled || m_blinkTimer == 0)
         return;
     killTimer(m_blinkTimer);
-    m_blinkTimer = startTimer(m_blinkPeriod / 2);
+    m_blinkTimer = 0;
+    int flashTime = QGuiApplication::styleHints()->cursorFlashTime();
+    if (flashTime >= 2)
+        m_blinkTimer = startTimer(flashTime / 2);
     m_blinkStatus = 1;
 }
 
@@ -1523,14 +1560,7 @@ void QWidgetLineControl::timerEvent(QTimerEvent *event)
 #ifndef QT_NO_SHORTCUT
 void QWidgetLineControl::processShortcutOverrideEvent(QKeyEvent *ke)
 {
-    if (isReadOnly())
-        return;
-
     if (ke == QKeySequence::Copy
-        || ke == QKeySequence::Paste
-        || ke == QKeySequence::Cut
-        || ke == QKeySequence::Redo
-        || ke == QKeySequence::Undo
         || ke == QKeySequence::MoveToNextWord
         || ke == QKeySequence::MoveToPreviousWord
         || ke == QKeySequence::MoveToEndOfLine
@@ -1544,22 +1574,35 @@ void QWidgetLineControl::processShortcutOverrideEvent(QKeyEvent *ke)
         || ke == QKeySequence::SelectEndOfBlock
         || ke == QKeySequence::SelectStartOfDocument
         || ke == QKeySequence::SelectAll
-        || ke == QKeySequence::SelectEndOfDocument
-        || ke == QKeySequence::DeleteCompleteLine) {
+        || ke == QKeySequence::SelectEndOfDocument) {
         ke->accept();
+    } else if (ke == QKeySequence::Paste
+               || ke == QKeySequence::Cut
+               || ke == QKeySequence::Redo
+               || ke == QKeySequence::Undo
+               || ke == QKeySequence::DeleteCompleteLine) {
+        if (!isReadOnly())
+            ke->accept();
     } else if (ke->modifiers() == Qt::NoModifier || ke->modifiers() == Qt::ShiftModifier
                || ke->modifiers() == Qt::KeypadModifier) {
         if (ke->key() < Qt::Key_Escape) {
-            ke->accept();
+            if (!isReadOnly())
+                ke->accept();
         } else {
             switch (ke->key()) {
             case Qt::Key_Delete:
+            case Qt::Key_Backspace:
+                if (!isReadOnly())
+                    ke->accept();
+                break;
+
             case Qt::Key_Home:
             case Qt::Key_End:
-            case Qt::Key_Backspace:
             case Qt::Key_Left:
             case Qt::Key_Right:
                 ke->accept();
+                break;
+
             default:
                 break;
             }
@@ -1918,5 +1961,7 @@ bool QWidgetLineControl::isRedoAvailable() const
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qwidgetlinecontrol_p.cpp"
 
 #endif

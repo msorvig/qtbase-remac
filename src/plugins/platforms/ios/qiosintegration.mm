@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,7 +45,9 @@
 #include "qiosscreen.h"
 #include "qiosplatformaccessibility.h"
 #include "qioscontext.h"
+#ifndef Q_OS_TVOS
 #include "qiosclipboard.h"
+#endif
 #include "qiosinputcontext.h"
 #include "qiostheme.h"
 #include "qiosservices.h"
@@ -53,6 +61,8 @@
 #include <QtPlatformSupport/private/qmacmime_p.h>
 #include <QDir>
 
+#import <AudioToolbox/AudioServices.h>
+
 #include <QtDebug>
 
 QT_BEGIN_NAMESPACE
@@ -64,13 +74,15 @@ QIOSIntegration *QIOSIntegration::instance()
 
 QIOSIntegration::QIOSIntegration()
     : m_fontDatabase(new QCoreTextFontDatabase)
+#ifndef Q_OS_TVOS
     , m_clipboard(new QIOSClipboard)
+#endif
     , m_inputContext(0)
     , m_platformServices(new QIOSServices)
     , m_accessibility(0)
     , m_debugWindowManagement(false)
 {
-    if (![UIApplication sharedApplication]) {
+    if (Q_UNLIKELY(![UIApplication sharedApplication])) {
         qFatal("Error: You are creating QApplication before calling UIApplicationMain.\n" \
                "If you are writing a native iOS application, and only want to use Qt for\n" \
                "parts of the application, a good place to create QApplication is from within\n" \
@@ -89,10 +101,11 @@ QIOSIntegration::QIOSIntegration()
     // Set current directory to app bundle folder
     QDir::setCurrent(QString::fromUtf8([[[NSBundle mainBundle] bundlePath] UTF8String]));
 
+    UIScreen *mainScreen = [UIScreen mainScreen];
     NSMutableArray *screens = [[[UIScreen screens] mutableCopy] autorelease];
-    if (![screens containsObject:[UIScreen mainScreen]]) {
+    if (![screens containsObject:mainScreen]) {
         // Fallback for iOS 7.1 (QTBUG-42345)
-        [screens insertObject:[UIScreen mainScreen] atIndex:0];
+        [screens insertObject:mainScreen atIndex:0];
     }
 
     for (UIScreen *screen in screens)
@@ -103,7 +116,12 @@ QIOSIntegration::QIOSIntegration()
 
     m_touchDevice = new QTouchDevice;
     m_touchDevice->setType(QTouchDevice::TouchScreen);
-    m_touchDevice->setCapabilities(QTouchDevice::Position | QTouchDevice::NormalizedPosition);
+    QTouchDevice::Capabilities touchCapabilities = QTouchDevice::Position | QTouchDevice::NormalizedPosition;
+    if (QSysInfo::MacintoshVersion >= QSysInfo::MV_IOS_9_0) {
+        if (mainScreen.traitCollection.forceTouchCapability == UIForceTouchCapabilityAvailable)
+            touchCapabilities |= QTouchDevice::Pressure;
+    }
+    m_touchDevice->setCapabilities(touchCapabilities);
     QWindowSystemInterface::registerTouchDevice(m_touchDevice);
     QMacInternalPasteboardMime::initializeMimeTypes();
 }
@@ -113,8 +131,10 @@ QIOSIntegration::~QIOSIntegration()
     delete m_fontDatabase;
     m_fontDatabase = 0;
 
+#ifndef Q_OS_TVOS
     delete m_clipboard;
     m_clipboard = 0;
+#endif
     QMacInternalPasteboardMime::destroyMimeTypes();
 
     delete m_inputContext;
@@ -203,7 +223,11 @@ QPlatformFontDatabase * QIOSIntegration::fontDatabase() const
 
 QPlatformClipboard *QIOSIntegration::clipboard() const
 {
+#ifndef Q_OS_TVOS
     return m_clipboard;
+#else
+    return 0;
+#endif
 }
 
 QPlatformInputContext *QIOSIntegration::inputContext() const
@@ -219,6 +243,8 @@ QPlatformServices *QIOSIntegration::services() const
 QVariant QIOSIntegration::styleHint(StyleHint hint) const
 {
     switch (hint) {
+    case StartDragTime:
+        return 300;
     case PasswordMaskDelay:
         // this number is based on timing the native delay
         // since there is no API to get it
@@ -260,6 +286,13 @@ QPlatformAccessibility *QIOSIntegration::accessibility() const
 QPlatformNativeInterface *QIOSIntegration::nativeInterface() const
 {
     return const_cast<QIOSIntegration *>(this);
+}
+
+void QIOSIntegration::beep() const
+{
+#if !TARGET_IPHONE_SIMULATOR
+    AudioServicesPlayAlertSound(kSystemSoundID_Vibrate);
+#endif
 }
 
 // ---------------------------------------------------------

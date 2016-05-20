@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -61,13 +56,10 @@ class tst_QImageWriter : public QObject
     Q_OBJECT
 
 public:
-    tst_QImageWriter();
     virtual ~tst_QImageWriter();
 
 public slots:
-    void init();
     void initTestCase();
-    void cleanup();
 
 private slots:
     void getSetCheck();
@@ -89,6 +81,7 @@ private slots:
 
     void saveToTemporaryFile();
 private:
+    QTemporaryDir m_temporaryDir;
     QString prefix;
     QString writePrefix;
 };
@@ -96,7 +89,7 @@ private:
 // helper to skip an autotest when the given image format is not supported
 #define SKIP_IF_UNSUPPORTED(format) do {                                                          \
     if (!QByteArray(format).isEmpty() && !QImageReader::supportedImageFormats().contains(format)) \
-        QSKIP("\"" + QByteArray(format) + "\" images are not supported");             \
+        QSKIP('"' + QByteArray(format) + "\" images are not supported");             \
 } while (0)
 
 static void initializePadding(QImage *image)
@@ -112,14 +105,11 @@ static void initializePadding(QImage *image)
 
 void tst_QImageWriter::initTestCase()
 {
+    QVERIFY(m_temporaryDir.isValid());
     prefix = QFINDTESTDATA("images/");
     if (prefix.isEmpty())
         QFAIL("Can't find images directory!");
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
-    writePrefix = QDir::homePath();
-#else
-    writePrefix = prefix;
-#endif
+    writePrefix = m_temporaryDir.path() + QLatin1Char('/');
 }
 
 // Testing get/set functions
@@ -165,10 +155,6 @@ void tst_QImageWriter::getSetCheck()
     QCOMPARE(1.1f, obj1.gamma());
 }
 
-tst_QImageWriter::tst_QImageWriter()
-{
-}
-
 tst_QImageWriter::~tst_QImageWriter()
 {
     QDir dir(prefix);
@@ -177,14 +163,6 @@ tst_QImageWriter::~tst_QImageWriter()
         QFile::remove(dir.absoluteFilePath(file));
     }
 
-}
-
-void tst_QImageWriter::init()
-{
-}
-
-void tst_QImageWriter::cleanup()
-{
 }
 
 void tst_QImageWriter::writeImage_data()
@@ -271,8 +249,8 @@ void tst_QImageWriter::writeImage2_data()
         QImage image = image0.convertToFormat(imgFormat);
         initializePadding(&image);
         foreach (const QString format, formats) {
-            const QString fileName = QString("solidcolor_%1.%2").arg(imgFormat)
-                                     .arg(format);
+            const QString fileName = QLatin1String("solidcolor_")
+                + QString::number(imgFormat) + QLatin1Char('.') + format;
             QTest::newRow(fileName.toLatin1()) << fileName
                                                << format.toLatin1()
                                                << image;
@@ -416,7 +394,7 @@ void tst_QImageWriter::testCanWrite()
     {
         // check if canWrite won't leave an empty file
         QTemporaryDir dir;
-        QVERIFY(dir.isValid());
+        QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
         QString fileName(dir.path() + QLatin1String("/001.garble"));
         QVERIFY(!QFileInfo(fileName).exists());
         QImageWriter writer(fileName);
@@ -524,21 +502,18 @@ void tst_QImageWriter::saveToTemporaryFile()
     {
         // 1) Via QImageWriter's API, with a standard temp file name
         QTemporaryFile file;
-        QVERIFY(file.open());
+        QVERIFY2(file.open(), qPrintable(file.errorString()));
         QImageWriter writer(&file, "PNG");
         if (writer.canWrite())
             QVERIFY(writer.write(image));
         else
             qWarning() << file.errorString();
-#if defined(Q_OS_WINCE)
-        file.reset();
-#endif
         QCOMPARE(QImage(writer.fileName()), image);
     }
     {
         // 2) Via QImage's API, with a standard temp file name
         QTemporaryFile file;
-        QVERIFY(file.open());
+        QVERIFY2(file.open(), qPrintable(file.errorString()));
         QVERIFY(image.save(&file, "PNG"));
         file.reset();
         QImage tmp;
@@ -548,18 +523,15 @@ void tst_QImageWriter::saveToTemporaryFile()
     {
         // 3) Via QImageWriter's API, with a named temp file
         QTemporaryFile file("tempXXXXXX");
-        QVERIFY(file.open());
+        QVERIFY2(file.open(), qPrintable(file.errorString()));
         QImageWriter writer(&file, "PNG");
         QVERIFY(writer.write(image));
-#if defined(Q_OS_WINCE)
-        file.reset();
-#endif
         QCOMPARE(QImage(writer.fileName()), image);
     }
     {
         // 4) Via QImage's API, with a named temp file
         QTemporaryFile file("tempXXXXXX");
-        QVERIFY(file.open());
+        QVERIFY2(file.open(), qPrintable(file.errorString()));
         QVERIFY(image.save(&file, "PNG"));
         file.reset();
         QImage tmp;

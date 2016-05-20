@@ -1,31 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -392,16 +388,37 @@ void tst_QDate::weekNumber_data()
     QTest::addColumn<int>("month");
     QTest::addColumn<int>("day");
 
-    //next we fill it with data
-    QTest::newRow( "data0" )  << 10 << 2002 << 2002 << 3 << 8;
-    QTest::newRow( "data1" )  << 10 << 2002 << 2002 << 3 << 8;
-    QTest::newRow( "data2" )  << 52 << 1999 << 2000 << 1 << 1;
-    QTest::newRow( "data3" )  << 52 << 1999 << 1999 << 12 << 31;
-    QTest::newRow( "data4" )  << 1 << 2001 << 2001 << 1 << 1;
-    QTest::newRow( "data5" )  << 53 << 1998 << 1998 << 12 << 31;
-    QTest::newRow( "data6" )  << 1 << 1985 << 1984 << 12 << 31;
-    QTest::newRow( "data7" )  << 52 << 2006 << 2006 << 12 << 31;
-    QTest::newRow( "data8" )  << 53 << 2004 << 2005 << 1 << 1;
+    enum { Thursday = 4 };
+    bool wasLastYearLong = false;   // 1999 was not a long (53-week) year
+    bool isLongYear;
+
+    // full 400-year cycle for Jan 1, 4 and Dec 28, 31
+    for (int yr = 2000; yr < 2400; ++yr, wasLastYearLong = isLongYear) {
+        QByteArray yrstr = QByteArray::number(yr);
+        int wday = QDate(yr, 1, 1).dayOfWeek();
+
+        // the year is 53-week long if Jan 1 is Thursday or, if it's a leap year, a Wednesday
+        isLongYear = (wday == Thursday) || (QDate::isLeapYear(yr) && wday == Thursday - 1);
+
+        // Jan 4 is always on week 1
+        QTest::newRow(yrstr + "-01-04") << 1 << yr << yr << 1 << 4;
+
+        // Dec 28 is always on the last week
+        QTest::newRow(yrstr + "-12-28") << (52 + isLongYear) << yr << yr << 12 << 28;
+
+        // Jan 1 is on either on week 1 or on the last week of the previous year
+        QTest::newRow(yrstr + "-01-01")
+                << (wday <= Thursday ? 1 : 52 + wasLastYearLong)
+                << (wday <= Thursday ? yr : yr - 1)
+                << yr << 1 << 1;
+
+        // Dec 31 is either on the last week or week 1 of the next year
+        wday = QDate(yr, 12, 31).dayOfWeek();
+        QTest::newRow(yrstr + "-12-31")
+                << (wday >= Thursday ? 52 + isLongYear : 1)
+                << (wday >= Thursday ? yr : yr + 1)
+                << yr << 12 << 31;
+    }
 }
 
 void tst_QDate::weekNumber()
@@ -1047,7 +1064,7 @@ void tst_QDate::fromStringFormat_data()
     QTest::newRow("data14") << QString("132") << QString("Md") << invalidDate();
     QTest::newRow("data15") << february << QString("MMMM") << QDate(defDate().year(), 2, 1);
 
-    QString date = mon + " " + august + " 8 2005";
+    QString date = mon + QLatin1Char(' ') + august + " 8 2005";
     QTest::newRow("data16") << date << QString("ddd MMMM d yyyy") << QDate(2005, 8, 8);
     QTest::newRow("data17") << QString("2000:00") << QString("yyyy:yy") << QDate(2000, 1, 1);
     QTest::newRow("data18") << QString("1999:99") << QString("yyyy:yy") << QDate(1999, 1, 1);

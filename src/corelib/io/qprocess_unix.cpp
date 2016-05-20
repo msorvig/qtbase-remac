@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -92,6 +99,7 @@ QT_END_NAMESPACE
 #include <private/qthread_p.h>
 #include <qfile.h>
 #include <qfileinfo.h>
+#include <qdir.h>
 #include <qlist.h>
 #include <qmutex.h>
 #include <qsemaphore.h>
@@ -114,11 +122,52 @@ QT_BEGIN_NAMESPACE
 // so we will use 512
 static const int errorBufferMax = 512;
 
-static inline void add_fd(int &nfds, int fd, fd_set *fdset)
+namespace {
+struct QProcessPoller
 {
-    FD_SET(fd, fdset);
-    if ((fd) > nfds)
-        nfds = fd;
+    QProcessPoller(const QProcessPrivate &proc);
+
+    int poll(int timeout);
+
+    pollfd &stdinPipe() { return pfds[0]; }
+    pollfd &stdoutPipe() { return pfds[1]; }
+    pollfd &stderrPipe() { return pfds[2]; }
+    pollfd &forkfd() { return pfds[3]; }
+    pollfd &childStartedPipe() { return pfds[4]; }
+
+    enum { n_pfds = 5 };
+    pollfd pfds[n_pfds];
+};
+
+QProcessPoller::QProcessPoller(const QProcessPrivate &proc)
+{
+    for (int i = 0; i < n_pfds; i++)
+        pfds[i] = qt_make_pollfd(-1, POLLIN);
+
+    stdoutPipe().fd = proc.stdoutChannel.pipe[0];
+    stderrPipe().fd = proc.stderrChannel.pipe[0];
+
+    if (!proc.writeBuffer.isEmpty()) {
+        stdinPipe().fd = proc.stdinChannel.pipe[1];
+        stdinPipe().events = POLLOUT;
+    }
+
+    forkfd().fd = proc.forkfd;
+
+    if (proc.processState == QProcess::Starting)
+        childStartedPipe().fd = proc.childStartedPipe[0];
+}
+
+int QProcessPoller::poll(int timeout)
+{
+    const nfds_t nfds = (childStartedPipe().fd == -1) ? 4 : 5;
+    return qt_poll_msecs(pfds, nfds, timeout);
+}
+} // anonymous namespace
+
+static bool qt_pollfd_check(const pollfd &pfd, short revents)
+{
+    return pfd.fd >= 0 && (pfd.revents & (revents | POLLHUP | POLLERR | POLLNVAL)) != 0;
 }
 
 static int qt_create_pipe(int *pipe)
@@ -273,7 +322,7 @@ QT_END_INCLUDE_NAMESPACE
 QProcessEnvironment QProcessEnvironment::systemEnvironment()
 {
     QProcessEnvironment env;
-#if !defined(Q_OS_IOS)
+#if !defined(QT_PLATFORM_UIKIT)
     const char *entry;
     for (int count = 0; (entry = environ[count]); ++count) {
         const char *equal = strchr(entry, '=');
@@ -362,11 +411,14 @@ void QProcessPrivate::startProcess()
             static QBasicMutex cfbundleMutex;
             QMutexLocker lock(&cfbundleMutex);
             QCFType<CFBundleRef> bundle = CFBundleCreate(0, url);
-            url = CFBundleCopyExecutableURL(bundle);
+            // 'executableURL' can be either relative or absolute ...
+            QCFType<CFURLRef> executableURL = CFBundleCopyExecutableURL(bundle);
+            // not to depend on caching - make sure it's always absolute.
+            url = CFURLCopyAbsoluteURL(executableURL);
         }
         if (url) {
-            QCFString str = CFURLCopyFileSystemPath(url, kCFURLPOSIXPathStyle);
-            encodedProgramName += "/Contents/MacOS/" + QCFString::toQString(str).toUtf8();
+            const QCFString str = CFURLCopyFileSystemPath(url, kCFURLPOSIXPathStyle);
+            encodedProgramName += (QDir::separator() + QDir(program).relativeFilePath(QCFString::toQString(str))).toUtf8();
         }
     }
 #endif
@@ -419,14 +471,8 @@ void QProcessPrivate::startProcess()
     }
 
     // Start the process manager, and fork off the child process.
-#if defined(QPROCESS_USE_SPAWN)
-    pid_t childPid;
-    forkfd = spawnChild(&childPid, workingDirPtr, argv, envp);
-    Q_ASSUME(forkfd != FFD_CHILD_PROCESS);
-#else
     pid_t childPid;
     forkfd = ::forkfd(FFD_CLOEXEC, &childPid);
-#endif
     int lastForkErrno = errno;
     if (forkfd != FFD_CHILD_PROCESS) {
         // Parent process.
@@ -460,12 +506,10 @@ void QProcessPrivate::startProcess()
     }
 
     // Start the child.
-#if !defined(QPROCESS_USE_SPAWN)
     if (forkfd == FFD_CHILD_PROCESS) {
         execChild(workingDirPtr, path, argv, envp);
         ::_exit(-1);
     }
-#endif
 
     pid = Q_PID(childPid);
 
@@ -503,147 +547,6 @@ void QProcessPrivate::startProcess()
                          q, SLOT(_q_processDied()));
     }
 }
-
-#if defined(QPROCESS_USE_SPAWN)
-static int doSpawn(pid_t *ppid, const posix_spawn_file_actions_t *file_actions,
-                   char **argv, char **envp, const char *workingDir, bool spawn_detached)
-{
-    // A multi threaded QNX Process can't fork so we call spawnfd() instead.
-    posix_spawnattr_t attr;
-    posix_spawnattr_init(&attr);
-#  ifdef Q_OS_QNX
-    posix_spawnattr_setxflags(&attr, POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETPGROUP
-                              | (spawn_detached * POSIX_SPAWN_NOZOMBIE));
-#  else
-    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETPGROUP);
-#  endif
-    posix_spawnattr_setpgroup(&attr, 0);
-
-    sigset_t sigdefault;
-    sigemptyset(&sigdefault);
-    sigaddset(&sigdefault, SIGPIPE); // reset the signal that we ignored
-    posix_spawnattr_setsigdefault(&attr, &sigdefault);
-
-    // enter the working directory
-    const char *oldWorkingDir = 0;
-    char buff[PATH_MAX + 1];
-
-    if (workingDir) {
-#  ifdef Q_OS_QNX
-        //we need to freeze everyone in order to avoid race conditions with //chdir().
-        if (ThreadCtl(_NTO_TCTL_THREADS_HOLD, 0) == -1)
-            qWarning("ThreadCtl(): cannot hold threads: %s", qPrintable(qt_error_string(errno)));
-#  endif
-
-        oldWorkingDir = QT_GETCWD(buff, PATH_MAX + 1);
-        if (QT_CHDIR(workingDir) == -1)
-            qWarning("ThreadCtl(): failed to chdir to %s", workingDir);
-    }
-
-    int fd;
-    if (spawn_detached) {
-        fd = ::posix_spawn(ppid, argv[0], file_actions, &attr, argv, envp);
-        if (fd == -1) {
-            fd = ::posix_spawnp(ppid, argv[0], file_actions, &attr, argv, envp);
-        }
-    } else {
-        // use spawnfd
-        fd = ::spawnfd(FFD_CLOEXEC | FFD_NONBLOCK, ppid, argv[0], file_actions, &attr, argv, envp);
-        if (fd == -1) {
-            fd = ::spawnfd(FFD_CLOEXEC | FFD_NONBLOCK | FFD_SPAWN_SEARCH_PATH, ppid, argv[0], file_actions,
-                           &attr, argv, envp);
-        }
-    }
-
-    if (oldWorkingDir) {
-        if (QT_CHDIR(oldWorkingDir) == -1)
-            qWarning("ThreadCtl(): failed to chdir to %s", oldWorkingDir);
-
-#  ifdef Q_OS_QNX
-        if (ThreadCtl(_NTO_TCTL_THREADS_CONT, 0) == -1)
-            qFatal("ThreadCtl(): cannot resume threads: %s", qPrintable(qt_error_string(errno)));
-#  endif
-    }
-
-    posix_spawnattr_destroy(&attr);
-    return fd;
-}
-
-pid_t QProcessPrivate::spawnChild(pid_t *ppid, const char *workingDir, char **argv, char **envp)
-{
-    // posix_spawn causes all file descriptors with FD_CLOEXEC to be closed automatically;
-    // we only need to add the actions for our own pipes
-    posix_spawn_file_actions_t file_actions;
-    posix_spawn_file_actions_init(&file_actions);
-
-#   ifdef Q_OS_QNX
-    static const bool OS_QNX = true;
-#   else
-    static const bool OS_QNX = false;
-#endif
-
-    int fdmax = -1;
-
-    if (processChannelMode == QProcess::MergedChannels) {
-        // managed stderr == stdout
-        posix_spawn_file_actions_adddup2(&file_actions, stdoutChannel.pipe[1], STDERR_FILENO);
-
-        if (OS_QNX)
-            fdmax = qMax(fdmax, stdoutChannel.pipe[1]);
-    } else if (processChannelMode != QProcess::ForwardedChannels && processChannelMode != QProcess::ForwardedErrorChannel) {
-        // managed stderr
-        posix_spawn_file_actions_adddup2(&file_actions, stderrChannel.pipe[1], STDERR_FILENO);
-
-        if (OS_QNX)
-            fdmax = qMax(fdmax, stderrChannel.pipe[1]);
-        else
-            posix_spawn_file_actions_addclose(&file_actions, stderrChannel.pipe[1]);
-
-    }
-
-    if (processChannelMode != QProcess::ForwardedChannels && processChannelMode != QProcess::ForwardedOutputChannel) {
-        // managed stdout
-        posix_spawn_file_actions_adddup2(&file_actions, stdoutChannel.pipe[1], STDOUT_FILENO);
-
-        if (OS_QNX)
-            fdmax = qMax(fdmax, stdoutChannel.pipe[1]);
-        else
-            posix_spawn_file_actions_addclose(&file_actions, stdoutChannel.pipe[1]);
-
-    }
-
-    if (inputChannelMode == QProcess::ManagedInputChannel) {
-        posix_spawn_file_actions_adddup2(&file_actions, stdinChannel.pipe[0], STDIN_FILENO);
-
-        if (OS_QNX)
-            fdmax = qMax(fdmax, stdinChannel.pipe[0]);
-        else
-            posix_spawn_file_actions_addclose(&file_actions, stdinChannel.pipe[0]);
-    }
-
-    // Workaround: QNX's spawn implementation will actually dup all FD values
-    // LESS than fdmax - regardless of the FD_CLOEEXEC flag. So we need to add
-    // those to the list of files to close, otherwise dup will fail when some
-    // other thread closes the FD.
-    for (int i = 3; i <= fdmax; i++) {
-        if (::fcntl(i, F_GETFD) & FD_CLOEXEC)
-            posix_spawn_file_actions_addclose(&file_actions, i);
-    }
-
-    int retval = doSpawn(ppid, &file_actions, argv, envp, workingDir, false);
-
-    if (retval == -1) {
-        QString error = qt_error_string(errno);
-        qt_safe_write(childStartedPipe[1], error.data(), error.length() * sizeof(QChar));
-        qt_safe_close(childStartedPipe[1]);
-        childStartedPipe[1] = -1;
-    }
-
-    posix_spawn_file_actions_destroy(&file_actions);
-    return retval;
-}
-
-#else
 
 void QProcessPrivate::execChild(const char *workingDir, char **path, char **argv, char **envp)
 {
@@ -718,9 +621,8 @@ report_errno:
     qt_safe_close(childStartedPipe[1]);
     childStartedPipe[1] = -1;
 }
-#endif
 
-bool QProcessPrivate::processStarted()
+bool QProcessPrivate::processStarted(QString *errorMessage)
 {
     char buf[errorBufferMax];
     int i = 0;
@@ -744,8 +646,8 @@ bool QProcessPrivate::processStarted()
 #endif
 
     // did we read an error message?
-    if (i > 0)
-        q_func()->setErrorString(QString::fromLocal8Bit(buf, i));
+    if ((i > 0) && errorMessage)
+        *errorMessage = QString::fromLocal8Bit(buf, i);
 
     return i <= 0;
 }
@@ -779,27 +681,42 @@ qint64 QProcessPrivate::readFromChannel(const Channel *channel, char *data, qint
     return bytesRead;
 }
 
-qint64 QProcessPrivate::writeToStdin(const char *data, qint64 maxlen)
+bool QProcessPrivate::writeToStdin()
 {
-    qint64 written = qt_safe_write_nosignal(stdinChannel.pipe[1], data, maxlen);
+    const char *data = writeBuffer.readPointer();
+    const qint64 bytesToWrite = writeBuffer.nextDataBlockSize();
+
+    qint64 written = qt_safe_write_nosignal(stdinChannel.pipe[1], data, bytesToWrite);
 #if defined QPROCESS_DEBUG
-    qDebug("QProcessPrivate::writeToStdin(%p \"%s\", %lld) == %lld",
-           data, qt_prettyDebug(data, maxlen, 16).constData(), maxlen, written);
+    qDebug("QProcessPrivate::writeToStdin(), write(%p \"%s\", %lld) == %lld",
+           data, qt_prettyDebug(data, bytesToWrite, 16).constData(), bytesToWrite, written);
     if (written == -1)
         qDebug("QProcessPrivate::writeToStdin(), failed to write (%s)", qPrintable(qt_error_string(errno)));
 #endif
-    // If the O_NONBLOCK flag is set and If some data can be written without blocking
-    // the process, write() will transfer what it can and return the number of bytes written.
-    // Otherwise, it will return -1 and set errno to EAGAIN
-    if (written == -1 && errno == EAGAIN)
-        written = 0;
-    return written;
+    if (written == -1) {
+        // If the O_NONBLOCK flag is set and If some data can be written without blocking
+        // the process, write() will transfer what it can and return the number of bytes written.
+        // Otherwise, it will return -1 and set errno to EAGAIN
+        if (errno == EAGAIN)
+            return true;
+
+        closeChannel(&stdinChannel);
+        setErrorAndEmit(QProcess::WriteError);
+        return false;
+    }
+    writeBuffer.free(written);
+    if (!emittedBytesWritten && written != 0) {
+        emittedBytesWritten = true;
+        emit q_func()->bytesWritten(written);
+        emittedBytesWritten = false;
+    }
+    return true;
 }
 
 void QProcessPrivate::terminateProcess()
 {
 #if defined (QPROCESS_DEBUG)
-    qDebug("QProcessPrivate::killProcess()");
+    qDebug("QProcessPrivate::terminateProcess()");
 #endif
     if (pid)
         ::kill(pid_t(pid), SIGTERM);
@@ -821,10 +738,9 @@ bool QProcessPrivate::waitForStarted(int msecs)
            childStartedPipe[0]);
 #endif
 
-    fd_set fds;
-    FD_ZERO(&fds);
-    FD_SET(childStartedPipe[0], &fds);
-    if (qt_select_msecs(childStartedPipe[0] + 1, &fds, 0, msecs) == 0) {
+    pollfd pfd = qt_make_pollfd(childStartedPipe[0], POLLIN);
+
+    if (qt_poll_msecs(&pfd, 1, msecs) == 0) {
         setError(QProcess::Timedout);
 #if defined (QPROCESS_DEBUG)
         qDebug("QProcessPrivate::waitForStarted(%d) == false (timed out)", msecs);
@@ -839,17 +755,6 @@ bool QProcessPrivate::waitForStarted(int msecs)
     return startedEmitted;
 }
 
-#ifdef Q_OS_BLACKBERRY
-QList<QSocketNotifier *> QProcessPrivate::defaultNotifiers() const
-{
-    QList<QSocketNotifier *> notifiers;
-    notifiers << stdoutChannel.notifier
-              << stderrChannel.notifier
-              << stdinChannel.notifier;
-    return notifiers;
-}
-#endif // Q_OS_BLACKBERRY
-
 bool QProcessPrivate::waitForReadyRead(int msecs)
 {
 #if defined (QPROCESS_DEBUG)
@@ -859,37 +764,12 @@ bool QProcessPrivate::waitForReadyRead(int msecs)
     QElapsedTimer stopWatch;
     stopWatch.start();
 
-#ifdef Q_OS_BLACKBERRY
-    QList<QSocketNotifier *> notifiers = defaultNotifiers();
-#endif
-
     forever {
-        fd_set fdread;
-        fd_set fdwrite;
-
-        FD_ZERO(&fdread);
-        FD_ZERO(&fdwrite);
-
-        int nfds = forkfd;
-        FD_SET(forkfd, &fdread);
-
-        if (processState == QProcess::Starting)
-            add_fd(nfds, childStartedPipe[0], &fdread);
-
-        if (stdoutChannel.pipe[0] != -1)
-            add_fd(nfds, stdoutChannel.pipe[0], &fdread);
-        if (stderrChannel.pipe[0] != -1)
-            add_fd(nfds, stderrChannel.pipe[0], &fdread);
-
-        if (!stdinChannel.buffer.isEmpty() && stdinChannel.pipe[1] != -1)
-            add_fd(nfds, stdinChannel.pipe[1], &fdwrite);
+        QProcessPoller poller(*this);
 
         int timeout = qt_subtract_from_timeout(msecs, stopWatch.elapsed());
-#ifdef Q_OS_BLACKBERRY
-        int ret = bb_select(notifiers, nfds + 1, &fdread, &fdwrite, timeout);
-#else
-        int ret = qt_select_msecs(nfds + 1, &fdread, &fdwrite, timeout);
-#endif
+        int ret = poller.poll(timeout);
+
         if (ret < 0) {
             break;
         }
@@ -898,29 +778,29 @@ bool QProcessPrivate::waitForReadyRead(int msecs)
             return false;
         }
 
-        if (childStartedPipe[0] != -1 && FD_ISSET(childStartedPipe[0], &fdread)) {
+        if (qt_pollfd_check(poller.childStartedPipe(), POLLIN)) {
             if (!_q_startupNotification())
                 return false;
         }
 
         bool readyReadEmitted = false;
-        if (stdoutChannel.pipe[0] != -1 && FD_ISSET(stdoutChannel.pipe[0], &fdread)) {
+        if (qt_pollfd_check(poller.stdoutPipe(), POLLIN)) {
             bool canRead = _q_canReadStandardOutput();
-            if (processChannel == QProcess::StandardOutput && canRead)
+            if (currentReadChannel == QProcess::StandardOutput && canRead)
                 readyReadEmitted = true;
         }
-        if (stderrChannel.pipe[0] != -1 && FD_ISSET(stderrChannel.pipe[0], &fdread)) {
+        if (qt_pollfd_check(poller.stderrPipe(), POLLIN)) {
             bool canRead = _q_canReadStandardError();
-            if (processChannel == QProcess::StandardError && canRead)
+            if (currentReadChannel == QProcess::StandardError && canRead)
                 readyReadEmitted = true;
         }
         if (readyReadEmitted)
             return true;
 
-        if (stdinChannel.pipe[1] != -1 && FD_ISSET(stdinChannel.pipe[1], &fdwrite))
+        if (qt_pollfd_check(poller.stdinPipe(), POLLOUT))
             _q_canWrite();
 
-        if (forkfd == -1 || FD_ISSET(forkfd, &fdread)) {
+        if (qt_pollfd_check(poller.forkfd(), POLLIN)) {
             if (_q_processDied())
                 return false;
         }
@@ -937,38 +817,12 @@ bool QProcessPrivate::waitForBytesWritten(int msecs)
     QElapsedTimer stopWatch;
     stopWatch.start();
 
-#ifdef Q_OS_BLACKBERRY
-    QList<QSocketNotifier *> notifiers = defaultNotifiers();
-#endif
-
-    while (!stdinChannel.buffer.isEmpty()) {
-        fd_set fdread;
-        fd_set fdwrite;
-
-        FD_ZERO(&fdread);
-        FD_ZERO(&fdwrite);
-
-        int nfds = forkfd;
-        FD_SET(forkfd, &fdread);
-
-        if (processState == QProcess::Starting)
-            add_fd(nfds, childStartedPipe[0], &fdread);
-
-        if (stdoutChannel.pipe[0] != -1)
-            add_fd(nfds, stdoutChannel.pipe[0], &fdread);
-        if (stderrChannel.pipe[0] != -1)
-            add_fd(nfds, stderrChannel.pipe[0], &fdread);
-
-
-        if (!stdinChannel.buffer.isEmpty() && stdinChannel.pipe[1] != -1)
-            add_fd(nfds, stdinChannel.pipe[1], &fdwrite);
+    while (!writeBuffer.isEmpty()) {
+        QProcessPoller poller(*this);
 
         int timeout = qt_subtract_from_timeout(msecs, stopWatch.elapsed());
-#ifdef Q_OS_BLACKBERRY
-        int ret = bb_select(notifiers, nfds + 1, &fdread, &fdwrite, timeout);
-#else
-        int ret = qt_select_msecs(nfds + 1, &fdread, &fdwrite, timeout);
-#endif
+        int ret = poller.poll(timeout);
+
         if (ret < 0) {
             break;
         }
@@ -978,21 +832,21 @@ bool QProcessPrivate::waitForBytesWritten(int msecs)
             return false;
         }
 
-        if (childStartedPipe[0] != -1 && FD_ISSET(childStartedPipe[0], &fdread)) {
+        if (qt_pollfd_check(poller.childStartedPipe(), POLLIN)) {
             if (!_q_startupNotification())
                 return false;
         }
 
-        if (stdinChannel.pipe[1] != -1 && FD_ISSET(stdinChannel.pipe[1], &fdwrite))
+        if (qt_pollfd_check(poller.stdinPipe(), POLLOUT))
             return _q_canWrite();
 
-        if (stdoutChannel.pipe[0] != -1 && FD_ISSET(stdoutChannel.pipe[0], &fdread))
+        if (qt_pollfd_check(poller.stdoutPipe(), POLLIN))
             _q_canReadStandardOutput();
 
-        if (stderrChannel.pipe[0] != -1 && FD_ISSET(stderrChannel.pipe[0], &fdread))
+        if (qt_pollfd_check(poller.stderrPipe(), POLLIN))
             _q_canReadStandardError();
 
-        if (forkfd == -1 || FD_ISSET(forkfd, &fdread)) {
+        if (qt_pollfd_check(poller.forkfd(), POLLIN)) {
             if (_q_processDied())
                 return false;
         }
@@ -1010,38 +864,12 @@ bool QProcessPrivate::waitForFinished(int msecs)
     QElapsedTimer stopWatch;
     stopWatch.start();
 
-#ifdef Q_OS_BLACKBERRY
-    QList<QSocketNotifier *> notifiers = defaultNotifiers();
-#endif
-
     forever {
-        fd_set fdread;
-        fd_set fdwrite;
-        int nfds = -1;
-
-        FD_ZERO(&fdread);
-        FD_ZERO(&fdwrite);
-
-        if (processState == QProcess::Starting)
-            add_fd(nfds, childStartedPipe[0], &fdread);
-
-        if (stdoutChannel.pipe[0] != -1)
-            add_fd(nfds, stdoutChannel.pipe[0], &fdread);
-        if (stderrChannel.pipe[0] != -1)
-            add_fd(nfds, stderrChannel.pipe[0], &fdread);
-
-        if (processState == QProcess::Running && forkfd != -1)
-            add_fd(nfds, forkfd, &fdread);
-
-        if (!stdinChannel.buffer.isEmpty() && stdinChannel.pipe[1] != -1)
-            add_fd(nfds, stdinChannel.pipe[1], &fdwrite);
+        QProcessPoller poller(*this);
 
         int timeout = qt_subtract_from_timeout(msecs, stopWatch.elapsed());
-#ifdef Q_OS_BLACKBERRY
-        int ret = bb_select(notifiers, nfds + 1, &fdread, &fdwrite, timeout);
-#else
-        int ret = qt_select_msecs(nfds + 1, &fdread, &fdwrite, timeout);
-#endif
+        int ret = poller.poll(timeout);
+
         if (ret < 0) {
             break;
         }
@@ -1050,33 +878,25 @@ bool QProcessPrivate::waitForFinished(int msecs)
             return false;
         }
 
-        if (childStartedPipe[0] != -1 && FD_ISSET(childStartedPipe[0], &fdread)) {
+        if (qt_pollfd_check(poller.childStartedPipe(), POLLIN)) {
             if (!_q_startupNotification())
                 return false;
         }
-        if (stdinChannel.pipe[1] != -1 && FD_ISSET(stdinChannel.pipe[1], &fdwrite))
+        if (qt_pollfd_check(poller.stdinPipe(), POLLOUT))
             _q_canWrite();
 
-        if (stdoutChannel.pipe[0] != -1 && FD_ISSET(stdoutChannel.pipe[0], &fdread))
+        if (qt_pollfd_check(poller.stdoutPipe(), POLLIN))
             _q_canReadStandardOutput();
 
-        if (stderrChannel.pipe[0] != -1 && FD_ISSET(stderrChannel.pipe[0], &fdread))
+        if (qt_pollfd_check(poller.stderrPipe(), POLLIN))
             _q_canReadStandardError();
 
-        if (forkfd == -1 || FD_ISSET(forkfd, &fdread)) {
+        if (qt_pollfd_check(poller.forkfd(), POLLIN)) {
             if (_q_processDied())
                 return true;
         }
     }
     return false;
-}
-
-bool QProcessPrivate::waitForWrite(int msecs)
-{
-    fd_set fdwrite;
-    FD_ZERO(&fdwrite);
-    FD_SET(stdinChannel.pipe[1], &fdwrite);
-    return qt_select_msecs(stdinChannel.pipe[1] + 1, 0, &fdwrite, msecs < 0 ? 0 : msecs) == 1;
 }
 
 void QProcessPrivate::findExitCode()
@@ -1108,40 +928,6 @@ bool QProcessPrivate::waitForDeadChild()
 #endif
     return true;
 }
-
-#if defined(QPROCESS_USE_SPAWN)
-bool QProcessPrivate::startDetached(const QString &program, const QStringList &arguments, const QString &workingDirectory, qint64 *pid)
-{
-    QList<QByteArray> enc_args;
-    enc_args.append(QFile::encodeName(program));
-    for (int i = 0; i < arguments.size(); ++i)
-        enc_args.append(arguments.at(i).toLocal8Bit());
-
-    const int argc = enc_args.size();
-    QScopedArrayPointer<char*> raw_argv(new char*[argc + 1]);
-    for (int i = 0; i < argc; ++i)
-        raw_argv[i] = const_cast<char *>(enc_args.at(i).data());
-    raw_argv[argc] = 0;
-
-    char **envp = 0; // inherit environment
-
-    // Encode the working directory if it's non-empty, otherwise just pass 0.
-    const char *workingDirPtr = 0;
-    QByteArray encodedWorkingDirectory;
-    if (!workingDirectory.isEmpty()) {
-        encodedWorkingDirectory = QFile::encodeName(workingDirectory);
-        workingDirPtr = encodedWorkingDirectory.constData();
-    }
-
-    pid_t childPid;
-    int retval = doSpawn(&childPid, NULL, raw_argv.data(), envp, workingDirPtr, true);
-    if (pid && retval != -1)
-        *pid = childPid;
-
-    return retval != -1;
-}
-
-#else
 
 bool QProcessPrivate::startDetached(const QString &program, const QStringList &arguments, const QString &workingDirectory, qint64 *pid)
 {
@@ -1257,7 +1043,6 @@ bool QProcessPrivate::startDetached(const QString &program, const QStringList &a
     qt_safe_close(pidPipe[0]);
     return success;
 }
-#endif
 
 QT_END_NAMESPACE
 

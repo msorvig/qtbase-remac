@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2015 Intel Corporation.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -294,19 +300,6 @@ static inline QAbstractSocket::SocketType qt_socket_getType(qintptr socketDescri
     return QAbstractSocket::UnknownSocketType;
 }
 
-/*! \internal
-
-*/
-static inline int qt_socket_getMaxMsgSize(qintptr socketDescriptor)
-{
-    int value = 0;
-    QT_SOCKLEN_T valueSize = sizeof(value);
-    if (::getsockopt(socketDescriptor, SOL_SOCKET, SO_MAX_MSG_SIZE, (char *) &value, &valueSize) != 0) {
-        WS_ERROR_DEBUG(WSAGetLastError());
-    }
-    return value;
-}
-
 // MS Transport Provider IOCTL to control
 // reporting PORT_UNREACHABLE messages
 // on UDP sockets via recv/WSARecv/etc.
@@ -321,12 +314,6 @@ static inline int qt_socket_getMaxMsgSize(qintptr socketDescriptor)
 #  endif
 #  define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR,12)
 #endif
-
-// inline on purpose
-inline uint QNativeSocketEnginePrivate::scopeIdFromString(const QString &scopeid)
-{
-    return scopeid.toUInt();
-}
 
 bool QNativeSocketEnginePrivate::createNewSocket(QAbstractSocket::SocketType socketType, QAbstractSocket::NetworkLayerProtocol &socketProtocol)
 {
@@ -400,7 +387,6 @@ bool QNativeSocketEnginePrivate::createNewSocket(QAbstractSocket::SocketType soc
         return false;
     }
 
-#if !defined(Q_OS_WINCE)
     if (socketType == QAbstractSocket::UdpSocket) {
         // enable new behavior using
         // SIO_UDP_CONNRESET
@@ -427,7 +413,6 @@ bool QNativeSocketEnginePrivate::createNewSocket(QAbstractSocket::SocketType soc
                  &sendmsgguid, sizeof(sendmsgguid),
                  &sendmsg, sizeof(sendmsg), &bytesReturned, NULL, NULL) == SOCKET_ERROR)
         sendmsg = 0;
-#endif
 
     socketDescriptor = socket;
     if (socket != INVALID_SOCKET) {
@@ -541,6 +526,7 @@ bool QNativeSocketEnginePrivate::fetchConnectionParameters()
     localAddress.clear();
     peerPort = 0;
     peerAddress.clear();
+    inboundStreamCount = outboundStreamCount = 0;
 
     if (socketDescriptor == -1)
        return false;
@@ -586,9 +572,23 @@ bool QNativeSocketEnginePrivate::fetchConnectionParameters()
             }
     }
 
+    // Some Windows kernels return a v4-mapped QHostAddress::AnyIPv4 as a
+    // local address of the socket which bound on both IPv4 and IPv6 interfaces.
+    // This address does not match to any special address and should not be used
+    // to send the data. So, replace it with QHostAddress::Any.
+    if (socketProtocol == QAbstractSocket::IPv6Protocol) {
+        bool ok = false;
+        const quint32 localIPv4 = localAddress.toIPv4Address(&ok);
+        if (ok && localIPv4 == INADDR_ANY) {
+            socketProtocol = QAbstractSocket::AnyIPProtocol;
+            localAddress = QHostAddress::Any;
+        }
+    }
+
     memset(&sa, 0, sizeof(sa));
     if (::getpeername(socketDescriptor, &sa.a, &sockAddrSize) == 0) {
         qt_socket_getPortAndAddress(socketDescriptor, &sa, &peerPort, &peerAddress);
+        inboundStreamCount = outboundStreamCount = 1;
     } else {
         WS_ERROR_DEBUG(WSAGetLastError());
     }
@@ -657,6 +657,13 @@ bool QNativeSocketEnginePrivate::nativeConnect(const QHostAddress &address, quin
                 int tries = 0;
                 do {
                     if (::getsockopt(socketDescriptor, SOL_SOCKET, SO_ERROR, (char *) &value, &valueSize) == 0) {
+                        if (value != NOERROR) {
+                            // MSDN says getsockopt with SO_ERROR clears the error, but it's not actually cleared
+                            // and this can affect all subsequent WSAConnect attempts, so clear it now.
+                            const int val = NO_ERROR;
+                            ::setsockopt(socketDescriptor, SOL_SOCKET, SO_ERROR, reinterpret_cast<const char*>(&val), sizeof val);
+                        }
+
                         if (value == WSAECONNREFUSED) {
                             setError(QAbstractSocket::ConnectionRefusedError, ConnectionRefusedErrorString);
                             socketState = QAbstractSocket::UnconnectedState;
@@ -940,7 +947,7 @@ static bool multicastMembershipHelper(QNativeSocketEnginePrivate *d,
         mreq4.imr_multiaddr.s_addr = htonl(groupAddress.toIPv4Address());
 
         if (iface.isValid()) {
-            QList<QNetworkAddressEntry> addressEntries = iface.addressEntries();
+            const QList<QNetworkAddressEntry> addressEntries = iface.addressEntries();
             if (!addressEntries.isEmpty()) {
                 QHostAddress firstIP = addressEntries.first().ip();
                 mreq4.imr_interface.s_addr = htonl(firstIP.toIPv4Address());
@@ -1070,8 +1077,11 @@ qint64 QNativeSocketEnginePrivate::nativeBytesAvailable() const
         buf.buf = &c;
         buf.len = sizeof(c);
         DWORD flags = MSG_PEEK;
-        if (::WSARecvFrom(socketDescriptor, &buf, 1, 0, &flags, 0,0,0,0) == SOCKET_ERROR)
-            return 0;
+        if (::WSARecvFrom(socketDescriptor, &buf, 1, 0, &flags, 0,0,0,0) == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            if (err != WSAECONNRESET && err != WSAENETRESET)
+                return 0;
+        }
     }
     return nbytes;
 }
@@ -1079,7 +1089,6 @@ qint64 QNativeSocketEnginePrivate::nativeBytesAvailable() const
 
 bool QNativeSocketEnginePrivate::nativeHasPendingDatagrams() const
 {
-#if !defined(Q_OS_WINCE)
     // Create a sockaddr struct and reset its port number.
     qt_sockaddr storage;
     QT_SOCKLEN_T storageSize = sizeof(storage);
@@ -1099,31 +1108,12 @@ bool QNativeSocketEnginePrivate::nativeHasPendingDatagrams() const
     int err = WSAGetLastError();
     if (ret == SOCKET_ERROR && err !=  WSAEMSGSIZE) {
         WS_ERROR_DEBUG(err);
-        if (err == WSAECONNRESET || err == WSAENETRESET) {
-            // Discard error message to prevent QAbstractSocket from
-            // getting this message repeatedly after reenabling the
-            // notifiers.
-            flags = 0;
-            ::WSARecvFrom(socketDescriptor, &buf, 1, &available, &flags,
-                          &storage.a, &storageSize, 0, 0);
-        }
+        result = (err == WSAECONNRESET || err == WSAENETRESET);
     } else {
         // If there's no error, or if our buffer was too small, there must be
         // a pending datagram.
         result = true;
     }
-
-#else // Q_OS_WINCE
-    bool result = false;
-    fd_set readS;
-    FD_ZERO(&readS);
-    FD_SET((SOCKET)socketDescriptor, &readS);
-    timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 5000;
-    int available = ::select(1, &readS, 0, 0, &timeout);
-    result = available > 0;
-#endif
 
 #if defined (QNATIVESOCKETENGINE_DEBUG)
     qDebug("QNativeSocketEnginePrivate::nativeHasPendingDatagrams() == %s",
@@ -1136,7 +1126,6 @@ bool QNativeSocketEnginePrivate::nativeHasPendingDatagrams() const
 qint64 QNativeSocketEnginePrivate::nativePendingDatagramSize() const
 {
     qint64 ret = -1;
-#if !defined(Q_OS_WINCE)
     int recvResult = 0;
     DWORD flags;
     DWORD bufferCount = 5;
@@ -1159,12 +1148,21 @@ qint64 QNativeSocketEnginePrivate::nativePendingDatagramSize() const
         if (recvResult != SOCKET_ERROR) {
             ret = qint64(bytesRead);
             break;
-        } else if (recvResult == SOCKET_ERROR && err == WSAEMSGSIZE) {
-           bufferCount += 5;
-           delete[] buf;
-        } else if (recvResult == SOCKET_ERROR) {
-            WS_ERROR_DEBUG(err);
-            ret = -1;
+        } else {
+            switch (err) {
+            case WSAEMSGSIZE:
+                bufferCount += 5;
+                delete[] buf;
+                continue;
+            case WSAECONNRESET:
+            case WSAENETRESET:
+                ret = 0;
+                break;
+            default:
+                WS_ERROR_DEBUG(err);
+                ret = -1;
+                break;
+            }
             break;
         }
     }
@@ -1172,30 +1170,12 @@ qint64 QNativeSocketEnginePrivate::nativePendingDatagramSize() const
     if (buf)
         delete[] buf;
 
-#else // Q_OS_WINCE
-    DWORD size = -1;
-    DWORD bytesReturned;
-    int ioResult = WSAIoctl(socketDescriptor, FIONREAD, 0,0, &size, sizeof(size), &bytesReturned, 0, 0);
-    if (ioResult == SOCKET_ERROR) {
-        int err = WSAGetLastError();
-        WS_ERROR_DEBUG(err);
-    } else {
-        ret = qint64(size);
-    }
-#endif
-
 #if defined (QNATIVESOCKETENGINE_DEBUG)
-    qDebug("QNativeSocketEnginePrivate::nativePendingDatagramSize() == %li", ret);
+    qDebug("QNativeSocketEnginePrivate::nativePendingDatagramSize() == %lli", ret);
 #endif
 
     return ret;
 }
-
-#ifdef Q_OS_WINCE
-// Windows CE has no support for sendmsg or recvmsg. We set it to null here to simplify the code below.
-static int (*const recvmsg)(...) = 0;
-static int (*const sendmsg)(...) = 0;
-#endif
 
 qint64 QNativeSocketEnginePrivate::nativeReceiveDatagram(char *data, qint64 maxLength, QIpPacketHeader *header,
                                                          QAbstractSocketEngine::PacketHeaderOptions options)
@@ -1239,7 +1219,17 @@ qint64 QNativeSocketEnginePrivate::nativeReceiveDatagram(char *data, qint64 maxL
             ret = qint64(bytesRead) > maxLength ? maxLength : qint64(bytesRead);
         } else {
             WS_ERROR_DEBUG(err);
-            setError(QAbstractSocket::NetworkError, ReceiveDatagramErrorString);
+            switch (err) {
+            case WSAENETRESET:
+                setError(QAbstractSocket::NetworkError, NetworkDroppedConnectionErrorString);
+                break;
+            case WSAECONNRESET:
+                setError(QAbstractSocket::ConnectionRefusedError, ConnectionResetErrorString);
+                break;
+            default:
+                setError(QAbstractSocket::NetworkError, ReceiveDatagramErrorString);
+                break;
+            }
             ret = -1;
             if (header)
                 header->clear();
@@ -1281,10 +1271,11 @@ qint64 QNativeSocketEnginePrivate::nativeReceiveDatagram(char *data, qint64 maxL
     }
 
 #if defined (QNATIVESOCKETENGINE_DEBUG)
-    qDebug("QNativeSocketEnginePrivate::nativeReceiveDatagram(%p \"%s\", %li, %s, %i) == %li",
+    bool printSender = (ret != -1 && (options & QNativeSocketEngine::WantDatagramSender) != 0);
+    qDebug("QNativeSocketEnginePrivate::nativeReceiveDatagram(%p \"%s\", %lli, %s, %i) == %lli",
            data, qt_prettyDebug(data, qMin<qint64>(ret, 16), ret).data(), maxLength,
-           address ? address->toString().toLatin1().constData() : "(nil)",
-           port ? *port : 0, ret);
+           printSender ? header->senderAddress.toString().toLatin1().constData() : "(unknown)",
+           printSender ? header->senderPort : 0, ret);
 #endif
 
     return ret;
@@ -1305,12 +1296,7 @@ qint64 QNativeSocketEnginePrivate::nativeSendDatagram(const char *data, qint64 l
 
     memset(&msg, 0, sizeof(msg));
     memset(&aa, 0, sizeof(aa));
-#if !defined(Q_OS_WINCE)
     buf.buf = len ? (char*)data : 0;
-#else
-    char tmp;
-    buf.buf = len ? (char*)data : &tmp;
-#endif
     msg.lpBuffers = &buf;
     msg.dwBufferCount = 1;
     msg.name = &aa.a;
@@ -1396,9 +1382,10 @@ qint64 QNativeSocketEnginePrivate::nativeSendDatagram(const char *data, qint64 l
     }
 
 #if defined (QNATIVESOCKETENGINE_DEBUG)
-    qDebug("QNativeSocketEnginePrivate::nativeSendDatagram(%p \"%s\", %li, \"%s\", %i) == %li", data,
-           qt_prettyDebug(data, qMin<qint64>(len, 16), len).data(), 0, address.toString().toLatin1().constData(),
-           port, ret);
+    qDebug("QNativeSocketEnginePrivate::nativeSendDatagram(%p \"%s\", %lli, \"%s\", %i) == %lli", data,
+           qt_prettyDebug(data, qMin<qint64>(len, 16), len).data(), len,
+           header.destinationAddress.toString().toLatin1().constData(),
+           header.destinationPort, ret);
 #endif
 
     return ret;
@@ -1471,9 +1458,6 @@ qint64 QNativeSocketEnginePrivate::nativeRead(char *data, qint64 maxLength)
     buf.len = maxLength;
     DWORD flags = 0;
     DWORD bytesRead = 0;
-#if defined(Q_OS_WINCE)
-    WSASetLastError(0);
-#endif
     if (::WSARecv(socketDescriptor, &buf, 1, &bytesRead, &flags, 0,0) ==  SOCKET_ERROR) {
         int err = WSAGetLastError();
         WS_ERROR_DEBUG(err);
@@ -1587,11 +1571,7 @@ int QNativeSocketEnginePrivate::nativeSelect(int timeout,
     tv.tv_sec = timeout / 1000;
     tv.tv_usec = (timeout % 1000) * 1000;
 
-#if !defined(Q_OS_WINCE)
     ret = select(socketDescriptor + 1, &fdread, &fdwrite, &fdexception, timeout < 0 ? 0 : &tv);
-#else
-    ret = select(1, &fdread, &fdwrite, &fdexception, timeout < 0 ? 0 : &tv);
-#endif
 
      //... but if it is actually set, pretend it did not happen
     if (ret > 0 && FD_ISSET((SOCKET)socketDescriptor, &fdexception))

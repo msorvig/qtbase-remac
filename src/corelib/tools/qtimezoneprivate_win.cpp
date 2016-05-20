@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 John Layt <jlayt@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -41,6 +47,10 @@
 #include <algorithm>
 
 QT_BEGIN_NAMESPACE
+
+#ifndef Q_OS_WINRT
+#define QT_USE_REGISTRY_TIMEZONE 1
+#endif
 
 /*
     Private
@@ -59,9 +69,10 @@ QT_BEGIN_NAMESPACE
 
 // Vista introduced support for historic data, see MSDN docs on DYNAMIC_TIME_ZONE_INFORMATION
 // http://msdn.microsoft.com/en-gb/library/windows/desktop/ms724253%28v=vs.85%29.aspx
-
+#ifdef QT_USE_REGISTRY_TIMEZONE
 static const char tzRegPath[] = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Time Zones";
 static const char currTzRegPath[] = "SYSTEM\\CurrentControlSet\\Control\\TimeZoneInformation";
+#endif
 
 enum {
     MIN_YEAR = -292275056,
@@ -123,6 +134,7 @@ static bool equalTzi(const TIME_ZONE_INFORMATION &tzi1, const TIME_ZONE_INFORMAT
            && wcscmp(tzi1.DaylightName, tzi2.DaylightName) == 0);
 }
 
+#ifdef QT_USE_REGISTRY_TIMEZONE
 static bool openRegistryKey(const QString &keyPath, HKEY *key)
 {
     return (RegOpenKeyEx(HKEY_LOCAL_MACHINE, (const wchar_t*)keyPath.utf16(), 0, KEY_READ, key)
@@ -197,9 +209,61 @@ static TIME_ZONE_INFORMATION getRegistryTzi(const QByteArray &windowsId, bool *o
 
     return tzi;
 }
+#else // QT_USE_REGISTRY_TIMEZONE
+struct QWinDynamicTimeZone
+{
+    QString standardName;
+    QString daylightName;
+    QString timezoneName;
+    qint32 bias;
+    bool daylightTime;
+};
+
+typedef QHash<QByteArray, QWinDynamicTimeZone> QWinRTTimeZoneHash;
+
+Q_GLOBAL_STATIC(QWinRTTimeZoneHash, gTimeZones)
+
+static void enumerateTimeZones()
+{
+    DYNAMIC_TIME_ZONE_INFORMATION dtzInfo;
+    quint32 index = 0;
+    QString prevTimeZoneKeyName;
+    while (SUCCEEDED(EnumDynamicTimeZoneInformation(index++, &dtzInfo))) {
+        QWinDynamicTimeZone item;
+        item.timezoneName = QString::fromWCharArray(dtzInfo.TimeZoneKeyName);
+        // As soon as key name repeats, break. Some systems continue to always
+        // return the last item independent of index being out of range
+        if (item.timezoneName == prevTimeZoneKeyName)
+            break;
+        item.standardName = QString::fromWCharArray(dtzInfo.StandardName);
+        item.daylightName = QString::fromWCharArray(dtzInfo.DaylightName);
+        item.daylightTime = !dtzInfo.DynamicDaylightTimeDisabled;
+        item.bias = dtzInfo.Bias;
+        gTimeZones->insert(item.timezoneName.toUtf8(), item);
+        prevTimeZoneKeyName = item.timezoneName;
+    }
+}
+
+static DYNAMIC_TIME_ZONE_INFORMATION dynamicInfoForId(const QByteArray &windowsId)
+{
+    DYNAMIC_TIME_ZONE_INFORMATION dtzInfo;
+    quint32 index = 0;
+    QString prevTimeZoneKeyName;
+    while (SUCCEEDED(EnumDynamicTimeZoneInformation(index++, &dtzInfo))) {
+        const QString timeZoneName = QString::fromWCharArray(dtzInfo.TimeZoneKeyName);
+        if (timeZoneName == QLatin1String(windowsId))
+            break;
+        if (timeZoneName == prevTimeZoneKeyName)
+            break;
+        prevTimeZoneKeyName = timeZoneName;
+    }
+    return dtzInfo;
+}
+#endif // QT_USE_REGISTRY_TIMEZONE
 
 static QList<QByteArray> availableWindowsIds()
 {
+#ifdef QT_USE_REGISTRY_TIMEZONE
     // TODO Consider caching results in a global static, very unlikely to change.
     QList<QByteArray> list;
     HKEY key = NULL;
@@ -217,10 +281,16 @@ static QList<QByteArray> availableWindowsIds()
         RegCloseKey(key);
     }
     return list;
+#else // QT_USE_REGISTRY_TIMEZONE
+    if (gTimeZones->isEmpty())
+        enumerateTimeZones();
+    return gTimeZones->keys();
+#endif // QT_USE_REGISTRY_TIMEZONE
 }
 
 static QByteArray windowsSystemZoneId()
 {
+#ifdef QT_USE_REGISTRY_TIMEZONE
     // On Vista and later is held in the value TimeZoneKeyName in key currTzRegPath
     QString id;
     HKEY key = NULL;
@@ -237,10 +307,16 @@ static QByteArray windowsSystemZoneId()
     TIME_ZONE_INFORMATION sysTzi;
     GetTimeZoneInformation(&sysTzi);
     bool ok = false;
-    foreach (const QByteArray &winId, availableWindowsIds()) {
+    const auto winIds = availableWindowsIds();
+    for (const QByteArray &winId : winIds) {
         if (equalTzi(getRegistryTzi(winId, &ok), sysTzi))
             return winId;
     }
+#else // QT_USE_REGISTRY_TIMEZONE
+    DYNAMIC_TIME_ZONE_INFORMATION dtzi;
+    if (SUCCEEDED(GetDynamicTimeZoneInformation(&dtzi)))
+        return QString::fromWCharArray(dtzi.TimeZoneKeyName).toLocal8Bit();
+#endif // QT_USE_REGISTRY_TIMEZONE
 
     // If we can't determine the current ID use UTC
     return QTimeZonePrivate::utcQByteArray();
@@ -307,17 +383,11 @@ static void calculateTransitionsForYear(const QWinTimeZonePrivate::QWinTransitio
 
 static QLocale::Country userCountry()
 {
-#if defined(Q_OS_WINCE)
-    // Guess that the syslem locale country is the right one to use
-    // TODO Find if WinCE has equivalent api
-    return QLocale::system().country();
-#else
     const GEOID id = GetUserGeoID(GEOCLASS_NATION);
     wchar_t code[3];
     const int size = GetGeoInfo(id, GEO_ISO2, code, 3, 0);
-    return (size == 3) ? QLocalePrivate::codeToCountry(QString::fromWCharArray(code))
+    return (size == 3) ? QLocalePrivate::codeToCountry(reinterpret_cast<const QChar*>(code), size)
                        : QLocale::AnyCountry;
-#endif // Q_OS_WINCE
 }
 
 // Create the system default time zone
@@ -361,6 +431,7 @@ void QWinTimeZonePrivate::init(const QByteArray &ianaId)
     }
 
     if (!m_windowsId.isEmpty()) {
+#ifdef QT_USE_REGISTRY_TIMEZONE
         // Open the base TZI for the time zone
         HKEY baseKey = NULL;
         const QString baseKeyPath = QString::fromUtf8(tzRegPath) + QLatin1Char('\\')
@@ -371,7 +442,7 @@ void QWinTimeZonePrivate::init(const QByteArray &ianaId)
             m_standardName = readRegistryString(baseKey, L"Std");
             m_daylightName = readRegistryString(baseKey, L"Dlt");
             // On Vista and later the optional dynamic key holds historic data
-            const QString dynamicKeyPath = baseKeyPath + QStringLiteral("\\Dynamic DST");
+            const QString dynamicKeyPath = baseKeyPath + QLatin1String("\\Dynamic DST");
             HKEY dynamicKey = NULL;
             if (openRegistryKey(dynamicKeyPath, &dynamicKey)) {
                 // Find out the start and end years stored, then iterate over them
@@ -397,6 +468,34 @@ void QWinTimeZonePrivate::init(const QByteArray &ianaId)
             }
             RegCloseKey(baseKey);
         }
+#else // QT_USE_REGISTRY_TIMEZONE
+        if (gTimeZones->isEmpty())
+            enumerateTimeZones();
+        QWinRTTimeZoneHash::const_iterator it = gTimeZones->find(m_windowsId);
+        if (it != gTimeZones->constEnd()) {
+            m_displayName = it->timezoneName;
+            m_standardName = it->standardName;
+            m_daylightName = it->daylightName;
+            DWORD firstYear = 0;
+            DWORD lastYear = 0;
+            DYNAMIC_TIME_ZONE_INFORMATION dtzi = dynamicInfoForId(m_windowsId);
+            GetDynamicTimeZoneInformationEffectiveYears(&dtzi, &firstYear, &lastYear);
+            // If there is no dynamic information, you can still query for
+            // year 0, which helps simplifying following part
+            for (DWORD year = firstYear; year <= lastYear; ++year) {
+                TIME_ZONE_INFORMATION tzi;
+                if (!GetTimeZoneInformationForYear(year, &dtzi, &tzi))
+                    continue;
+                QWinTransitionRule rule;
+                rule.standardTimeBias = tzi.Bias + tzi.StandardBias;
+                rule.daylightTimeBias = tzi.Bias + tzi.DaylightBias - rule.standardTimeBias;
+                rule.standardTimeRule = tzi.StandardDate;
+                rule.daylightTimeRule = tzi.DaylightDate;
+                rule.startYear = year;
+                m_tranRules.append(rule);
+            }
+        }
+#endif // QT_USE_REGISTRY_TIMEZONE
     }
 
     // If there are no rules then we failed to find a windowsId or any tzi info
@@ -506,7 +605,7 @@ QTimeZonePrivate::Data QWinTimeZonePrivate::data(qint64 forMSecsSinceEpoch) cons
 
 bool QWinTimeZonePrivate::hasTransitions() const
 {
-    foreach (const QWinTransitionRule &rule, m_tranRules) {
+    for (const QWinTransitionRule &rule : m_tranRules) {
         if (rule.standardTimeRule.wMonth > 0 && rule.daylightTimeRule.wMonth > 0)
             return true;
     }
@@ -637,10 +736,9 @@ QByteArray QWinTimeZonePrivate::systemTimeZoneId() const
 QList<QByteArray> QWinTimeZonePrivate::availableTimeZoneIds() const
 {
     QList<QByteArray> result;
-    foreach (const QByteArray &winId, availableWindowsIds()) {
-        foreach (const QByteArray &ianaId, windowsIdToIanaIds(winId))
-            result << ianaId;
-    }
+    const auto winIds = availableWindowsIds();
+    for (const QByteArray &winId : winIds)
+        result += windowsIdToIanaIds(winId);
     std::sort(result.begin(), result.end());
     result.erase(std::unique(result.begin(), result.end()), result.end());
     return result;

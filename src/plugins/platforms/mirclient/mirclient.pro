@@ -1,10 +1,4 @@
-TARGET = mirclient
-TEMPLATE = lib
-
-PLUGIN_TYPE = platforms
-PLUGIN_CLASS_NAME = MirServerIntegrationPlugin
-!equals(TARGET, $$QT_DEFAULT_QPA_PLUGIN): PLUGIN_EXTENDS = -
-load(qt_plugin)
+TARGET = qmirclient
 
 QT += core-private gui-private platformsupport-private dbus
 
@@ -21,6 +15,7 @@ PKGCONFIG += egl mirclient ubuntu-platform-api
 SOURCES = \
     qmirclientbackingstore.cpp \
     qmirclientclipboard.cpp \
+    qmirclientcursor.cpp \
     qmirclientglcontext.cpp \
     qmirclientinput.cpp \
     qmirclientintegration.cpp \
@@ -34,6 +29,7 @@ SOURCES = \
 HEADERS = \
     qmirclientbackingstore.h \
     qmirclientclipboard.h \
+    qmirclientcursor.h \
     qmirclientglcontext.h \
     qmirclientinput.h \
     qmirclientintegration.h \
@@ -45,3 +41,8 @@ HEADERS = \
     qmirclientscreen.h \
     qmirclienttheme.h \
     qmirclientwindow.h
+
+PLUGIN_TYPE = platforms
+PLUGIN_CLASS_NAME = MirServerIntegrationPlugin
+!equals(TARGET, $$QT_DEFAULT_QPA_PLUGIN): PLUGIN_EXTENDS = -
+load(qt_plugin)

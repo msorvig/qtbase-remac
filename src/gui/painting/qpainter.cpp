@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -397,8 +403,7 @@ void QPainterPrivate::draw_helper(const QPainterPath &originalPath, DrawOperatio
 
     if (q->hasClipping()) {
         bool hasPerspectiveTransform = false;
-        for (int i = 0; i < state->clipInfo.size(); ++i) {
-            const QPainterClipInfo &info = state->clipInfo.at(i);
+        for (const QPainterClipInfo &info : qAsConst(state->clipInfo)) {
             if (info.matrix.type() == QTransform::TxProject) {
                 hasPerspectiveTransform = true;
                 break;
@@ -1629,8 +1634,7 @@ void QPainter::restore()
         tmp->clipPath = QPainterPath();
         d->engine->updateState(*tmp);
         // replay the list of clip states,
-        for (int i=0; i<d->state->clipInfo.size(); ++i) {
-            const QPainterClipInfo &info = d->state->clipInfo.at(i);
+        for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
             tmp->matrix = info.matrix;
             tmp->matrix *= d->state->redirectionMatrix;
             tmp->clipOperation = info.operation;
@@ -2506,8 +2510,7 @@ QRegion QPainter::clipRegion() const
         const_cast<QPainter *>(this)->d_ptr->updateInvMatrix();
 
     // ### Falcon: Use QPainterPath
-    for (int i=0; i<d->state->clipInfo.size(); ++i) {
-        const QPainterClipInfo &info = d->state->clipInfo.at(i);
+    for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
         switch (info.clipType) {
 
         case QPainterClipInfo::RegionClip: {
@@ -2621,7 +2624,7 @@ QPainterPath QPainter::clipPath() const
     }
 
     // No clip, return empty
-    if (d->state->clipInfo.size() == 0) {
+    if (d->state->clipInfo.isEmpty()) {
         return QPainterPath();
     } else {
 
@@ -2673,9 +2676,9 @@ QRectF QPainter::clipBoundingRect() const
     // precise, but it fits within the guarantee and it is reasonably
     // fast.
     QRectF bounds;
-    for (int i=0; i<d->state->clipInfo.size(); ++i) {
+    bool first = true;
+    for (const QPainterClipInfo &info : qAsConst(d->state->clipInfo)) {
          QRectF r;
-         const QPainterClipInfo &info = d->state->clipInfo.at(i);
 
          if (info.clipType == QPainterClipInfo::RectClip)
              r = info.rect;
@@ -2688,10 +2691,11 @@ QRectF QPainter::clipBoundingRect() const
 
          r = info.matrix.mapRect(r);
 
-         if (i == 0)
+         if (first)
              bounds = r;
          else if (info.operation == Qt::IntersectClip)
              bounds &= r;
+         first = false;
     }
 
 
@@ -2739,7 +2743,7 @@ void QPainter::setClipRect(const QRectF &rect, Qt::ClipOperation op)
         d->extended->clip(vp, op);
         if (op == Qt::ReplaceClip || op == Qt::NoClip)
             d->state->clipInfo.clear();
-        d->state->clipInfo << QPainterClipInfo(rect, op, d->state->matrix);
+        d->state->clipInfo.append(QPainterClipInfo(rect, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
     }
@@ -2788,7 +2792,7 @@ void QPainter::setClipRect(const QRect &rect, Qt::ClipOperation op)
         d->extended->clip(rect, op);
         if (op == Qt::ReplaceClip || op == Qt::NoClip)
             d->state->clipInfo.clear();
-        d->state->clipInfo << QPainterClipInfo(rect, op, d->state->matrix);
+        d->state->clipInfo.append(QPainterClipInfo(rect, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
     }
@@ -2800,7 +2804,7 @@ void QPainter::setClipRect(const QRect &rect, Qt::ClipOperation op)
     d->state->clipOperation = op;
     if (op == Qt::NoClip || op == Qt::ReplaceClip)
         d->state->clipInfo.clear();
-    d->state->clipInfo << QPainterClipInfo(rect, op, d->state->matrix);
+    d->state->clipInfo.append(QPainterClipInfo(rect, op, d->state->matrix));
     d->state->clipEnabled = true;
     d->state->dirtyFlags |= QPaintEngine::DirtyClipRegion | QPaintEngine::DirtyClipEnabled;
     d->updateState(d->state);
@@ -2831,7 +2835,7 @@ void QPainter::setClipRegion(const QRegion &r, Qt::ClipOperation op)
     QRect rect = r.boundingRect();
     if (qt_show_painter_debug_output)
         printf("QPainter::setClipRegion(), size=%d, [%d,%d,%d,%d]\n",
-           r.rects().size(), rect.x(), rect.y(), rect.width(), rect.height());
+           r.rectCount(), rect.x(), rect.y(), rect.width(), rect.height());
 #endif
     if (!d->engine) {
         qWarning("QPainter::setClipRegion: Painter not active");
@@ -2847,7 +2851,7 @@ void QPainter::setClipRegion(const QRegion &r, Qt::ClipOperation op)
         d->extended->clip(r, op);
         if (op == Qt::NoClip || op == Qt::ReplaceClip)
             d->state->clipInfo.clear();
-        d->state->clipInfo << QPainterClipInfo(r, op, d->state->matrix);
+        d->state->clipInfo.append(QPainterClipInfo(r, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
     }
@@ -2859,7 +2863,7 @@ void QPainter::setClipRegion(const QRegion &r, Qt::ClipOperation op)
     d->state->clipOperation = op;
     if (op == Qt::NoClip || op == Qt::ReplaceClip)
         d->state->clipInfo.clear();
-    d->state->clipInfo << QPainterClipInfo(r, op, d->state->matrix);
+    d->state->clipInfo.append(QPainterClipInfo(r, op, d->state->matrix));
     d->state->clipEnabled = true;
     d->state->dirtyFlags |= QPaintEngine::DirtyClipRegion | QPaintEngine::DirtyClipEnabled;
     d->updateState(d->state);
@@ -3154,7 +3158,7 @@ void QPainter::shear(qreal sh, qreal sv)
 /*!
     \fn void QPainter::rotate(qreal angle)
 
-    Rotates the coordinate system clockwise. The given \a angle parameter uses degree unit.
+    Rotates the coordinate system clockwise. The given \a angle parameter is in degrees.
 
     \sa setWorldTransform(), {QPainter#Coordinate Transformations}{Coordinate Transformations}
 */
@@ -3251,7 +3255,7 @@ void QPainter::setClipPath(const QPainterPath &path, Qt::ClipOperation op)
         d->extended->clip(path, op);
         if (op == Qt::NoClip || op == Qt::ReplaceClip)
             d->state->clipInfo.clear();
-        d->state->clipInfo << QPainterClipInfo(path, op, d->state->matrix);
+        d->state->clipInfo.append(QPainterClipInfo(path, op, d->state->matrix));
         d->state->clipOperation = op;
         return;
     }
@@ -3263,7 +3267,7 @@ void QPainter::setClipPath(const QPainterPath &path, Qt::ClipOperation op)
     d->state->clipOperation = op;
     if (op == Qt::NoClip || op == Qt::ReplaceClip)
         d->state->clipInfo.clear();
-    d->state->clipInfo << QPainterClipInfo(path, op, d->state->matrix);
+    d->state->clipInfo.append(QPainterClipInfo(path, op, d->state->matrix));
     d->state->clipEnabled = true;
     d->state->dirtyFlags |= QPaintEngine::DirtyClipPath | QPaintEngine::DirtyClipEnabled;
     d->updateState(d->state);
@@ -6179,7 +6183,8 @@ static QPixmap generateWavyPixmap(qreal maxRadius, const QPen &pen)
 
     QString key = QLatin1String("WaveUnderline-")
                   % pen.color().name()
-                  % HexString<qreal>(radiusBase);
+                  % HexString<qreal>(radiusBase)
+                  % HexString<qreal>(pen.widthF());
 
     QPixmap pixmap;
     if (QPixmapCache::find(key, pixmap))
@@ -6187,7 +6192,7 @@ static QPixmap generateWavyPixmap(qreal maxRadius, const QPen &pen)
 
     const qreal halfPeriod = qMax(qreal(2), qreal(radiusBase * 1.61803399)); // the golden ratio
     const int width = qCeil(100 / (2 * halfPeriod)) * (2 * halfPeriod);
-    const int radius = qFloor(radiusBase);
+    const qreal radius = qFloor(radiusBase * 2) / 2.;
 
     QPainterPath path;
 
@@ -6210,7 +6215,7 @@ static QPixmap generateWavyPixmap(qreal maxRadius, const QPen &pen)
         // due to it having a rather thick width for the regular underline.
         const qreal maxPenWidth = .8 * radius;
         if (wavePen.widthF() > maxPenWidth)
-            wavePen.setWidth(maxPenWidth);
+            wavePen.setWidthF(maxPenWidth);
 
         QPainter imgPainter(&pixmap);
         imgPainter.setPen(wavePen);
@@ -6250,9 +6255,6 @@ static void drawTextItemDecoration(QPainter *painter, const QPointF &pos, const 
         painter->setRenderHint(QPainter::Qt4CompatiblePainting, false);
 
     const qreal underlineOffset = fe->underlinePosition().toReal();
-    // deliberately ceil the offset to avoid the underline coming too close to
-    // the text above it.
-    const qreal underlinePos = pos.y() + qCeil(underlineOffset) + 0.5;
 
     if (underlineStyle == QTextCharFormat::SpellCheckUnderline) {
         QPlatformTheme *theme = QGuiApplicationPrivate::platformTheme();
@@ -6263,19 +6265,26 @@ static void drawTextItemDecoration(QPainter *painter, const QPointF &pos, const 
     if (underlineStyle == QTextCharFormat::WaveUnderline) {
         painter->save();
         painter->translate(0, pos.y() + 1);
+        qreal maxHeight = fe->descent().toReal() - qreal(1);
 
         QColor uc = charFormat.underlineColor();
         if (uc.isValid())
             pen.setColor(uc);
 
         // Adapt wave to underlineOffset or pen width, whatever is larger, to make it work on all platforms
-        const QPixmap wave = generateWavyPixmap(qMax(underlineOffset, pen.widthF()), pen);
-        const int descent = (int) fe->descent().toReal();
+        const QPixmap wave = generateWavyPixmap(qMin(qMax(underlineOffset, pen.widthF()), maxHeight / 2.), pen);
+        const int descent = qFloor(maxHeight);
 
         painter->setBrushOrigin(painter->brushOrigin().x(), 0);
         painter->fillRect(pos.x(), 0, qCeil(width), qMin(wave.height(), descent), wave);
         painter->restore();
     } else if (underlineStyle != QTextCharFormat::NoUnderline) {
+        // Deliberately ceil the offset to avoid the underline coming too close to
+        // the text above it, but limit it to stay within descent.
+        qreal adjustedUnderlineOffset = std::ceil(underlineOffset) + 0.5;
+        if (underlineOffset <= fe->descent().toReal())
+            adjustedUnderlineOffset = qMin(adjustedUnderlineOffset, fe->descent().toReal() - 0.5);
+        const qreal underlinePos = pos.y() + adjustedUnderlineOffset;
         QColor uc = charFormat.underlineColor();
         if (uc.isValid())
             pen.setColor(uc);
@@ -6469,6 +6478,8 @@ void QPainterPrivate::drawTextItem(const QPointF &p, const QTextItem &_ti, QText
                 extended->drawTextItem(QPointF(x, y), ti2);
             else
                 engine->drawTextItem(QPointF(x, y), ti2);
+            drawTextItemDecoration(q, p, ti2.fontEngine, textEngine, ti2.underlineStyle,
+                                   ti2.flags, ti2.width.toReal(), ti2.charFormat);
 
             if (!rtl)
                 x += ti2.width.toReal();
@@ -6500,6 +6511,8 @@ void QPainterPrivate::drawTextItem(const QPointF &p, const QTextItem &_ti, QText
             extended->drawTextItem(QPointF(x, y), ti2);
         else
             engine->drawTextItem(QPointF(x,y), ti2);
+        drawTextItemDecoration(q, p, ti2.fontEngine, textEngine, ti2.underlineStyle,
+                               ti2.flags, ti2.width.toReal(), ti2.charFormat);
 
         // reset the high byte for all glyphs
         const int hi = which << 24;
@@ -6511,9 +6524,9 @@ void QPainterPrivate::drawTextItem(const QPointF &p, const QTextItem &_ti, QText
             extended->drawTextItem(p, ti);
         else
             engine->drawTextItem(p, ti);
+        drawTextItemDecoration(q, p, ti.fontEngine, textEngine, ti.underlineStyle,
+                               ti.flags, ti.width.toReal(), ti.charFormat);
     }
-    drawTextItemDecoration(q, p, ti.fontEngine, textEngine, ti.underlineStyle,
-                           ti.flags, ti.width.toReal(), ti.charFormat);
 
     if (state->renderHints != oldRenderHints) {
         state->renderHints = oldRenderHints;

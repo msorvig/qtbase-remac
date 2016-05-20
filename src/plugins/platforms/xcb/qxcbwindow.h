@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -81,7 +87,7 @@ public:
     void setParent(const QPlatformWindow *window) Q_DECL_OVERRIDE;
 
     bool isExposed() const Q_DECL_OVERRIDE;
-    bool isEmbedded(const QPlatformWindow *parentWindow) const Q_DECL_OVERRIDE;
+    bool isEmbedded(const QPlatformWindow *parentWindow = 0) const Q_DECL_OVERRIDE;
     QPoint mapToGlobal(const QPoint &pos) const Q_DECL_OVERRIDE;
     QPoint mapFromGlobal(const QPoint &pos) const Q_DECL_OVERRIDE;
 
@@ -132,11 +138,15 @@ public:
     void handleFocusInEvent(const xcb_focus_in_event_t *event) Q_DECL_OVERRIDE;
     void handleFocusOutEvent(const xcb_focus_out_event_t *event) Q_DECL_OVERRIDE;
     void handlePropertyNotifyEvent(const xcb_property_notify_event_t *event) Q_DECL_OVERRIDE;
-    void handleXIMouseEvent(xcb_ge_event_t *) Q_DECL_OVERRIDE;
+#ifdef XCB_USE_XINPUT22
+    void handleXIMouseEvent(xcb_ge_event_t *, Qt::MouseEventSource source = Qt::MouseEventNotSynthesized) Q_DECL_OVERRIDE;
+    void handleXIEnterLeave(xcb_ge_event_t *) Q_DECL_OVERRIDE;
+#endif
 
     QXcbWindow *toWindow() Q_DECL_OVERRIDE;
 
-    void handleMouseEvent(xcb_timestamp_t time, const QPoint &local, const QPoint &global, Qt::KeyboardModifiers modifiers);
+    void handleMouseEvent(xcb_timestamp_t time, const QPoint &local, const QPoint &global,
+                          Qt::KeyboardModifiers modifiers, Qt::MouseEventSource source);
 
     void updateNetWmUserTime(xcb_timestamp_t timestamp);
 
@@ -167,16 +177,13 @@ public:
 
     virtual void create();
     virtual void destroy();
-    void maybeSetScreen(QXcbScreen *screen);
-    QXcbScreen *screenForNativeGeometry(const QRect &newGeometry) const;
 
 public Q_SLOTS:
     void updateSyncRequestCounter();
 
 protected:
-    virtual void resolveFormat() { m_format = window()->requestedFormat(); }
-    virtual void *createVisual() { return Q_NULLPTR; }
-    virtual bool supportsSyncProtocol() { return !window()->supportsOpenGL(); }
+    virtual void resolveFormat(const QSurfaceFormat &format) { m_format = format; }
+    virtual const xcb_visualtype_t *createVisual();
 
     QXcbScreen *parentScreen();
 
@@ -185,6 +192,7 @@ protected:
     void setNetWmStates(NetWmStates);
 
     void setMotifWindowFlags(Qt::WindowFlags flags);
+    void setNetWmStateWindowFlags(Qt::WindowFlags flags);
 
     void updateMotifWmHintsBeforeMap();
     void updateNetWmStateBeforeMap();
@@ -204,18 +212,24 @@ protected:
     void doFocusIn();
     void doFocusOut();
 
+    bool compressExposeEvent(QRegion &exposeRegion);
+
     void handleButtonPressEvent(int event_x, int event_y, int root_x, int root_y,
-                                int detail, Qt::KeyboardModifiers modifiers, xcb_timestamp_t timestamp);
+                                int detail, Qt::KeyboardModifiers modifiers, xcb_timestamp_t timestamp, Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
 
     void handleButtonReleaseEvent(int event_x, int event_y, int root_x, int root_y,
-                                  int detail, Qt::KeyboardModifiers modifiers, xcb_timestamp_t timestamp);
+                                  int detail, Qt::KeyboardModifiers modifiers, xcb_timestamp_t timestamp, Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
 
     void handleMotionNotifyEvent(int event_x, int event_y, int root_x, int root_y,
-                                 Qt::KeyboardModifiers modifiers, xcb_timestamp_t timestamp);
+                                 Qt::KeyboardModifiers modifiers, xcb_timestamp_t timestamp, Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
+
+    void handleEnterNotifyEvent(int event_x, int event_y, int root_x, int root_y,
+                                quint8 mode, quint8 detail, xcb_timestamp_t timestamp);
+
+    void handleLeaveNotifyEvent(int root_x, int root_y,
+                                quint8 mode, quint8 detail, xcb_timestamp_t timestamp);
 
     xcb_window_t m_window;
-
-    QXcbScreen *m_xcbScreen;
 
     uint m_depth;
     QImage::Format m_imageFormat;
@@ -232,8 +246,6 @@ protected:
     bool m_transparent;
     bool m_usingSyncProtocol;
     bool m_deferredActivation;
-    bool m_deferredExpose;
-    bool m_configureNotifyPending;
     bool m_embedded;
     bool m_alertState;
     xcb_window_t m_netWmUserTimeWindow;

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -388,6 +394,52 @@ const QLinkedListData QLinkedListData::shared_null = {
     \sa constBegin(), end()
 */
 
+/*! \fn QLinkedList::reverse_iterator QLinkedList::rbegin()
+    \since 5.6
+
+    Returns a \l{STL-style iterators}{STL-style} reverse iterator pointing to the first
+    item in the list, in reverse order.
+
+    \sa begin(), crbegin(), rend()
+*/
+
+/*! \fn QLinkedList::const_reverse_iterator QLinkedList::rbegin() const
+    \since 5.6
+    \overload
+*/
+
+/*! \fn QLinkedList::const_reverse_iterator QLinkedList::crbegin() const
+    \since 5.6
+
+    Returns a const \l{STL-style iterators}{STL-style} reverse iterator pointing to the first
+    item in the list, in reverse order.
+
+    \sa begin(), rbegin(), rend()
+*/
+
+/*! \fn QLinkedList::reverse_iterator QLinkedList::rend()
+    \since 5.6
+
+    Returns a \l{STL-style iterators}{STL-style} reverse iterator pointing to one past
+    the last item in the list, in reverse order.
+
+    \sa end(), crend(), rbegin()
+*/
+
+/*! \fn QLinkedList::const_reverse_iterator QLinkedList::rend() const
+    \since 5.6
+    \overload
+*/
+
+/*! \fn QLinkedList::const_reverse_iterator QLinkedList::crend() const
+    \since 5.6
+
+    Returns a const \l{STL-style iterators}{STL-style} reverse iterator pointing to one
+    past the last item in the list, in reverse order.
+
+    \sa end(), rend(), rbegin()
+*/
+
 /*! \fn QLinkedList::iterator QLinkedList::insert(iterator before, const T &value)
 
     Inserts \a value in front of the item pointed to by the iterator
@@ -421,6 +473,38 @@ const QLinkedListData QLinkedListData::shared_null = {
 /*! \typedef QLinkedList::ConstIterator
 
     Qt-style synonym for QLinkedList::const_iterator.
+*/
+
+/*! \typedef QLinkedList::reverse_iterator
+    \since 5.6
+
+    The QLinkedList::reverse_iterator typedef provides an STL-style non-const
+    reverse iterator for QLinkedList.
+
+    It is simply a typedef for \c{std::reverse_iterator<QLinkedList::iterator>}.
+
+    \warning Iterators on implicitly shared containers do not work
+    exactly like STL-iterators. You should avoid copying a container
+    while iterators are active on that container. For more information,
+    read \l{Implicit sharing iterator problem}.
+
+    \sa QLinkedList::rbegin(), QLinkedList::rend(), QLinkedList::const_reverse_iterator, QLinkedList::iterator
+*/
+
+/*! \typedef QLinkedList::const_reverse_iterator
+    \since 5.6
+
+    The QLinkedList::const_reverse_iterator typedef provides an STL-style const
+    reverse iterator for QLinkedList.
+
+    It is simply a typedef for \c{std::reverse_iterator<QLinkedList::const_iterator>}.
+
+    \warning Iterators on implicitly shared containers do not work
+    exactly like STL-iterators. You should avoid copying a container
+    while iterators are active on that container. For more information,
+    read \l{Implicit sharing iterator problem}.
+
+    \sa QLinkedList::rbegin(), QLinkedList::rend(), QLinkedList::reverse_iterator, QLinkedList::const_iterator
 */
 
 /*!

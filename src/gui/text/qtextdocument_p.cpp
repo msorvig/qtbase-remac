@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -229,7 +235,7 @@ void QTextDocumentPrivate::clear()
 {
     Q_Q(QTextDocument);
 
-    foreach (QTextCursorPrivate *curs, cursors) {
+    for (QTextCursorPrivate *curs : qAsConst(cursors)) {
         curs->setPosition(0);
         curs->currentCharFormat = -1;
         curs->anchor = 0;
@@ -281,7 +287,7 @@ void QTextDocumentPrivate::clear()
 
 QTextDocumentPrivate::~QTextDocumentPrivate()
 {
-    foreach (QTextCursorPrivate *curs, cursors)
+    for (QTextCursorPrivate *curs : qAsConst(cursors))
         curs->priv = 0;
     cursors.clear();
     undoState = 0;
@@ -668,7 +674,7 @@ void QTextDocumentPrivate::remove(int pos, int length, QTextUndoCommand::Operati
     blockCursorAdjustment = true;
     move(pos, -1, length, op);
     blockCursorAdjustment = false;
-    foreach (QTextCursorPrivate *curs, cursors) {
+    for (QTextCursorPrivate *curs : qAsConst(cursors)) {
         if (curs->adjustPosition(pos, -length, op) == QTextCursorPrivate::CursorMoved) {
             curs->changed = true;
         }
@@ -1071,8 +1077,9 @@ void QTextDocumentPrivate::appendUndoItem(const QTextUndoCommand &c)
         QTextUndoCommand &last = undoStack[undoState - 1];
 
         if ( (last.block_part && c.block_part && !last.block_end) // part of the same block => can merge
-            || (!c.block_part && !last.block_part)) {  // two single undo items => can merge
-
+            || (!c.block_part && !last.block_part) // two single undo items => can merge
+            || (c.command == QTextUndoCommand::Inserted && last.command == c.command && (last.block_part && !c.block_part))) {
+            // two sequential inserts that are not part of the same block => can merge
             if (last.tryMerge(c))
                 return;
         }
@@ -1122,7 +1129,7 @@ void QTextDocumentPrivate::clearUndoRedoStacks(QTextDocument::Stacks stacksToCle
                 delete c.custom;
         }
         undoState = 0;
-        undoStack.resize(0);
+        undoStack.clear();
         if (emitSignals && undoCommandsAvailable)
             emitUndoAvailable(false);
         if (emitSignals && redoCommandsAvailable)
@@ -1226,13 +1233,13 @@ void QTextDocumentPrivate::finishEdit()
     }
 
     QList<QTextCursor> changedCursors;
-    foreach (QTextCursorPrivate *curs, cursors) {
+    for (QTextCursorPrivate *curs : qAsConst(cursors)) {
         if (curs->changed) {
             curs->changed = false;
             changedCursors.append(QTextCursor(curs));
         }
     }
-    foreach (const QTextCursor &cursor, changedCursors)
+    for (const QTextCursor &cursor : qAsConst(changedCursors))
         emit q->cursorPositionChanged(cursor);
 
     contentsChanged();
@@ -1278,7 +1285,7 @@ void QTextDocumentPrivate::adjustDocumentChangesAndCursors(int from, int addedOr
     if (blockCursorAdjustment)  {
         ; // postpone, will be called again from QTextDocumentPrivate::remove()
     } else {
-        foreach (QTextCursorPrivate *curs, cursors) {
+        for (QTextCursorPrivate *curs : qAsConst(cursors)) {
             if (curs->adjustPosition(from, addedOrRemoved, op) == QTextCursorPrivate::CursorMoved) {
                 curs->changed = true;
             }
@@ -1725,7 +1732,7 @@ bool QTextDocumentPrivate::ensureMaximumBlockCount()
 void QTextDocumentPrivate::aboutToRemoveCell(int from, int to)
 {
     Q_ASSERT(from <= to);
-    foreach (QTextCursorPrivate *curs, cursors)
+    for (QTextCursorPrivate *curs : qAsConst(cursors))
         curs->aboutToRemoveCell(from, to);
 }
 

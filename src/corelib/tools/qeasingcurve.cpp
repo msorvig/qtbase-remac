@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -170,7 +176,7 @@
     \value OutSine      \image qeasingcurve-outsine.png
                         \caption
                         Easing curve for a sinusoidal (sin(t)) function:
-                        decelerating from zero velocity.
+                        decelerating to zero velocity.
     \value InOutSine    \image qeasingcurve-inoutsine.png
                         \caption
                         Easing curve for a sinusoidal (sin(t)) function:
@@ -186,7 +192,7 @@
     \value OutExpo      \image qeasingcurve-outexpo.png
                         \caption
                         Easing curve for an exponential (2^t) function:
-                        decelerating from zero velocity.
+                        decelerating to zero velocity.
     \value InOutExpo    \image qeasingcurve-inoutexpo.png
                         \caption
                         Easing curve for an exponential (2^t) function:
@@ -202,7 +208,7 @@
     \value OutCirc      \image qeasingcurve-outcirc.png
                         \caption
                         Easing curve for a circular (sqrt(1-t^2)) function:
-                        decelerating from zero velocity.
+                        decelerating to zero velocity.
     \value InOutCirc    \image qeasingcurve-inoutcirc.png
                         \caption
                         Easing curve for a circular (sqrt(1-t^2)) function:
@@ -222,7 +228,7 @@
                         \caption
                         Easing curve for an elastic
                         (exponentially decaying sine wave) function:
-                        decelerating from zero velocity.  The peak amplitude
+                        decelerating to zero velocity.  The peak amplitude
                         can be set with the \e amplitude parameter, and the
                         period of decay by the \e period parameter.
     \value InOutElastic \image qeasingcurve-inoutelastic.png
@@ -438,7 +444,7 @@ struct BezierEase : public QEasingCurveFunction
 
     void init()
     {
-        if (_bezierCurves.last() == QPointF(1.0, 1.0)) {
+        if (_bezierCurves.constLast() == QPointF(1.0, 1.0)) {
             _init = true;
             _curveCount = _bezierCurves.count() / 3;
 
@@ -1327,8 +1333,8 @@ void QEasingCurvePrivate::setType_helper(QEasingCurve::Type newType)
         amp = config->_a;
         period = config->_p;
         overshoot = config->_o;
-        bezierCurves = config->_bezierCurves;
-        tcbPoints = config->_tcbPoints;
+        bezierCurves = std::move(config->_bezierCurves);
+        tcbPoints = std::move(config->_tcbPoints);
 
         delete config;
         config = 0;
@@ -1343,8 +1349,8 @@ void QEasingCurvePrivate::setType_helper(QEasingCurve::Type newType)
             config->_p = period;
         if (overshoot != -1.0)
             config->_o = overshoot;
-        config->_bezierCurves = bezierCurves;
-        config->_tcbPoints = tcbPoints;
+        config->_bezierCurves = std::move(bezierCurves);
+        config->_tcbPoints = std::move(tcbPoints);
         func = 0;
     } else if (newType != QEasingCurve::Custom) {
         func = curveToFunc(newType);

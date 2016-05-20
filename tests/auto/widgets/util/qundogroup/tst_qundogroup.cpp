@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,7 +31,22 @@
 #include <QAction>
 
 // Temporarily disabling IRIX due to build issuues with GCC
-#if !defined(__sgi) || defined(__sgi) && !defined(__GNUC__)
+#if defined(__sgi) && defined(__GNUC__)
+
+class tst_QUndoGroup : public QObject
+{
+    Q_OBJECT
+public:
+    tst_QUndoGroup() {}
+
+private slots:
+    void setActive() { QSKIP( "Not tested on irix-g++"); }
+    void addRemoveStack() { QSKIP( "Not tested on irix-g++"); }
+    void deleteStack() { QSKIP( "Not tested on irix-g++"); }
+    void checkSignals() { QSKIP( "Not tested on irix-g++"); }
+    void addStackAndDie() { QSKIP( "Not tested on irix-g++"); }
+};
+#else
 
 /******************************************************************************
 ** Commands
@@ -193,9 +203,7 @@ private slots:
     void deleteStack();
     void checkSignals();
     void addStackAndDie();
-#ifndef QT_NO_PROCESS
     void commandTextFormat();
-#endif
 };
 
 tst_QUndoGroup::tst_QUndoGroup()
@@ -599,9 +607,11 @@ void tst_QUndoGroup::addStackAndDie()
     delete stack;
 }
 
-#ifndef QT_NO_PROCESS
 void tst_QUndoGroup::commandTextFormat()
 {
+#ifdef QT_NO_PROCESS
+    QSKIP("No QProcess available");
+#else
     QString binDir = QLibraryInfo::location(QLibraryInfo::BinariesPath);
 
     if (QProcess::execute(binDir + "/lrelease -version") != 0)
@@ -609,13 +619,13 @@ void tst_QUndoGroup::commandTextFormat()
 
     const QString tsFile = QFINDTESTDATA("testdata/qundogroup.ts");
     QVERIFY(!tsFile.isEmpty());
-    QVERIFY(!QProcess::execute(binDir + "/lrelease " + tsFile));
+    QFile::remove("qundogroup.qm"); // Avoid confusion by strays.
+    QVERIFY(!QProcess::execute(binDir + "/lrelease -silent " + tsFile + " -qm qundogroup.qm"));
 
     QTranslator translator;
 
-    const QString qmFile = QFINDTESTDATA("testdata/qundogroup.qm");
-    QVERIFY(!qmFile.isEmpty());
-    QVERIFY(translator.load(qmFile));
+    QVERIFY(translator.load("qundogroup.qm"));
+    QFile::remove("qundogroup.qm");
     qApp->installTranslator(&translator);
 
     QUndoGroup group;
@@ -643,24 +653,9 @@ void tst_QUndoGroup::commandTextFormat()
     QCOMPARE(redo_action->text(), QString("redo-prefix append redo-suffix"));
 
     qApp->removeTranslator(&translator);
+#endif
 }
-#endif
-
-#else
-class tst_QUndoGroup : public QObject
-{
-    Q_OBJECT
-public:
-    tst_QUndoGroup() {}
-
-private slots:
-    void setActive() { QSKIP( "Not tested on irix-g++"); }
-    void addRemoveStack() { QSKIP( "Not tested on irix-g++"); }
-    void deleteStack() { QSKIP( "Not tested on irix-g++"); }
-    void checkSignals() { QSKIP( "Not tested on irix-g++"); }
-    void addStackAndDie() { QSKIP( "Not tested on irix-g++"); }
-};
-#endif
+#endif // !(SGI && GCC)
 
 QTEST_MAIN(tst_QUndoGroup)
 

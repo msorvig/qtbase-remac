@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -65,6 +60,7 @@ public:
 public slots:
     void initTestCase();
     void cleanup();
+    void cleanupTestCase();
 
 private slots:
     void getSetCheck();
@@ -163,6 +159,7 @@ private slots:
     void string_write_operator_ToDevice_data();
     void string_write_operator_ToDevice();
     void latin1String_write_operator_ToDevice();
+    void stringref_write_operator_ToDevice();
 
     // other
     void skipWhiteSpace_data();
@@ -178,20 +175,16 @@ private slots:
     void octTest();
     void zeroTermination();
     void ws_manipulator();
-#ifndef Q_OS_WINCE
     void stillOpenWhenAtEnd();
-#endif
     void readNewlines_data();
     void readNewlines();
     void seek();
     void pos();
     void pos2();
     void pos3LargeFile();
-#if !defined(Q_OS_WINCE)
     void readStdin();
     void readAllFromStdin();
     void readLineFromStdin();
-#endif
     void read();
     void qbool();
     void forcePoint();
@@ -227,6 +220,8 @@ private slots:
     void alignAccountingStyle();
     void setCodec();
 
+    void textModeOnEmptyRead();
+
 private:
     void generateLineData(bool for_QString);
     void generateAllData(bool for_QString);
@@ -238,6 +233,9 @@ private:
 
     QTemporaryDir tempDir;
     QString testFileName;
+#ifdef BUILTIN_TESTDATA
+    QSharedPointer<QTemporaryDir> m_dataDir;
+#endif
     const QString m_rfc3261FilePath;
     const QString m_shiftJisFilePath;
 };
@@ -258,14 +256,20 @@ tst_QTextStream::tst_QTextStream()
 
 void tst_QTextStream::initTestCase()
 {
+    QVERIFY2(tempDir.isValid(), qPrintable(tempDir.errorString()));
     QVERIFY(!m_rfc3261FilePath.isEmpty());
     QVERIFY(!m_shiftJisFilePath.isEmpty());
 
     testFileName = tempDir.path() + "/testfile";
 
+#ifdef BUILTIN_TESTDATA
+    m_dataDir = QEXTRACTTESTDATA("/");
+    QVERIFY2(QDir::setCurrent(m_dataDir->path()), qPrintable("Could not chdir to " + m_dataDir->path()));
+#else
     // chdir into the testdata dir and refer to our helper apps with relative paths
     QString testdata_dir = QFileInfo(QFINDTESTDATA("stdinProcess")).absolutePath();
     QVERIFY2(QDir::setCurrent(testdata_dir), qPrintable("Could not chdir to " + testdata_dir));
+#endif
 }
 
 // Testing get/set functions
@@ -386,6 +390,13 @@ void tst_QTextStream::getSetCheck()
 void tst_QTextStream::cleanup()
 {
     QCoreApplication::instance()->processEvents();
+}
+
+void tst_QTextStream::cleanupTestCase()
+{
+#ifdef BUILTIN_TESTDATA
+    QDir::setCurrent(QCoreApplication::applicationDirPath());
+#endif
 }
 
 // ------------------------------------------------------------------------------
@@ -1192,8 +1203,6 @@ void tst_QTextStream::ws_manipulator()
 }
 
 // ------------------------------------------------------------------------------
-#ifndef Q_OS_WINCE
-// Qt/CE: Cannot test network on emulator
 void tst_QTextStream::stillOpenWhenAtEnd()
 {
     QFile file(QFINDTESTDATA("tst_qtextstream.cpp"));
@@ -1214,7 +1223,6 @@ void tst_QTextStream::stillOpenWhenAtEnd()
     while (!stream2.readLine().isNull()) {}
     QVERIFY(socket.isOpen());
 }
-#endif
 
 // ------------------------------------------------------------------------------
 void tst_QTextStream::readNewlines_data()
@@ -1483,8 +1491,6 @@ void tst_QTextStream::pos3LargeFile()
 }
 
 // ------------------------------------------------------------------------------
-// Qt/CE has no stdin/out support for processes
-#if !defined(Q_OS_WINCE)
 void tst_QTextStream::readStdin()
 {
 #ifdef QT_NO_PROCESS
@@ -1512,7 +1518,6 @@ void tst_QTextStream::readStdin()
 }
 
 // ------------------------------------------------------------------------------
-// Qt/CE has no stdin/out support for processes
 void tst_QTextStream::readAllFromStdin()
 {
 #ifdef QT_NO_PROCESS
@@ -1534,7 +1539,6 @@ void tst_QTextStream::readAllFromStdin()
 }
 
 // ------------------------------------------------------------------------------
-// Qt/CE has no stdin/out support for processes
 void tst_QTextStream::readLineFromStdin()
 {
 #ifdef QT_NO_PROCESS
@@ -1557,7 +1561,6 @@ void tst_QTextStream::readLineFromStdin()
     QVERIFY(stdinProcess.waitForFinished(5000));
 #endif
 }
-#endif
 
 // ------------------------------------------------------------------------------
 void tst_QTextStream::read()
@@ -1615,18 +1618,18 @@ void tst_QTextStream::forcePoint()
 {
     QString str;
     QTextStream stream(&str);
-    stream << fixed << forcepoint << 1.0 << " " << 1 << " " << 0 << " " << -1.0 << " " << -1;
+    stream << fixed << forcepoint << 1.0 << ' ' << 1 << ' ' << 0 << ' ' << -1.0 << ' ' << -1;
     QCOMPARE(str, QString("1.000000 1 0 -1.000000 -1"));
 
     str.clear();
     stream.seek(0);
-    stream << scientific << forcepoint << 1.0 << " " << 1 << " " << 0 << " " << -1.0 << " " << -1;
+    stream << scientific << forcepoint << 1.0 << ' ' << 1 << ' ' << 0 << ' ' << -1.0 << ' ' << -1;
     QCOMPARE(str, QString("1.000000e+00 1 0 -1.000000e+00 -1"));
 
     str.clear();
     stream.seek(0);
     stream.setRealNumberNotation(QTextStream::SmartNotation);
-    stream << forcepoint << 1.0 << " " << 1 << " " << 0 << " " << -1.0 << " " << -1;
+    stream << forcepoint << 1.0 << ' ' << 1 << ' ' << 0 << ' ' << -1.0 << ' ' << -1;
     QCOMPARE(str, QString("1.00000 1 0 -1.00000 -1"));
 
 }
@@ -1636,7 +1639,7 @@ void tst_QTextStream::forceSign()
 {
     QString str;
     QTextStream stream(&str);
-    stream << forcesign << 1.2 << " " << -1.2 << " " << 0;
+    stream << forcesign << 1.2 << ' ' << -1.2 << ' ' << 0;
     QCOMPARE(str, QString("+1.2 -1.2 +0"));
 }
 
@@ -1773,9 +1776,9 @@ void tst_QTextStream::nanInf()
 
     QString s;
     QTextStream out(&s);
-    out << qInf() << " " << -qInf() << " " << qQNaN()
-        << uppercasedigits << " "
-        << qInf() << " " << -qInf() << " " << qQNaN()
+    out << qInf() << ' ' << -qInf() << ' ' << qQNaN()
+        << uppercasedigits << ' '
+        << qInf() << ' ' << -qInf() << ' ' << qQNaN()
         << flush;
 
     QCOMPARE(s, QString("inf -inf nan INF -INF NAN"));
@@ -2553,6 +2556,22 @@ void tst_QTextStream::latin1String_write_operator_ToDevice()
     QCOMPARE(buf.buffer().constData(), "No explicit lengthExplicit length");
 }
 
+void tst_QTextStream::stringref_write_operator_ToDevice()
+{
+    QBuffer buf;
+    buf.open(QBuffer::WriteOnly);
+    QTextStream stream(&buf);
+    stream.setCodec(QTextCodec::codecForName("ISO-8859-1"));
+    stream.setAutoDetectUnicode(true);
+
+    const QString expected = "No explicit lengthExplicit length";
+
+    stream << expected.leftRef(18);
+    stream << expected.midRef(18);
+    stream.flush();
+    QCOMPARE(buf.buffer().constData(), "No explicit lengthExplicit length");
+}
+
 // ------------------------------------------------------------------------------
 void tst_QTextStream::useCase1()
 {
@@ -2565,7 +2584,7 @@ void tst_QTextStream::useCase1()
         stream.setCodec(QTextCodec::codecForName("ISO-8859-1"));
         stream.setAutoDetectUnicode(true);
 
-        stream << 4.15 << " " << QByteArray("abc") << " " << QString("ole");
+        stream << 4.15 << ' ' << QByteArray("abc") << ' ' << QString("ole");
     }
 
     file.seek(0);
@@ -2601,7 +2620,7 @@ void tst_QTextStream::useCase2()
     stream.setCodec(QTextCodec::codecForName("ISO-8859-1"));
     stream.setAutoDetectUnicode(true);
 
-    stream << 4.15 << " " << QByteArray("abc") << " " << QString("ole");
+    stream << 4.15 << ' ' << QByteArray("abc") << ' ' << QString("ole");
 
     file.close();
     QVERIFY(file.open(QFile::ReadWrite));
@@ -2711,7 +2730,7 @@ void tst_QTextStream::readBomSeekBackReadBomAgain()
     QFile::remove("utf8bom");
     QFile file("utf8bom");
     QVERIFY(file.open(QFile::ReadWrite));
-    file.write("\xef\xbb\xbf" "Andreas");
+    file.write("\xef\xbb\xbf""Andreas");
     file.seek(0);
     QCOMPARE(file.pos(), qint64(0));
 
@@ -2768,12 +2787,7 @@ void tst_QTextStream::status_real_read()
 
 void tst_QTextStream::status_integer_read()
 {
-#ifdef Q_OS_WINCE
-    QString text = QLatin1String("123 abc   ");
-    QTextStream s(&text);
-#else
     QTextStream s("123 abc   ");
-#endif
     int i;
     QString w;
     s >> i;
@@ -2791,12 +2805,7 @@ void tst_QTextStream::status_integer_read()
 
 void tst_QTextStream::status_word_read()
 {
-#ifdef Q_OS_WINCE
-    QString text = QLatin1String("abc ");
-    QTextStream s(&text);
-#else
     QTextStream s("abc ");
-#endif
     QString w;
     s >> w;
     QCOMPARE(s.status(), QTextStream::Ok);
@@ -3026,6 +3035,19 @@ void tst_QTextStream::int_write_with_locale()
     stream << input;
     QCOMPARE(result, output);
 }
+
+void tst_QTextStream::textModeOnEmptyRead()
+{
+    const QString filename(tempDir.path() + QLatin1String("/textmodetest.txt"));
+
+    QFile file(filename);
+    QVERIFY2(file.open(QIODevice::ReadWrite | QIODevice::Text), qPrintable(file.errorString()));
+    QTextStream stream(&file);
+    QVERIFY(file.isTextModeEnabled());
+    QString emptyLine = stream.readLine(); // Text mode flag cleared here
+    QVERIFY(file.isTextModeEnabled());
+}
+
 
 // ------------------------------------------------------------------------------
 

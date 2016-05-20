@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -84,11 +90,8 @@ extern Q_GUI_EXPORT bool qt_is_gui_used;
 extern QClipboard *qt_clipboard;
 #endif
 
-#if defined (Q_OS_WIN32) || defined (Q_OS_CYGWIN) || defined(Q_OS_WINCE)
+#if defined (Q_OS_WIN32) || defined (Q_OS_CYGWIN)
 extern QSysInfo::WinVersion qt_winver;
-# ifdef Q_OS_WINCE
-  extern DWORD qt_cever;
-# endif
 #elif defined (Q_OS_MAC)
 extern QSysInfo::MacVersion qt_macver;
 #endif
@@ -120,9 +123,6 @@ public:
 #endif
     static void reset_instance_pointer();
 #endif
-#ifdef Q_OS_WINCE
-    static int autoMaximizeThreshold;
-#endif
     static bool autoSipEnabled;
     static QString desktopStyleKey();
 
@@ -150,7 +150,7 @@ public:
 
     bool notify_helper(QObject *receiver, QEvent * e);
 
-    void construct(
+    void init(
 #ifdef Q_DEAD_CODE_FROM_QT4_X11
                    Display *dpy = 0, Qt::HANDLE visual = 0, Qt::HANDLE cmap = 0
 #endif
@@ -183,7 +183,6 @@ public:
     static QWidgetList *popupWidgets;
     static QStyle *app_style;
     static bool overrides_native_style;
-    static int app_cspec;
     static QPalette *sys_pal;
     static QPalette *set_pal;
 
@@ -202,6 +201,7 @@ public:
     static QWidget *active_window;
 #ifndef QT_NO_WHEELEVENT
     static int  wheel_scroll_lines;
+    static QPointer<QWidget> wheel_widget;
 #endif
 
     static int enabledAnimations; // Combination of QPlatformTheme::UiEffect
@@ -218,8 +218,6 @@ public:
 #endif
 
     static QApplicationPrivate *instance() { return self; }
-
-    static QString styleOverride;
 
 #ifdef QT_KEYPAD_NAVIGATION
     static QWidget *oldEditFocus;
@@ -283,6 +281,7 @@ public:
     QWidget *findClosestTouchPointTarget(QTouchDevice *device, const QTouchEvent::TouchPoint &touchPoint);
     void appendTouchPoint(const QTouchEvent::TouchPoint &touchPoint);
     void removeTouchPoint(int touchPointId);
+    void activateImplicitTouchGrab(QWidget *widget, QTouchEvent *touchBeginEvent);
     static bool translateRawTouchEvent(QWidget *widget,
                                        QTouchDevice *device,
                                        const QList<QTouchEvent::TouchPoint> &touchPoints,

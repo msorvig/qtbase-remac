@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -156,9 +162,9 @@ public:
             mouseTarget = QApplication::widgetAt(pressDelayEvent->globalPos());
             mouseButton = pressDelayEvent->button();
             mouseEventSource = pressDelayEvent->source();
-            qFGDebug() << "QFG: consuming/delaying mouse press";
+            qFGDebug("QFG: consuming/delaying mouse press");
         } else {
-            qFGDebug() << "QFG: NOT consuming/delaying mouse press";
+            qFGDebug("QFG: NOT consuming/delaying mouse press");
         }
         e->setAccepted(true);
     }
@@ -195,7 +201,7 @@ public:
 
     void scrollerWasIntercepted()
     {
-        qFGDebug() << "QFG: deleting delayed mouse press, since scroller was only intercepted";
+        qFGDebug("QFG: deleting delayed mouse press, since scroller was only intercepted");
         if (pressDelayEvent) {
             // we still haven't even sent the press, so just throw it away now
             if (pressDelayTimer) {
@@ -211,7 +217,7 @@ public:
     {
         if (pressDelayEvent) {
             // we still haven't even sent the press, so just throw it away now
-            qFGDebug() << "QFG: deleting delayed mouse press, since scroller is active now";
+            qFGDebug("QFG: deleting delayed mouse press, since scroller is active now");
             if (pressDelayTimer) {
                 killTimer(pressDelayTimer);
                 pressDelayTimer = 0;
@@ -575,7 +581,8 @@ QGestureRecognizer::Result QFlickGestureRecognizer::recognize(QGesture *state,
 
     // Check for an active scroller at globalPos
     if (inputType == QScroller::InputPress) {
-        foreach (QScroller *as, QScroller::activeScrollers()) {
+        const auto activeScrollers = QScroller::activeScrollers();
+        for (QScroller *as : activeScrollers) {
             if (as != scroller) {
                 QRegion scrollerRegion;
 
@@ -583,10 +590,13 @@ QGestureRecognizer::Result QFlickGestureRecognizer::recognize(QGesture *state,
                     scrollerRegion = QRect(w->mapToGlobal(QPoint(0, 0)), w->size());
 #ifndef QT_NO_GRAPHICSVIEW
                 } else if (QGraphicsObject *go = qobject_cast<QGraphicsObject *>(as->target())) {
-                    if (go->scene() && !go->scene()->views().isEmpty()) {
-                        foreach (QGraphicsView *gv, go->scene()->views())
-                            scrollerRegion |= gv->mapFromScene(go->mapToScene(go->boundingRect()))
+                    if (const auto *scene = go->scene()) {
+                        const auto goBoundingRectMappedToScene = go->mapToScene(go->boundingRect());
+                        const auto views = scene->views();
+                        for (QGraphicsView *gv : views) {
+                            scrollerRegion |= gv->mapFromScene(goBoundingRectMappedToScene)
                                               .translated(gv->mapToGlobal(QPoint(0, 0)));
+                        }
                     }
 #endif
                 }
@@ -704,5 +714,7 @@ void QFlickGestureRecognizer::reset(QGesture *state)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qflickgesture_p.cpp"
 
 #endif // QT_NO_GESTURES

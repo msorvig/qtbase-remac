@@ -1,34 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2014 Canonical, Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 Canonical, Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -87,12 +90,12 @@ void QMirClientClipboard::requestDBusClipboardContents()
     if (!mPendingGetContentsCall.isNull())
         return;
 
-    QDBusPendingCall pendingCall = mDBusClipboard->asyncCall("GetContents");
+    QDBusPendingCall pendingCall = mDBusClipboard->asyncCall(QStringLiteral("GetContents"));
 
     mPendingGetContentsCall = new QDBusPendingCallWatcher(pendingCall, this);
 
-    QObject::connect(mPendingGetContentsCall.data(), SIGNAL(finished(QDBusPendingCallWatcher*)),
-                     this, SLOT(onDBusClipboardGetContentsFinished(QDBusPendingCallWatcher*)));
+    QObject::connect(mPendingGetContentsCall.data(), &QDBusPendingCallWatcher::finished,
+                     this, &QMirClientClipboard::onDBusClipboardGetContentsFinished);
 }
 
 void QMirClientClipboard::onDBusClipboardGetContentsFinished(QDBusPendingCallWatcher* call)
@@ -100,7 +103,7 @@ void QMirClientClipboard::onDBusClipboardGetContentsFinished(QDBusPendingCallWat
     Q_ASSERT(call == mPendingGetContentsCall.data());
 
     QDBusPendingReply<QByteArray> reply = *call;
-    if (reply.isError()) {
+    if (Q_UNLIKELY(reply.isError())) {
         qCritical("QMirClientClipboard - Failed to get system clipboard contents via D-Bus. %s, %s",
                 qPrintable(reply.error().name()), qPrintable(reply.error().message()));
         // TODO: Might try again later a number of times...
@@ -114,7 +117,7 @@ void QMirClientClipboard::onDBusClipboardGetContentsFinished(QDBusPendingCallWat
 void QMirClientClipboard::onDBusClipboardSetContentsFinished(QDBusPendingCallWatcher *call)
 {
     QDBusPendingReply<void> reply = *call;
-    if (reply.isError()) {
+    if (Q_UNLIKELY(reply.isError())) {
         qCritical("QMirClientClipboard - Failed to set the system clipboard contents via D-Bus. %s, %s",
                 qPrintable(reply.error().name()), qPrintable(reply.error().message()));
         // TODO: Might try again later a number of times...
@@ -143,18 +146,17 @@ void QMirClientClipboard::setupDBus()
     QDBusConnection dbusConnection = QDBusConnection::sessionBus();
 
     bool ok = dbusConnection.connect(
-            "com.canonical.QtMir",
-            "/com/canonical/QtMir/Clipboard",
-            "com.canonical.QtMir.Clipboard",
-            "ContentsChanged",
+            QStringLiteral("com.canonical.QtMir"),
+            QStringLiteral("/com/canonical/QtMir/Clipboard"),
+            QStringLiteral("com.canonical.QtMir.Clipboard"),
+            QStringLiteral("ContentsChanged"),
             this, SLOT(updateMimeData(QByteArray)));
-    if (!ok) {
+    if (Q_UNLIKELY(!ok))
         qCritical("QMirClientClipboard - Failed to connect to ContentsChanged signal form the D-Bus system clipboard.");
-    }
 
-    mDBusClipboard = new QDBusInterface("com.canonical.QtMir",
-            "/com/canonical/QtMir/Clipboard",
-            "com.canonical.QtMir.Clipboard",
+    mDBusClipboard = new QDBusInterface(QStringLiteral("com.canonical.QtMir"),
+            QStringLiteral("/com/canonical/QtMir/Clipboard"),
+            QStringLiteral("com.canonical.QtMir.Clipboard"),
             dbusConnection);
 
     mDBusSetupDone = true;
@@ -162,6 +164,8 @@ void QMirClientClipboard::setupDBus()
 
 QByteArray QMirClientClipboard::serializeMimeData(QMimeData *mimeData) const
 {
+    Q_ASSERT(mimeData != nullptr);
+
     const QStringList formats = mimeData->formats();
     const int formatCount = qMin(formats.size(), maxFormatsCount);
     const int headerSize = sizeof(int) + (formatCount * 4 * sizeof(int));
@@ -180,12 +184,13 @@ QByteArray QMirClientClipboard::serializeMimeData(QMimeData *mimeData) const
             int offset = headerSize;
             header[0] = formatCount;
             for (int i = 0; i < formatCount; i++) {
+                const QByteArray data = mimeData->data(formats[i]);
                 const int formatOffset = offset;
                 const int formatSize = formats[i].size();
                 const int dataOffset = offset + formatSize;
-                const int dataSize = mimeData->data(formats[i]).size();
+                const int dataSize = data.size();
                 memcpy(&buffer[formatOffset], formats[i].toLatin1().data(), formatSize);
-                memcpy(&buffer[dataOffset], mimeData->data(formats[i]).data(), dataSize);
+                memcpy(&buffer[dataOffset], data.data(), dataSize);
                 header[i*4+1] = formatOffset;
                 header[i*4+2] = formatSize;
                 header[i*4+3] = dataOffset;
@@ -265,13 +270,15 @@ void QMirClientClipboard::setMimeData(QMimeData* mimeData, QClipboard::Mode mode
         delete mPendingGetContentsCall.data();
     }
 
-    QByteArray serializedMimeData = serializeMimeData(mimeData);
-    if (!serializedMimeData.isEmpty()) {
-        setDBusClipboardContents(serializedMimeData);
-    }
+    if (mimeData != nullptr) {
+        QByteArray serializedMimeData = serializeMimeData(mimeData);
+        if (!serializedMimeData.isEmpty()) {
+            setDBusClipboardContents(serializedMimeData);
+        }
 
-    mMimeData = mimeData;
-    emitChanged(QClipboard::Clipboard);
+        mMimeData = mimeData;
+        emitChanged(QClipboard::Clipboard);
+    }
 }
 
 bool QMirClientClipboard::supportsMode(QClipboard::Mode mode) const
@@ -287,6 +294,10 @@ bool QMirClientClipboard::ownsMode(QClipboard::Mode mode) const
 
 void QMirClientClipboard::setDBusClipboardContents(const QByteArray &clipboardContents)
 {
+    if (!mDBusSetupDone) {
+        setupDBus();
+    }
+
     if (!mPendingSetContentsCall.isNull()) {
         // Ignore any previous set call as we are going to overwrite it anyway
         QObject::disconnect(mPendingSetContentsCall.data(), 0, this, 0);
@@ -296,10 +307,10 @@ void QMirClientClipboard::setDBusClipboardContents(const QByteArray &clipboardCo
         delete mPendingSetContentsCall.data();
     }
 
-    QDBusPendingCall pendingCall = mDBusClipboard->asyncCall("SetContents", clipboardContents);
+    QDBusPendingCall pendingCall = mDBusClipboard->asyncCall(QStringLiteral("SetContents"), clipboardContents);
 
     mPendingSetContentsCall = new QDBusPendingCallWatcher(pendingCall, this);
 
-    QObject::connect(mPendingSetContentsCall.data(), SIGNAL(finished(QDBusPendingCallWatcher*)),
-                     this, SLOT(onDBusClipboardSetContentsFinished(QDBusPendingCallWatcher*)));
+    QObject::connect(mPendingSetContentsCall.data(), &QDBusPendingCallWatcher::finished,
+                     this, &QMirClientClipboard::onDBusClipboardSetContentsFinished);
 }

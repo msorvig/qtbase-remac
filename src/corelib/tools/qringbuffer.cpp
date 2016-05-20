@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2015 Alex Trotsenko <alex1973tr@gmail.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -68,14 +74,14 @@ void QRingBuffer::free(qint64 bytes)
     Q_ASSERT(bytes <= bufferSize);
 
     while (bytes > 0) {
-        const qint64 blockSize = buffers.first().size() - head;
+        const qint64 blockSize = buffers.constFirst().size() - head;
 
         if (tailBuffer == 0 || blockSize > bytes) {
             // keep a single block around if it does not exceed
             // the basic block size, to avoid repeated allocations
             // between uses of the buffer
             if (bufferSize <= bytes) {
-                if (buffers.first().size() <= basicBlockSize) {
+                if (buffers.constFirst().size() <= basicBlockSize) {
                     bufferSize = 0;
                     head = tail = 0;
                 } else {
@@ -108,8 +114,8 @@ char *QRingBuffer::reserve(qint64 bytes)
     } else {
         const qint64 newSize = bytes + tail;
         // if need buffer reallocation
-        if (newSize > buffers.last().size()) {
-            if (newSize > buffers.last().capacity() && (tail >= basicBlockSize
+        if (newSize > buffers.constLast().size()) {
+            if (newSize > buffers.constLast().capacity() && (tail >= basicBlockSize
                     || newSize >= MaxByteArraySize)) {
                 // shrink this buffer to its current size
                 buffers.last().resize(tail);
@@ -174,7 +180,7 @@ void QRingBuffer::chop(qint64 bytes)
             // the basic block size, to avoid repeated allocations
             // between uses of the buffer
             if (bufferSize <= bytes) {
-                if (buffers.first().size() <= basicBlockSize) {
+                if (buffers.constFirst().size() <= basicBlockSize) {
                     bufferSize = 0;
                     head = tail = 0;
                 } else {
@@ -192,7 +198,7 @@ void QRingBuffer::chop(qint64 bytes)
         bytes -= tail;
         buffers.removeLast();
         --tailBuffer;
-        tail = buffers.last().size();
+        tail = buffers.constLast().size();
     }
 }
 
@@ -270,7 +276,6 @@ QByteArray QRingBuffer::read()
     if (tailBuffer == 0) {
         qba.resize(tail);
         tail = 0;
-        buffers.append(QByteArray());
     } else {
         --tailBuffer;
     }
@@ -306,6 +311,20 @@ qint64 QRingBuffer::peek(char *data, qint64 maxLength, qint64 pos) const
     }
 
     return readSoFar;
+}
+
+/*!
+    \internal
+
+    Append bytes from data to the end
+*/
+void QRingBuffer::append(const char *data, qint64 size)
+{
+    char *writePointer = reserve(size);
+    if (size == 1)
+        *writePointer = *data;
+    else if (size)
+        ::memcpy(writePointer, data, size);
 }
 
 /*!

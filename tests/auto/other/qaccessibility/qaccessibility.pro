@@ -5,13 +5,7 @@ QT += testlib core-private gui-private widgets-private
 SOURCES += tst_qaccessibility.cpp
 HEADERS += accessiblewidgets.h
 
-unix:!mac:!haiku:LIBS+=-lm
-
-wince {
-	accessneeded.files = $$QT_BUILD_TREE\\plugins\\accessible\\*.dll
-	accessneeded.path = accessible
-	DEPLOYMENT += accessneeded
-}
+unix:!darwin:!haiku:!integity: LIBS += -lm
 
 win32 {
     !*g++:!winrt {

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -140,6 +146,23 @@ static int qtkeyForMacSymbol(const QChar ch)
 #else
 static bool qt_sequence_no_mnemonics = false;
 #endif
+
+/*!
+    \fn void qt_set_sequence_auto_mnemonic(bool b)
+    \relates QKeySequence
+
+    Specifies whether mnemonics for menu items, labels, etc., should
+    be honored or not. On Windows and X11, this feature is
+    on by default; on OS X, it is off. When this feature is off
+    (that is, when \a b is false), QKeySequence::mnemonic() always
+    returns an empty string.
+
+    \note This function is not declared in any of Qt's header files.
+    To use it in your application, declare the function prototype
+    before calling it.
+
+    \sa QShortcut
+*/
 void Q_GUI_EXPORT qt_set_sequence_auto_mnemonic(bool b) { qt_sequence_no_mnemonics = !b; }
 
 /*!
@@ -291,6 +314,7 @@ void Q_GUI_EXPORT qt_set_sequence_auto_mnemonic(bool b) { qt_sequence_no_mnemoni
     \row    \li InsertParagraphSeparator     \li Enter                    \li Enter                  \li Enter          \li Enter
     \row    \li InsertLineSeparator          \li Shift+Enter              \li Meta+Enter, Meta+O     \li Shift+Enter    \li Shift+Enter
     \row    \li Backspace             \li (none)                          \li Meta+H                 \li (none)         \li (none)
+    \row    \li Cancel                \li Escape                          \li Escape, Ctrl+.         \li Escape         \li Escape
     \endtable
 
     Note that, since the key sequences used for the standard shortcuts differ
@@ -752,6 +776,7 @@ static const struct {
     \value ZoomIn           Zoom in.
     \value ZoomOut          Zoom out.
     \value FullScreen       Toggle the window state to/from full screen.
+    \value Cancel           Cancel the current operation.
 */
 
 /*!
@@ -1242,7 +1267,28 @@ QString QKeySequencePrivate::encodeString(int key, QKeySequence::SequenceFormat 
     if ((key & Qt::KeypadModifier) == Qt::KeypadModifier)
         addKey(s, nativeText ? QCoreApplication::translate("QShortcut", "Num") : QString::fromLatin1("Num"), format);
 
+    QString p = keyName(key, format);
 
+#if defined(Q_OS_OSX)
+    if (nativeText)
+        s += p;
+    else
+#endif
+    addKey(s, p, format);
+    return s;
+}
+
+/*!
+    \internal
+    Returns the text representation of the key \a key, which can be used i.e.
+    when the sequence is serialized. This does not take modifiers into account
+    (see encodeString() for a version that does).
+
+    This static method is used by encodeString() and by the D-Bus menu exporter.
+*/
+QString QKeySequencePrivate::keyName(int key, QKeySequence::SequenceFormat format)
+{
+    bool nativeText = (format == QKeySequence::NativeText);
     key &= ~(Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier | Qt::KeypadModifier);
     QString p;
 
@@ -1293,14 +1339,7 @@ NonSymbol:
             }
         }
     }
-
-#if defined(Q_OS_MACX)
-    if (nativeText)
-        s += p;
-    else
-#endif
-    addKey(s, p, format);
-    return s;
+    return p;
 }
 /*!
     Matches the sequence with \a seq. Returns ExactMatch if
@@ -1526,9 +1565,9 @@ QList<QKeySequence> QKeySequence::listFromString(const QString &str, SequenceFor
 {
     QList<QKeySequence> result;
 
-    QStringList strings = str.split(QLatin1String("; "));
+    const QStringList strings = str.split(QLatin1String("; "));
     result.reserve(strings.count());
-    foreach (const QString &string, strings) {
+    for (const QString &string : strings) {
         result << fromString(string, format);
     }
 
@@ -1547,7 +1586,7 @@ QString QKeySequence::listToString(const QList<QKeySequence> &list, SequenceForm
 {
     QString result;
 
-    foreach (const QKeySequence &sequence, list) {
+    for (const QKeySequence &sequence : list) {
         result += sequence.toString(format);
         result += QLatin1String("; ");
     }
@@ -1604,7 +1643,7 @@ QDataStream &operator>>(QDataStream &s, QKeySequence &keysequence)
         s >> keys[i];
     }
     qAtomicDetach(keysequence.d);
-    std::copy(keys, keys + MaxKeys, keysequence.d->key);
+    std::copy(keys, keys + MaxKeys, QT_MAKE_CHECKED_ARRAY_ITERATOR(keysequence.d->key, MaxKeys));
     return s;
 }
 

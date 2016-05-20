@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -57,10 +63,6 @@
 #include "qmenu_p.h"
 #include "qmenubar_p.h"
 #include "qdebug.h"
-
-#ifdef Q_OS_WINCE
-extern bool qt_wince_is_mobile(); //defined in qguifunctions_wce.cpp
-#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -194,7 +196,7 @@ void QMenuBarPrivate::updateGeometries()
     if(itemsDirty) {
         for(int j = 0; j < shortcutIndexMap.size(); ++j)
             q->releaseShortcut(shortcutIndexMap.value(j));
-        shortcutIndexMap.resize(0); // faster than clear
+        shortcutIndexMap.clear();
         const int actionsCount = actions.count();
         shortcutIndexMap.reserve(actionsCount);
         for (int i = 0; i < actionsCount; i++)
@@ -690,20 +692,11 @@ void QMenuBarPrivate::init()
     q->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
     q->setAttribute(Qt::WA_CustomWhatsThis);
 
-    platformMenuBar = QGuiApplicationPrivate::platformTheme()->createPlatformMenuBar();
+    if (!QApplication::instance()->testAttribute(Qt::AA_DontUseNativeMenuBar))
+        platformMenuBar = QGuiApplicationPrivate::platformTheme()->createPlatformMenuBar();
 
     if (platformMenuBar)
         q->hide();
-#ifdef Q_OS_WINCE
-    if (qt_wince_is_mobile()) {
-        wceCreateMenuBar(q->parentWidget());
-        if(wce_menubar)
-            q->hide();
-    }
-    else {
-        QApplication::setAttribute(Qt::AA_DontUseNativeMenuBar, true);
-    }
-#endif
     q->setBackgroundRole(QPalette::Button);
     oldWindow = oldParent = 0;
     handleReparent();
@@ -754,11 +747,6 @@ QMenuBar::~QMenuBar()
     Q_D(QMenuBar);
     delete d->platformMenuBar;
     d->platformMenuBar = 0;
-
-#ifdef Q_OS_WINCE
-    if (qt_wince_is_mobile())
-        d->wceDestroyMenuBar();
-#endif
 }
 
 /*!
@@ -1010,7 +998,7 @@ void QMenuBar::paintEvent(QPaintEvent *e)
 */
 void QMenuBar::setVisible(bool visible)
 {
-#if defined(Q_OS_MAC) || defined(Q_OS_WINCE)
+#if defined(Q_OS_DARWIN)
     if (isNativeMenuBar()) {
         if (!visible)
             QWidget::setVisible(false);
@@ -1122,14 +1110,14 @@ void QMenuBar::keyPressEvent(QKeyEvent *e)
         }
         break; }
 
-    case Qt::Key_Escape:
+    default:
+        key_consumed = false;
+    }
+
+    if (!key_consumed && e->matches(QKeySequence::Cancel)) {
         d->setCurrentAction(0);
         d->setKeyboardMode(false);
         key_consumed = true;
-        break;
-
-    default:
-        key_consumed = false;
     }
 
     if(!key_consumed &&
@@ -1203,12 +1191,19 @@ void QMenuBar::leaveEvent(QEvent *)
         d->setCurrentAction(0);
 }
 
-QPlatformMenu *getPlatformMenu(QAction *action)
+QPlatformMenu *QMenuBarPrivate::getPlatformMenu(QAction *action)
 {
     if (!action || !action->menu())
         return 0;
 
-    return action->menu()->platformMenu();
+    QPlatformMenu *platformMenu = action->menu()->platformMenu();
+    if (!platformMenu && platformMenuBar) {
+        platformMenu = platformMenuBar->createMenu();
+        if (platformMenu)
+            action->menu()->setPlatformMenu(platformMenu);
+    }
+
+    return platformMenu;
 }
 
 /*!
@@ -1220,23 +1215,19 @@ void QMenuBar::actionEvent(QActionEvent *e)
     d->itemsDirty = true;
 
     if (d->platformMenuBar) {
-#if !defined(Q_OS_WINCE)
         QPlatformMenuBar *nativeMenuBar = d->platformMenuBar;
-#else
-        QMenuBarPrivate::QWceMenuBarPrivate *nativeMenuBar = d->wce_menubar;
-#endif
         if (!nativeMenuBar)
             return;
 
         if (e->type() == QEvent::ActionAdded) {
-            QPlatformMenu *menu = getPlatformMenu(e->action());
+            QPlatformMenu *menu = d->getPlatformMenu(e->action());
             if (menu) {
                 QPlatformMenu* beforeMenu = NULL;
                 for (int beforeIndex = d->indexOf(e->action()) + 1;
                      !beforeMenu && (beforeIndex < actions().size());
                      ++beforeIndex)
                 {
-                    beforeMenu = getPlatformMenu(actions().at(beforeIndex));
+                    beforeMenu = d->getPlatformMenu(actions().at(beforeIndex));
                 }
 
                 menu->setTag(reinterpret_cast<quintptr>(e->action()));
@@ -1244,12 +1235,12 @@ void QMenuBar::actionEvent(QActionEvent *e)
                 d->platformMenuBar->insertMenu(menu, beforeMenu);
             }
         } else if (e->type() == QEvent::ActionRemoved) {
-            QPlatformMenu *menu = getPlatformMenu(e->action());
+            QPlatformMenu *menu = d->getPlatformMenu(e->action());
             if (menu)
                 d->platformMenuBar->removeMenu(menu);
         } else if (e->type() == QEvent::ActionChanged) {
             QPlatformMenu* cur = d->platformMenuBar->menuForTag(reinterpret_cast<quintptr>(e->action()));
-            QPlatformMenu *menu = getPlatformMenu(e->action());
+            QPlatformMenu *menu = d->getPlatformMenu(e->action());
 
             // the menu associated with the action can change, need to
             // remove and/or insert the new platform menu
@@ -1264,7 +1255,7 @@ void QMenuBar::actionEvent(QActionEvent *e)
                          !beforeMenu && (beforeIndex < actions().size());
                          ++beforeIndex)
                     {
-                        beforeMenu = getPlatformMenu(actions().at(beforeIndex));
+                        beforeMenu = d->getPlatformMenu(actions().at(beforeIndex));
                     }
                     d->platformMenuBar->insertMenu(menu, beforeMenu);
                 }
@@ -1365,11 +1356,6 @@ void QMenuBarPrivate::handleReparent()
             platformMenuBar->handleReparent(0);
         }
     }
-
-#ifdef Q_OS_WINCE
-    if (qt_wince_is_mobile() && wce_menubar)
-        wce_menubar->rebuild();
-#endif
 }
 
 /*!
@@ -1432,7 +1418,7 @@ bool QMenuBar::event(QEvent *e)
     case QEvent::ShortcutOverride: {
         QKeyEvent *kev = static_cast<QKeyEvent*>(e);
         //we only filter out escape if there is a current action
-        if (kev->key() == Qt::Key_Escape && d->currentAction) {
+        if (kev->matches(QKeySequence::Cancel) && d->currentAction) {
             e->accept();
             return true;
         }
@@ -1549,7 +1535,7 @@ QRect QMenuBar::actionGeometry(QAction *act) const
 QSize QMenuBar::minimumSizeHint() const
 {
     Q_D(const QMenuBar);
-#if defined(Q_OS_MAC) || defined(Q_OS_WINCE)
+#if defined(Q_OS_DARWIN)
     const bool as_gui_menubar = !isNativeMenuBar();
 #else
     const bool as_gui_menubar = true;
@@ -1605,7 +1591,7 @@ QSize QMenuBar::minimumSizeHint() const
 QSize QMenuBar::sizeHint() const
 {
     Q_D(const QMenuBar);
-#if defined(Q_OS_MAC) || defined(Q_OS_WINCE)
+#if defined(Q_OS_DARWIN)
     const bool as_gui_menubar = !isNativeMenuBar();
 #else
     const bool as_gui_menubar = true;
@@ -1663,7 +1649,7 @@ QSize QMenuBar::sizeHint() const
 int QMenuBar::heightForWidth(int) const
 {
     Q_D(const QMenuBar);
-#if defined(Q_OS_MAC) || defined(Q_OS_WINCE)
+#if defined(Q_OS_DARWIN)
     const bool as_gui_menubar = !isNativeMenuBar();
 #else
     const bool as_gui_menubar = true;
@@ -1846,55 +1832,6 @@ QPlatformMenuBar *QMenuBar::platformMenuBar()
     Q_D(const QMenuBar);
     return d->platformMenuBar;
 }
-
-/*!
-  \since 4.4
-
-  Sets the default action to \a act.
-
-  The default action is assigned to the left soft key. The menu is assigned
-  to the right soft key.
-
-  Currently there is only support for the default action on Windows
-  Mobile. On all other platforms this method is not available.
-
-  \sa defaultAction()
-*/
-
-#ifdef Q_OS_WINCE
-void QMenuBar::setDefaultAction(QAction *act)
-{
-    Q_D(QMenuBar);
-    if (d->defaultAction == act)
-        return;
-    if (qt_wince_is_mobile())
-        if (d->defaultAction) {
-            disconnect(d->defaultAction, SIGNAL(changed()), this, SLOT(_q_updateDefaultAction()));
-            disconnect(d->defaultAction, SIGNAL(destroyed()), this, SLOT(_q_updateDefaultAction()));
-        }
-    d->defaultAction = act;
-    if (qt_wince_is_mobile())
-        if (d->defaultAction) {
-            connect(d->defaultAction, SIGNAL(changed()), this, SLOT(_q_updateDefaultAction()));
-            connect(d->defaultAction, SIGNAL(destroyed()), this, SLOT(_q_updateDefaultAction()));
-        }
-    if (d->wce_menubar) {
-        d->wce_menubar->rebuild();
-    }
-}
-
-/*!
-  \since 4.4
-
-  Returns the current default action.
-
-  \sa setDefaultAction()
-*/
-QAction *QMenuBar::defaultAction() const
-{
-    return d_func()->defaultAction;
-}
-#endif
 
 /*!
     \fn void QMenuBar::triggered(QAction *action)

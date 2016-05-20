@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -777,7 +783,7 @@ void AtSpiAdaptor::updateEventListeners()
         }
         m_applicationAdaptor->sendEvents(!evList.isEmpty());
     } else {
-        qAtspiDebug() << "Could not query active accessibility event listeners.";
+        qAtspiDebug("Could not query active accessibility event listeners.");
     }
 }
 
@@ -938,7 +944,7 @@ void AtSpiAdaptor::notify(QAccessibleEvent *event)
         if (sendObject || sendObject_text_changed) {
             QAccessibleInterface * iface = event->accessibleInterface();
             if (!iface || !iface->textInterface()) {
-                qAtspiDebug() << "Received text event for invalid interface.";
+                qAtspiDebug("Received text event for invalid interface.");
                 return;
             }
             QString path = pathForInterface(iface);
@@ -1024,7 +1030,7 @@ void AtSpiAdaptor::notify(QAccessibleEvent *event)
         if (sendObject || sendObject_value_changed || sendObject_property_change_accessible_value) {
             QAccessibleInterface * iface = event->accessibleInterface();
             if (!iface) {
-                qWarning() << "ValueChanged event from invalid accessible.";
+                qWarning("ValueChanged event from invalid accessible.");
                 return;
             }
             if (iface->valueInterface()) {
@@ -1053,7 +1059,7 @@ void AtSpiAdaptor::notify(QAccessibleEvent *event)
     case QAccessible::Selection: {
         QAccessibleInterface * iface = event->accessibleInterface();
         if (!iface) {
-            qWarning() << "Selection event from invalid accessible.";
+            qWarning("Selection event from invalid accessible.");
             return;
         }
         QString path = pathForInterface(iface);
@@ -1070,7 +1076,7 @@ void AtSpiAdaptor::notify(QAccessibleEvent *event)
             if (stateChange.checked) {
                 QAccessibleInterface * iface = event->accessibleInterface();
                 if (!iface) {
-                    qWarning() << "StateChanged event from invalid accessible.";
+                    qWarning("StateChanged event from invalid accessible.");
                     return;
                 }
                 int checked = iface->state().checked;
@@ -1475,7 +1481,7 @@ QStringList AtSpiAdaptor::accessibleInterfaces(QAccessibleInterface *interface) 
         }
 #ifdef ACCESSIBLE_CREATION_DEBUG
     else {
-        qAtspiDebug() << " IS NOT a component";
+        qAtspiDebug(" IS NOT a component");
     }
 #endif
     if (interface->role() == QAccessible::Application)
@@ -1532,7 +1538,7 @@ QString AtSpiAdaptor::pathForObject(QObject *object) const
     Q_ASSERT(object);
 
     if (inheritsQAction(object)) {
-        qAtspiDebug() << "AtSpiAdaptor::pathForObject: warning: creating path with QAction as object.";
+        qAtspiDebug("AtSpiAdaptor::pathForObject: warning: creating path with QAction as object.");
     }
 
     QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(object);
@@ -1663,18 +1669,18 @@ bool AtSpiAdaptor::componentInterface(QAccessibleInterface *interface, const QSt
 //        int width = message.arguments().at(2).toInt();
 //        int height = message.arguments().at(3).toInt();
 //        uint coordinateType = message.arguments().at(4).toUInt();
-        qAtspiDebug() << "SetExtents is not implemented.";
+        qAtspiDebug("SetExtents is not implemented.");
         sendReply(connection, message, false);
     } else if (function == QLatin1String("SetPosition")) {
 //        int x = message.arguments().at(0).toInt();
 //        int y = message.arguments().at(1).toInt();
 //        uint coordinateType = message.arguments().at(2).toUInt();
-        qAtspiDebug() << "SetPosition is not implemented.";
+        qAtspiDebug("SetPosition is not implemented.");
         sendReply(connection, message, false);
     } else if (function == QLatin1String("SetSize")) {
 //        int width = message.arguments().at(0).toInt();
 //        int height = message.arguments().at(1).toInt();
-        qAtspiDebug() << "SetSize is not implemented.";
+        qAtspiDebug("SetSize is not implemented.");
         sendReply(connection, message, false);
     } else {
         qAtspiDebug() << "WARNING: AtSpiAdaptor::componentInterface does not implement " << function << message.path();
@@ -1961,71 +1967,71 @@ namespace
         // https://bugzilla.gnome.org/show_bug.cgi?id=744553 "ATK docs provide no guidance for allowed values of some text attributes"
         // specifically for "weight", "invalid", "language" and value range for colors
 
-        if (ia2Name == QStringLiteral("background-color")) {
+        if (ia2Name == QLatin1String("background-color")) {
             name = QStringLiteral("bg-color");
             value = atspiColor(value);
-        } else if (ia2Name == QStringLiteral("font-family")) {
+        } else if (ia2Name == QLatin1String("font-family")) {
             name = QStringLiteral("family-name");
-        } else if (ia2Name == QStringLiteral("color")) {
+        } else if (ia2Name == QLatin1String("color")) {
             name = QStringLiteral("fg-color");
             value = atspiColor(value);
-        } else if (ia2Name == QStringLiteral("text-align")) {
+        } else if (ia2Name == QLatin1String("text-align")) {
             name = QStringLiteral("justification");
-            if (value == QStringLiteral("justify")) {
+            if (value == QLatin1String("justify")) {
                 value = QStringLiteral("fill");
             } else {
-                if (value != QStringLiteral("left") &&
-                    value != QStringLiteral("right") &&
-                    value != QStringLiteral("center")
+                if (value != QLatin1String("left") &&
+                    value != QLatin1String("right") &&
+                    value != QLatin1String("center")
                 ) {
                     value = QString();
                     qAtspiDebug() << "Unknown text-align attribute value \"" << value << "\" cannot be translated to AT-SPI.";
                 }
             }
-        } else if (ia2Name == QStringLiteral("font-size")) {
+        } else if (ia2Name == QLatin1String("font-size")) {
             name = QStringLiteral("size");
             value = atspiSize(value);
-        } else if (ia2Name == QStringLiteral("font-style")) {
+        } else if (ia2Name == QLatin1String("font-style")) {
             name = QStringLiteral("style");
-            if (value != QStringLiteral("normal") &&
-                value != QStringLiteral("italic") &&
-                value != QStringLiteral("oblique")
+            if (value != QLatin1String("normal") &&
+                value != QLatin1String("italic") &&
+                value != QLatin1String("oblique")
             ) {
                 value = QString();
                 qAtspiDebug() << "Unknown font-style attribute value \"" << value << "\" cannot be translated to AT-SPI.";
             }
-        } else if (ia2Name == QStringLiteral("text-underline-type")) {
+        } else if (ia2Name == QLatin1String("text-underline-type")) {
             name = QStringLiteral("underline");
-            if (value != QStringLiteral("none") &&
-                value != QStringLiteral("single") &&
-                value != QStringLiteral("double")
+            if (value != QLatin1String("none") &&
+                value != QLatin1String("single") &&
+                value != QLatin1String("double")
             ) {
                 value = QString();
                 qAtspiDebug() << "Unknown text-underline-type attribute value \"" << value << "\" cannot be translated to AT-SPI.";
             }
-        } else if (ia2Name == QStringLiteral("font-weight")) {
+        } else if (ia2Name == QLatin1String("font-weight")) {
             name = QStringLiteral("weight");
-            if (value == QStringLiteral("normal"))
+            if (value == QLatin1String("normal"))
                 // Orca seems to accept all IAccessible2 values except for "normal"
                 // (on which it produces traceback and fails to read any following text attributes),
                 // but that is the default value, so omit it anyway
                 value = QString();
-        } else if (ia2Name == QStringLiteral("text-position")) {
+        } else if (ia2Name == QLatin1String("text-position")) {
             name = QStringLiteral("vertical-align");
-            if (value != QStringLiteral("baseline") &&
-                value != QStringLiteral("super") &&
-                value != QStringLiteral("sub")
+            if (value != QLatin1String("baseline") &&
+                value != QLatin1String("super") &&
+                value != QLatin1String("sub")
             ) {
                 value = QString();
                 qAtspiDebug() << "Unknown text-position attribute value \"" << value << "\" cannot be translated to AT-SPI.";
             }
-        } else if (ia2Name == QStringLiteral("writing-mode")) {
+        } else if (ia2Name == QLatin1String("writing-mode")) {
             name = QStringLiteral("direction");
-            if (value == QStringLiteral("lr"))
+            if (value == QLatin1String("lr"))
                 value = QStringLiteral("ltr");
-            else if (value == QStringLiteral("rl"))
+            else if (value == QLatin1String("rl"))
                 value = QStringLiteral("rtl");
-            else if (value == QStringLiteral("tb")) {
+            else if (value == QLatin1String("tb")) {
                 // IAccessible2 docs refer to XSL, which specifies "tb" is shorthand for "tb-rl"; so at least give a hint about the horizontal direction (ATK does not support vertical direction in this attribute (yet))
                 value = QStringLiteral("rtl");
                 qAtspiDebug() << "writing-mode attribute value \"tb\" translated only w.r.t. horizontal direction; vertical direction ignored";
@@ -2033,9 +2039,9 @@ namespace
                 value = QString();
                 qAtspiDebug() << "Unknown writing-mode attribute value \"" << value << "\" cannot be translated to AT-SPI.";
             }
-        } else if (ia2Name == QStringLiteral("language")) {
+        } else if (ia2Name == QLatin1String("language")) {
             // OK - ATK has no docs on the format of the value, IAccessible2 has reasonable format - leave it at that now
-        } else if (ia2Name == QStringLiteral("invalid")) {
+        } else if (ia2Name == QLatin1String("invalid")) {
             // OK - ATK docs are vague but suggest they support the same range of values as IAccessible2
         } else {
             // attribute we know nothing about
@@ -2312,7 +2318,7 @@ bool AtSpiAdaptor::tableInterface(QAccessibleInterface *interface, const QString
             (column < 0) ||
             (row >= interface->tableInterface()->rowCount()) ||
             (column >= interface->tableInterface()->columnCount())) {
-            qAtspiDebug() << "WARNING: invalid index for tableInterface GetAccessibleAt (" << row << ", " << column << ")";
+            qAtspiDebug() << "WARNING: invalid index for tableInterface GetAccessibleAt (" << row << ", " << column << ')';
             return false;
         }
 
@@ -2331,7 +2337,7 @@ bool AtSpiAdaptor::tableInterface(QAccessibleInterface *interface, const QString
         int column = message.arguments().at(1).toInt();
         QAccessibleInterface *cell = interface->tableInterface()->cellAt(row, column);
         if (!cell) {
-            qAtspiDebug() << "WARNING: AtSpiAdaptor::GetIndexAt(" << row << "," << column << ") did not find a cell. " << interface;
+            qAtspiDebug() << "WARNING: AtSpiAdaptor::GetIndexAt(" << row << ',' << column << ") did not find a cell. " << interface;
             return false;
         }
         int index = interface->indexOfChild(cell);

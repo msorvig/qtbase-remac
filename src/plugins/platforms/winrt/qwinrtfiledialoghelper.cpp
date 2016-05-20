@@ -1,34 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -239,20 +242,24 @@ static bool pickFiles(IFileOpenPicker *picker, QWinRTFileDialogHelper *helper, b
         eventDispatcher->installEventFilter(helper);
     return true;
 #else
-    if (singleFile) {
-        ComPtr<IAsyncOperation<StorageFile *>> op;
-        hr = picker->PickSingleFileAsync(&op);
-        RETURN_FALSE_IF_FAILED("Failed to open single file picker");
-        hr = op->put_Completed(Callback<SingleFileHandler>(helper, &QWinRTFileDialogHelper::onSingleFilePicked).Get());
-        RETURN_FALSE_IF_FAILED("Failed to attach file picker callback");
-    } else {
-        ComPtr<IAsyncOperation<IVectorView<StorageFile *> *>> op;
-        hr = picker->PickMultipleFilesAsync(&op);
-        RETURN_FALSE_IF_FAILED("Failed to open multi file picker");
-        hr = op->put_Completed(Callback<MultipleFileHandler>(helper, &QWinRTFileDialogHelper::onMultipleFilesPicked).Get());
-        RETURN_FALSE_IF_FAILED("Failed to attach multi file callback");
-    }
-    return true;
+    hr = QEventDispatcherWinRT::runOnXamlThread([picker, helper, singleFile]() {
+        HRESULT hr;
+        if (singleFile) {
+            ComPtr<IAsyncOperation<StorageFile *>> op;
+            hr = picker->PickSingleFileAsync(&op);
+            RETURN_HR_IF_FAILED("Failed to open single file picker");
+            hr = op->put_Completed(Callback<SingleFileHandler>(helper, &QWinRTFileDialogHelper::onSingleFilePicked).Get());
+            RETURN_HR_IF_FAILED("Failed to attach file picker callback");
+        } else {
+            ComPtr<IAsyncOperation<IVectorView<StorageFile *> *>> op;
+            hr = picker->PickMultipleFilesAsync(&op);
+            RETURN_HR_IF_FAILED("Failed to open multi file picker");
+            hr = op->put_Completed(Callback<MultipleFileHandler>(helper, &QWinRTFileDialogHelper::onMultipleFilesPicked).Get());
+            RETURN_HR_IF_FAILED("Failed to attach multi file callback");
+        }
+        return S_OK;
+    });
+    return SUCCEEDED(hr);
 #endif
 }
 
@@ -274,13 +281,17 @@ static bool pickFolder(IFolderPicker *picker, QWinRTFileDialogHelper *helper)
     Q_ASSERT(eventDispatcher);
     eventDispatcher->installEventFilter(helper);
 #else
-    ComPtr<IAsyncOperation<StorageFolder *>> op;
-    hr = picker->PickSingleFolderAsync(&op);
-    RETURN_FALSE_IF_FAILED("Failed to open folder picker");
-    hr = op->put_Completed(Callback<SingleFolderHandler>(helper, &QWinRTFileDialogHelper::onSingleFolderPicked).Get());
-    RETURN_FALSE_IF_FAILED("Failed to attach folder picker callback");
+    hr = QEventDispatcherWinRT::runOnXamlThread([picker, helper]() {
+        HRESULT hr;
+        ComPtr<IAsyncOperation<StorageFolder *>> op;
+        hr = picker->PickSingleFolderAsync(&op);
+        RETURN_HR_IF_FAILED("Failed to open folder picker");
+        hr = op->put_Completed(Callback<SingleFolderHandler>(helper, &QWinRTFileDialogHelper::onSingleFolderPicked).Get());
+        RETURN_HR_IF_FAILED("Failed to attach folder picker callback");
+        return S_OK;
+    });
 #endif
-    return true;
+    return SUCCEEDED(hr);
 }
 
 static bool pickSaveFile(IFileSavePicker *picker, QWinRTFileDialogHelper *helper)
@@ -301,13 +312,17 @@ static bool pickSaveFile(IFileSavePicker *picker, QWinRTFileDialogHelper *helper
     Q_ASSERT(eventDispatcher);
     eventDispatcher->installEventFilter(helper);
 #else
-    ComPtr<IAsyncOperation<StorageFile *>> op;
-    hr = picker->PickSaveFileAsync(&op);
-    RETURN_FALSE_IF_FAILED("Failed to open save file picker");
-    hr = op->put_Completed(Callback<SingleFileHandler>(helper, &QWinRTFileDialogHelper::onSingleFilePicked).Get());
-    RETURN_FALSE_IF_FAILED("Failed to attach save file picker callback");
+    hr = QEventDispatcherWinRT::runOnXamlThread([picker, helper]() {
+        HRESULT hr;
+        ComPtr<IAsyncOperation<StorageFile *>> op;
+        hr = picker->PickSaveFileAsync(&op);
+        RETURN_HR_IF_FAILED("Failed to open save file picker");
+        hr = op->put_Completed(Callback<SingleFileHandler>(helper, &QWinRTFileDialogHelper::onSingleFilePicked).Get());
+        RETURN_HR_IF_FAILED("Failed to attach save file picker callback");
+        return S_OK;
+    });
 #endif
-    return true;
+    return SUCCEEDED(hr);
 }
 
 class QWinRTFileDialogHelperPrivate
@@ -423,16 +438,23 @@ bool QWinRTFileDialogHelper::show(Qt::WindowFlags windowFlags, Qt::WindowModalit
                                                 filterTitle.length());
                 boolean replaced;
                 hr = choices->Insert(namedFilterRef.Get(), entry.Get(), &replaced);
-                RETURN_FALSE_IF_FAILED("Failed to insert file extension choice entry");
+                // Only print a warning as * or *.* is not a valid choice on Windows 10
+                // but used on a regular basis on all other platforms
+                if (FAILED(hr)) {
+                    qWarning("Failed to insert file extension choice entry: %s: %s",
+                             qPrintable(filterTitle), qPrintable(qt_error_string(hr)));
+                }
             }
         }
 
-        const QString suffix = dialogOptions->defaultSuffix();
+        QString suffix = dialogOptions->defaultSuffix();
         if (!suffix.isEmpty()) {
+            if (!suffix.startsWith(QLatin1Char('.')))
+                suffix.prepend(QLatin1Char('.'));
             HStringReference nativeSuffix(reinterpret_cast<const wchar_t *>(suffix.utf16()),
                                           suffix.length());
             hr = picker->put_DefaultFileExtension(nativeSuffix.Get());
-            RETURN_FALSE_IF_FAILED("Failed to set default file extension");
+            RETURN_FALSE_IF_FAILED_WITH_ARGS("Failed to set default file extension \"%s\"", qPrintable(suffix));
         }
 
         const QString suggestedName = QFileInfo(d->saveFileName.toLocalFile()).fileName();

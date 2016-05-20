@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -11,8 +11,8 @@
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
@@ -20,7 +20,7 @@
 ** Foundation and appearing in the file included in the packaging of
 ** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
-** will be met: http://www.gnu.org/copyleft/fdl.html.
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
@@ -843,7 +843,7 @@
            \l{#selected-ps}{:selected},
            and \l{#checked-ps}{:checked} pseudo states.
 
-           Sort indicator in can be styled using the
+           The sort indicator can be styled using the
            \l{#up-arrow-sub}{::up-arrow} and the
            \l{#down-arrow-sub}{::down-arrow} Sub-control.
 
@@ -2200,6 +2200,54 @@
            \snippet code/doc_src_stylesheet.qdoc 68
 
     \row
+        \li \b outline
+        \li
+        \li The outline drawn around the object's border.
+
+    \row
+        \li \b outline-color
+        \li \l{#Color}{Color}
+        \li The color of the outline.
+            See also \l{Qt Style Sheets Reference#border-color-prop}{border-color}
+
+    \row
+        \li \b outline-offset
+        \li \l{#Length}{Length}
+        \li The outline's offset from the border of the widget.
+
+    \row
+        \li \b outline-style
+        \li
+        \li Specifies the pattern used to draw the outline.
+            See also \l{Qt Style Sheets Reference#border-style-prop}{border-style}
+
+    \row
+        \li \b outline-radius
+        \li
+        \li Adds rounded corners to the outline
+
+    \row
+        \li \b outline-bottom-left-radius
+        \li \l{#Radius}{Radius}
+        \li The radius for the bottom-left rounded corner of the outline.
+
+    \row
+        \li \b outline-bottom-right-radius
+        \li \l{#Radius}{Radius}
+        \li The radius for the bottom-right rounded corner of the outline.
+
+    \row
+        \li \b outline-top-left-radius
+        \li \l{#Radius}{Radius}
+        \li The radius for the top-left corner of the outline.
+
+    \row
+        \li \b outline-top-right-radius
+        \li \l{#Radius}{Radius}
+        \li The radius for the top-right rounded corner of the outline.
+
+
+    \row
         \li \b{\c padding} \target padding-prop
         \li \l{#Box Lengths}{Box Lengths}
         \li The widget's padding. Equivalent to specifying \c
@@ -2995,7 +3043,7 @@
         \li \b{Url} \target Url
         \li \tt{url(\e{filename})}
         \li \tt{\e{filename}} is the name of a file on the local disk
-           or stored using \l{the Qt Resource System}. Setting an
+           or stored using \l{The Qt Resource System}. Setting an
            image implicitly sets the width and height of the element.
 
     \endtable

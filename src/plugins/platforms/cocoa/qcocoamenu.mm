@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author James Turner <james.turner@kdab.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -96,6 +102,28 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QCocoaMenuDelegate);
     return self;
 }
 
+- (NSInteger)numberOfItemsInMenu:(NSMenu *)menu
+{
+    Q_ASSERT(m_menu->nsMenu() == menu);
+    return menu.numberOfItems;
+}
+
+- (BOOL)menu:(NSMenu *)menu updateItem:(NSMenuItem *)item atIndex:(NSInteger)index shouldCancel:(BOOL)shouldCancel
+{
+    Q_UNUSED(index);
+    Q_ASSERT(m_menu->nsMenu() == menu);
+    if (shouldCancel) {
+        // TODO detach all submenus
+        return NO;
+    }
+
+    QCocoaMenuItem *menuItem = reinterpret_cast<QCocoaMenuItem *>(item.tag);
+    if (m_menu->items().contains(menuItem)) {
+        if (QCocoaMenu *itemSubmenu = menuItem->menu())
+            itemSubmenu->setAttachedItem(item);
+    }
+    return YES;
+}
 
 - (void)menu:(NSMenu*)menu willHighlightItem:(NSMenuItem*)item
 {
@@ -122,7 +150,7 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QCocoaMenuDelegate);
 - (void) itemFired:(NSMenuItem*) item
 {
     QCocoaMenuItem *cocoaItem = reinterpret_cast<QCocoaMenuItem *>([item tag]);
-    QScopedLoopLevelCounter loopLevelCounter(QGuiApplicationPrivate::instance()->threadData);
+    QScopedScopeLevelCounter scopeLevelCounter(QGuiApplicationPrivate::instance()->threadData);
     QGuiApplicationPrivate::modifier_buttons = [QNSView convertKeyModifiers:[NSEvent modifierFlags]];
     static QMetaMethod activatedSignal = QMetaMethod::fromSignal(&QCocoaMenuItem::activated);
     activatedSignal.invoke(cocoaItem, Qt::QueuedConnection);
@@ -228,37 +256,30 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QCocoaMenuDelegate);
 QT_BEGIN_NAMESPACE
 
 QCocoaMenu::QCocoaMenu() :
+    m_attachedItem(0),
     m_enabled(true),
     m_visible(true),
-    m_tag(0),
-    m_menuBar(0),
-    m_containingMenuItem(0)
+    m_tag(0)
 {
     QMacAutoReleasePool pool;
 
-    m_delegate = [[QCocoaMenuDelegate alloc] initWithMenu:this];
-    m_nativeItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     m_nativeMenu = [[NSMenu alloc] initWithTitle:@"Untitled"];
     [m_nativeMenu setAutoenablesItems:YES];
-    m_nativeMenu.delegate = (QCocoaMenuDelegate *) m_delegate;
-    [m_nativeItem setSubmenu:m_nativeMenu];
+    m_nativeMenu.delegate = [[QCocoaMenuDelegate alloc] initWithMenu:this];
 }
 
 QCocoaMenu::~QCocoaMenu()
 {
     foreach (QCocoaMenuItem *item, m_menuItems) {
-        if (COCOA_MENU_ANCESTOR(item) == this)
-            SET_COCOA_MENU_ANCESTOR(item, 0);
+        if (item->menuParent() == this)
+            item->setMenuParent(0);
     }
 
-    if (m_containingMenuItem)
-        m_containingMenuItem->clearMenu(this);
-
     QMacAutoReleasePool pool;
-    [m_nativeItem setSubmenu:nil];
+    NSObject *delegate = m_nativeMenu.delegate;
+    m_nativeMenu.delegate = nil;
+    [delegate release];
     [m_nativeMenu release];
-    [m_delegate release];
-    [m_nativeItem release];
 }
 
 void QCocoaMenu::setText(const QString &text)
@@ -266,7 +287,6 @@ void QCocoaMenu::setText(const QString &text)
     QMacAutoReleasePool pool;
     QString stripped = qt_mac_removeAmpersandEscapes(text);
     [m_nativeMenu setTitle:QCFString::toNSString(stripped)];
-    [m_nativeItem setTitle:QCFString::toNSString(stripped)];
 }
 
 void QCocoaMenu::setMinimumWidth(int width)
@@ -294,7 +314,7 @@ void QCocoaMenu::insertMenuItem(QPlatformMenuItem *menuItem, QPlatformMenuItem *
         int index = m_menuItems.indexOf(beforeItem);
         // if a before item is supplied, it should be in the menu
         if (index < 0) {
-            qWarning() << Q_FUNC_INFO << "Before menu item not found";
+            qWarning("Before menu item not found");
             return;
         }
         m_menuItems.insert(index, cocoaItem);
@@ -307,17 +327,13 @@ void QCocoaMenu::insertMenuItem(QPlatformMenuItem *menuItem, QPlatformMenuItem *
 
 void QCocoaMenu::insertNative(QCocoaMenuItem *item, QCocoaMenuItem *beforeItem)
 {
-    [item->nsItem() setTarget:m_delegate];
+    item->nsItem().target = m_nativeMenu.delegate;
     if (!item->menu())
         [item->nsItem() setAction:@selector(itemFired:)];
 
     if (item->isMerged())
         return;
 
-    if ([item->nsItem() menu]) {
-        qWarning() << Q_FUNC_INFO << "Menu item is already in a menu, remove it from the other menu first before inserting";
-        return;
-    }
     // if the item we're inserting before is merged, skip along until
     // we find a non-merged real item to insert ahead of.
     while (beforeItem && beforeItem->isMerged()) {
@@ -326,7 +342,7 @@ void QCocoaMenu::insertNative(QCocoaMenuItem *item, QCocoaMenuItem *beforeItem)
 
     if (beforeItem) {
         if (beforeItem->isMerged()) {
-            qWarning() << Q_FUNC_INFO << "No non-merged before menu item found";
+            qWarning("No non-merged before menu item found");
             return;
         }
         NSUInteger nativeIndex = [m_nativeMenu indexOfItem:beforeItem->nsItem()];
@@ -334,7 +350,7 @@ void QCocoaMenu::insertNative(QCocoaMenuItem *item, QCocoaMenuItem *beforeItem)
     } else {
         [m_nativeMenu addItem: item->nsItem()];
     }
-    SET_COCOA_MENU_ANCESTOR(item, this);
+    item->setMenuParent(this);
 }
 
 void QCocoaMenu::removeMenuItem(QPlatformMenuItem *menuItem)
@@ -342,17 +358,17 @@ void QCocoaMenu::removeMenuItem(QPlatformMenuItem *menuItem)
     QMacAutoReleasePool pool;
     QCocoaMenuItem *cocoaItem = static_cast<QCocoaMenuItem *>(menuItem);
     if (!m_menuItems.contains(cocoaItem)) {
-        qWarning() << Q_FUNC_INFO << "Menu does not contain the item to be removed";
+        qWarning("Menu does not contain the item to be removed");
         return;
     }
 
-    if (COCOA_MENU_ANCESTOR(menuItem) == this)
-        SET_COCOA_MENU_ANCESTOR(menuItem, 0);
+    if (cocoaItem->menuParent() == this)
+        cocoaItem->setMenuParent(0);
 
     m_menuItems.removeOne(cocoaItem);
     if (!cocoaItem->isMerged()) {
         if (m_nativeMenu != [cocoaItem->nsItem() menu]) {
-            qWarning() << Q_FUNC_INFO << "Item to remove does not belong to this menu";
+            qWarning("Item to remove does not belong to this menu");
             return;
         }
         [m_nativeMenu removeItem: cocoaItem->nsItem()];
@@ -372,7 +388,7 @@ void QCocoaMenu::syncMenuItem(QPlatformMenuItem *menuItem)
     QMacAutoReleasePool pool;
     QCocoaMenuItem *cocoaItem = static_cast<QCocoaMenuItem *>(menuItem);
     if (!m_menuItems.contains(cocoaItem)) {
-        qWarning() << Q_FUNC_INFO << "Item does not belong to this menu";
+        qWarning("Item does not belong to this menu");
         return;
     }
 
@@ -445,12 +461,11 @@ void QCocoaMenu::setEnabled(bool enabled)
 
 bool QCocoaMenu::isEnabled() const
 {
-    return [m_nativeItem isEnabled];
+    return m_attachedItem ? [m_attachedItem isEnabled] : m_enabled;
 }
 
 void QCocoaMenu::setVisible(bool visible)
 {
-    [m_nativeItem setSubmenu:(visible ? m_nativeMenu : nil)];
     m_visible = visible;
 }
 
@@ -462,6 +477,13 @@ void QCocoaMenu::showPopup(const QWindow *parentWindow, const QRect &targetRect,
     QCocoaWindow *cocoaWindow = parentWindow ? static_cast<QCocoaWindow *>(parentWindow->handle()) : 0;
     NSView *view = cocoaWindow ? cocoaWindow->contentView() : nil;
     NSMenuItem *nsItem = item ? ((QCocoaMenuItem *)item)->nsItem() : nil;
+
+    QScreen *screen = 0;
+    if (parentWindow)
+        screen = parentWindow->screen();
+    if (!screen && !QGuiApplication::screens().isEmpty())
+        screen = QGuiApplication::screens().at(0);
+    Q_ASSERT(screen);
 
     // Ideally, we would call -popUpMenuPositioningItem:atLocation:inView:.
     // However, this showed not to work with modal windows where the menu items
@@ -479,6 +501,21 @@ void QCocoaMenu::showPopup(const QWindow *parentWindow, const QRect &targetRect,
         [popupCell setTransparent:YES];
         [popupCell setMenu:m_nativeMenu];
         [popupCell selectItem:nsItem];
+
+        int availableHeight = screen->availableSize().height();
+        const QPoint &globalPos = parentWindow->mapToGlobal(pos);
+        int menuHeight = m_nativeMenu.size.height;
+        if (globalPos.y() + menuHeight > availableHeight) {
+            // Maybe we need to fix the vertical popup position but we don't know the
+            // exact popup height at the moment (and Cocoa is just guessing) nor its
+            // position. So, instead of translating by the popup's full height, we need
+            // to estimate where the menu will show up and translate by the remaining height.
+            float idx = ([m_nativeMenu indexOfItem:nsItem] + 1.0f) / m_nativeMenu.numberOfItems;
+            float heightBelowPos = (1.0 - idx) * menuHeight;
+            if (globalPos.y() + heightBelowPos > availableHeight)
+                pos.setY(pos.y() - globalPos.y() + availableHeight - heightBelowPos);
+        }
+
         NSRect cellFrame = NSMakeRect(pos.x(), pos.y(), m_nativeMenu.minimumWidth, 10);
         [popupCell performClickWithFrame:cellFrame inView:view];
     } else {
@@ -487,22 +524,21 @@ void QCocoaMenu::showPopup(const QWindow *parentWindow, const QRect &targetRect,
         if (view) {
             // convert coordinates from view to the view's window
             nsPos = [view convertPoint:nsPos toView:nil];
-        } else if (!QGuiApplication::screens().isEmpty()) {
-            QScreen *screen = QGuiApplication::screens().at(0);
+        } else {
             nsPos.y = screen->availableVirtualSize().height() - nsPos.y;
         }
 
         if (view) {
             // Finally, we need to synthesize an event.
             NSEvent *menuEvent = [NSEvent mouseEventWithType:NSRightMouseDown
-                    location:nsPos
-                    modifierFlags:0
-                    timestamp:0
-                    windowNumber:view ? view.window.windowNumber : 0
-                                        context:nil
-                                        eventNumber:0
-                                        clickCount:1
-                                        pressure:1.0];
+                                          location:nsPos
+                                          modifierFlags:0
+                                          timestamp:0
+                                          windowNumber:view ? view.window.windowNumber : 0
+                                          context:nil
+                                          eventNumber:0
+                                          clickCount:1
+                                          pressure:1.0];
             [NSMenu popUpContextMenu:m_nativeMenu withEvent:menuEvent forView:view];
         } else {
             [m_nativeMenu popUpMenuPositioningItem:nsItem atLocation:nsPos inView:0];
@@ -566,8 +602,6 @@ void QCocoaMenu::syncModalState(bool modal)
     if (!m_enabled)
         modal = true;
 
-    [m_nativeItem setEnabled:!modal];
-
     foreach (QCocoaMenuItem *item, m_menuItems) {
         if (item->menu()) { // recurse into submenus
             item->menu()->syncModalState(modal);
@@ -578,25 +612,24 @@ void QCocoaMenu::syncModalState(bool modal)
     }
 }
 
-void QCocoaMenu::setMenuBar(QCocoaMenuBar *menuBar)
+void QCocoaMenu::setAttachedItem(NSMenuItem *item)
 {
-    m_menuBar = menuBar;
-    SET_COCOA_MENU_ANCESTOR(this, menuBar);
+    if (item == m_attachedItem)
+        return;
+
+    if (m_attachedItem)
+        m_attachedItem.submenu = nil;
+
+    m_attachedItem = item;
+
+    if (m_attachedItem)
+        m_attachedItem.submenu = m_nativeMenu;
+
 }
 
-QCocoaMenuBar *QCocoaMenu::menuBar() const
+NSMenuItem *QCocoaMenu::attachedItem() const
 {
-    return m_menuBar;
-}
-
-void QCocoaMenu::setContainingMenuItem(QCocoaMenuItem *menuItem)
-{
-    m_containingMenuItem = menuItem;
-}
-
-QCocoaMenuItem *QCocoaMenu::containingMenuItem() const
-{
-    return m_containingMenuItem;
+    return m_attachedItem;
 }
 
 QT_END_NAMESPACE

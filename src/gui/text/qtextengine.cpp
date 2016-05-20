@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -810,7 +816,7 @@ void QTextEngine::bidiReorder(int numItems, const quint8 *levels, int *visualOrd
     }
 
 #if (BIDI_DEBUG >= 1)
-//     qDebug() << "visual order is:";
+//     qDebug("visual order is:");
 //     for (i = 0; i < numItems; i++)
 //         qDebug() << visualOrder[i];
 #endif
@@ -837,7 +843,7 @@ enum JustificationClass {
     Adds an inter character justification opportunity after the number or letter
     character and a space justification opportunity after the space character.
 */
-static inline void qt_getDefaultJustificationOpportunities(const ushort *string, int length, QGlyphLayout g, ushort *log_clusters, int spaceAs)
+static inline void qt_getDefaultJustificationOpportunities(const ushort *string, int length, const QGlyphLayout &g, ushort *log_clusters, int spaceAs)
 {
     int str_pos = 0;
     while (str_pos < length) {
@@ -871,7 +877,7 @@ static inline void qt_getDefaultJustificationOpportunities(const ushort *string,
     }
 }
 
-static inline void qt_getJustificationOpportunities(const ushort *string, int length, const QScriptItem &si, QGlyphLayout g, ushort *log_clusters)
+static inline void qt_getJustificationOpportunities(const ushort *string, int length, const QScriptItem &si, const QGlyphLayout &g, ushort *log_clusters)
 {
     Q_ASSERT(length > 0 && g.numGlyphs > 0);
 
@@ -918,10 +924,11 @@ void QTextEngine::shapeLine(const QScriptLine &line)
 {
     QFixed x;
     bool first = true;
-    const int end = findItem(line.from + line.length - 1);
     int item = findItem(line.from);
     if (item == -1)
         return;
+
+    const int end = findItem(line.from + line.length - 1, item);
     for ( ; item <= end; ++item) {
         QScriptItem &si = layoutData->items[item];
         if (si.analysis.flags == QScriptAnalysis::Tab) {
@@ -1058,7 +1065,7 @@ void QTextEngine::shapeText(int item) const
 
 #ifdef QT_ENABLE_HARFBUZZ_NG
     if (Q_LIKELY(qt_useHarfbuzzNG()))
-        si.num_glyphs = shapeTextWithHarfbuzzNG(si, string, itemLength, fontEngine, itemBoundaries, kerningEnabled);
+        si.num_glyphs = shapeTextWithHarfbuzzNG(si, string, itemLength, fontEngine, itemBoundaries, kerningEnabled, letterSpacing != 0);
     else
 #endif
     si.num_glyphs = shapeTextWithHarfbuzz(si, string, itemLength, fontEngine, itemBoundaries, kerningEnabled);
@@ -1120,16 +1127,13 @@ QT_BEGIN_INCLUDE_NAMESPACE
 
 QT_END_INCLUDE_NAMESPACE
 
-#if defined(Q_OS_OSX) && !defined(QT_NO_FREETYPE)
-static const char *s_shapersForOsxFreeType[] =
-{
-    "ot",
-    "fallback",
-    Q_NULLPTR
-};
-#endif
-
-int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *string, int itemLength, QFontEngine *fontEngine, const QVector<uint> &itemBoundaries, bool kerningEnabled) const
+int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si,
+                                         const ushort *string,
+                                         int itemLength,
+                                         QFontEngine *fontEngine,
+                                         const QVector<uint> &itemBoundaries,
+                                         bool kerningEnabled,
+                                         bool hasLetterSpacing) const
 {
     uint glyphs_shaped = 0;
 
@@ -1143,7 +1147,8 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *st
 
     hb_segment_properties_t props = HB_SEGMENT_PROPERTIES_DEFAULT;
     props.direction = si.analysis.bidiLevel % 2 ? HB_DIRECTION_RTL : HB_DIRECTION_LTR;
-    props.script = hb_qt_script_to_script(QChar::Script(si.analysis.script));
+    QChar::Script script = QChar::Script(si.analysis.script);
+    props.script = hb_qt_script_to_script(script);
     // ### props.language = hb_language_get_default_for_script(props.script);
 
     for (int k = 0; k < itemBoundaries.size(); k += 3) {
@@ -1176,19 +1181,36 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *st
             Q_ASSERT(hb_font);
             hb_qt_font_set_use_design_metrics(hb_font, option.useDesignMetrics() ? uint(QFontEngine::DesignMetrics) : 0); // ###
 
-            const hb_feature_t features[1] = {
-                { HB_TAG('k','e','r','n'), !!kerningEnabled, 0, uint(-1) }
-            };
-            const int num_features = 1;
+            // Ligatures are incompatible with custom letter spacing, so when a letter spacing is set,
+            // we disable them for writing systems where they are purely cosmetic.
+            bool scriptRequiresOpenType = ((script >= QChar::Script_Syriac && script <= QChar::Script_Sinhala)
+                                         || script == QChar::Script_Khmer || script == QChar::Script_Nko);
+
+            bool dontLigate = hasLetterSpacing && !scriptRequiresOpenType;
+            const hb_feature_t features[5] = {
+                { HB_TAG('k','e','r','n'), !!kerningEnabled, 0, uint(-1) },
+                { HB_TAG('l','i','g','a'), !dontLigate, 0, uint(-1) },
+                { HB_TAG('c','l','i','g'), !dontLigate, 0, uint(-1) },
+                { HB_TAG('d','l','i','g'), !dontLigate, 0, uint(-1) },
+                { HB_TAG('h','l','i','g'), !dontLigate, 0, uint(-1) } };
+            const int num_features = dontLigate ? 5 : 1;
 
             const char *const *shaper_list = Q_NULLPTR;
-#if defined(Q_OS_OSX) && !defined(QT_NO_FREETYPE)
-            // What's behind QFontEngine::FaceData::user_data isn't compatible between CoreText and
-            // FreeType font engines - specifically functions in hb-coretext.cc would run into undefined
-            // behavior with data from the FreeType engine. The OpenType shaper works with that engine.
-            if (actualFontEngine->type() == QFontEngine::Freetype)
-                shaper_list = s_shapersForOsxFreeType;
+#if defined(Q_OS_DARWIN)
+            // What's behind QFontEngine::FaceData::user_data isn't compatible between different font engines
+            // - specifically functions in hb-coretext.cc would run into undefined behavior with data
+            // from non-CoreText engine. The other shapers works with that engine just fine.
+            if (actualFontEngine->type() != QFontEngine::Mac) {
+                static const char *s_shaper_list_without_coretext[] = {
+                    "graphite2",
+                    "ot",
+                    "fallback",
+                    Q_NULLPTR
+                };
+                shaper_list = s_shaper_list_without_coretext;
+            }
 #endif
+
             bool shapedOk = hb_shape_full(hb_font, buffer, features, num_features, shaper_list);
             if (Q_UNLIKELY(!shapedOk)) {
                 hb_buffer_destroy(buffer);
@@ -1268,21 +1290,22 @@ int QTextEngine::shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *st
                 g.glyphs[i] |= (engineIdx << 24);
         }
 
-#ifdef Q_OS_MAC
-        // CTRunGetPosition has a bug which applies matrix on 10.6, so we disable
-        // scaling the advances for this particular version
-        if (actualFontEngine->fontDef.stretch != 100
-                && QSysInfo::MacintoshVersion != QSysInfo::MV_10_6) {
-            QFixed stretch = QFixed(int(actualFontEngine->fontDef.stretch)) / QFixed(100);
-            for (uint i = 0; i < num_glyphs; ++i)
-                g.advances[i] *= stretch;
+#ifdef Q_OS_DARWIN
+        if (actualFontEngine->type() == QFontEngine::Mac) {
+            // CTRunGetPosition has a bug which applies matrix on 10.6, so we disable
+            // scaling the advances for this particular version
+            if (QSysInfo::MacintoshVersion != QSysInfo::MV_10_6 && actualFontEngine->fontDef.stretch != 100) {
+                QFixed stretch = QFixed(int(actualFontEngine->fontDef.stretch)) / QFixed(100);
+                for (uint i = 0; i < num_glyphs; ++i)
+                    g.advances[i] *= stretch;
+            }
         }
+#endif
 
-        if (actualFontEngine->fontDef.styleStrategy & QFont::ForceIntegerMetrics) {
+        if (!actualFontEngine->supportsSubPixelPositions() || (actualFontEngine->fontDef.styleStrategy & QFont::ForceIntegerMetrics)) {
             for (uint i = 0; i < num_glyphs; ++i)
                 g.advances[i] = g.advances[i].round();
         }
-#endif
 
         glyphs_shaped += num_glyphs;
     }
@@ -1546,8 +1569,12 @@ void QTextEngine::validate() const
     layoutData = new LayoutData();
     if (block.docHandle()) {
         layoutData->string = block.text();
-        if (option.flags() & QTextOption::ShowLineAndParagraphSeparators)
-            layoutData->string += QLatin1Char(block.next().isValid() ? 0xb6 : 0x20);
+        if (block.next().isValid()) {
+            if (option.flags() & QTextOption::ShowLineAndParagraphSeparators)
+                layoutData->string += QChar(0xb6);
+        } else if (option.flags() & QTextOption::ShowDocumentTerminator) {
+            layoutData->string += QChar(0xA7);
+        }
     } else {
         layoutData->string = text;
     }
@@ -1747,13 +1774,13 @@ bool QTextEngine::isRightToLeft() const
 }
 
 
-int QTextEngine::findItem(int strPos) const
+int QTextEngine::findItem(int strPos, int firstItem) const
 {
     itemize();
-    if (strPos < 0 || strPos >= layoutData->string.size())
+    if (strPos < 0 || strPos >= layoutData->string.size() || firstItem < 0)
         return -1;
 
-    int left = 1;
+    int left = firstItem + 1;
     int right = layoutData->items.size()-1;
     while(left <= right) {
         int middle = ((right-left)/2)+left;
@@ -2172,7 +2199,7 @@ void QTextEngine::justify(const QScriptLine &line)
         return;
 
     int firstItem = findItem(line.from);
-    int lastItem = findItem(line.from + line_length - 1);
+    int lastItem = findItem(line.from + line_length - 1, firstItem);
     int nItems = (firstItem >= 0 && lastItem >= firstItem)? (lastItem-firstItem+1) : 0;
 
     QVarLengthArray<QJustificationPoint> justificationPoints;
@@ -2730,8 +2757,7 @@ QString QTextEngine::elidedText(Qt::TextElideMode mode, const QFixed &width, int
     QFixed ellipsisWidth;
     QString ellipsisText;
     {
-        QFontEngine *fe = fnt.d->engineForScript(QChar::Script_Common);
-        QFontEngine *engine = fe->type() == QFontEngine::Multi ? static_cast<QFontEngineMulti *>(fe)->engine(0) : fe;
+        QFontEngine *engine = fnt.d->engineForScript(QChar::Script_Common);
 
         QChar ellipsisChar(0x2026);
 
@@ -3033,7 +3059,7 @@ void QTextEngine::resolveFormats() const
             format = collection->charFormat(formatIndex(si));
         }
         if (!currentFormats.isEmpty()) {
-            foreach (int cur, currentFormats) {
+            for (int cur : currentFormats) {
                 const QTextLayout::FormatRange &range = specialData->formats.at(cur);
                 Q_ASSERT(range.start <= si->position && range.start + range.length >= end);
                 format.merge(range.format);
@@ -3334,7 +3360,7 @@ void QTextEngine::drawItemDecorationList(QPainter *painter, const ItemDecoration
     if (decorationList.isEmpty())
         return;
 
-    foreach (const ItemDecoration &decoration, decorationList) {
+    for (const ItemDecoration &decoration : decorationList) {
         painter->setPen(decoration.pen);
         painter->drawLine(QLineF(decoration.x1, decoration.y, decoration.x2, decoration.y));
     }
@@ -3486,7 +3512,7 @@ QTextItemInt QTextItemInt::midItem(QFontEngine *fontEngine, int firstGlyphIndex,
 }
 
 
-QTransform qt_true_matrix(qreal w, qreal h, QTransform x)
+QTransform qt_true_matrix(qreal w, qreal h, const QTransform &x)
 {
     QRectF rect = x.mapRect(QRectF(0, 0, w, h));
     return x * QTransform::fromTranslate(-rect.x(), -rect.y());
@@ -3529,7 +3555,7 @@ QTextLineItemIterator::QTextLineItemIterator(QTextEngine *_eng, int _lineNum, co
       lineNum(_lineNum),
       lineEnd(line.from + line.length),
       firstItem(eng->findItem(line.from)),
-      lastItem(eng->findItem(lineEnd - 1)),
+      lastItem(eng->findItem(lineEnd - 1, firstItem)),
       nItems((firstItem >= 0 && lastItem >= firstItem)? (lastItem-firstItem+1) : 0),
       logicalItem(-1),
       item(-1),

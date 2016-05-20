@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -144,6 +139,7 @@ class DomWidgetData;
 class DomDesignerData;
 class DomSlots;
 class DomPropertySpecifications;
+class DomPropertyToolTip;
 class DomStringPropertySpecification;
 
 /*******************************************************************************
@@ -3541,6 +3537,9 @@ public:
 
     // attribute accessors
     // child element accessors
+    inline QList<DomPropertyToolTip*> elementTooltip() const { return m_tooltip; }
+    void setElementTooltip(const QList<DomPropertyToolTip*>& a);
+
     inline QList<DomStringPropertySpecification*> elementStringpropertyspecification() const { return m_stringpropertyspecification; }
     void setElementStringpropertyspecification(const QList<DomStringPropertySpecification*>& a);
 
@@ -3551,13 +3550,47 @@ private:
     // attribute data
     // child element data
     uint m_children;
+    QList<DomPropertyToolTip*> m_tooltip;
     QList<DomStringPropertySpecification*> m_stringpropertyspecification;
     enum Child {
-        Stringpropertyspecification = 1
+        Tooltip = 1,
+        Stringpropertyspecification = 2
     };
 
     DomPropertySpecifications(const DomPropertySpecifications &other);
     void operator = (const DomPropertySpecifications&other);
+};
+
+class QDESIGNER_UILIB_EXPORT DomPropertyToolTip {
+public:
+    DomPropertyToolTip();
+    ~DomPropertyToolTip();
+
+    void read(QXmlStreamReader &reader);
+    void write(QXmlStreamWriter &writer, const QString &tagName = QString()) const;
+    inline QString text() const { return m_text; }
+    inline void setText(const QString &s) { m_text = s; }
+
+    // attribute accessors
+    inline bool hasAttributeName() const { return m_has_attr_name; }
+    inline QString attributeName() const { return m_attr_name; }
+    inline void setAttributeName(const QString& a) { m_attr_name = a; m_has_attr_name = true; }
+    inline void clearAttributeName() { m_has_attr_name = false; }
+
+    // child element accessors
+private:
+    QString m_text;
+    void clear(bool clear_all = true);
+
+    // attribute data
+    QString m_attr_name;
+    bool m_has_attr_name;
+
+    // child element data
+    uint m_children;
+
+    DomPropertyToolTip(const DomPropertyToolTip &other);
+    void operator = (const DomPropertyToolTip&other);
 };
 
 class QDESIGNER_UILIB_EXPORT DomStringPropertySpecification {

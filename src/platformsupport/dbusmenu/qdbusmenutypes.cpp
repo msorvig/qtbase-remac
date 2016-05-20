@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -42,6 +48,7 @@
 #include <QDebug>
 #include <QtEndian>
 #include <QBuffer>
+#include <private/qkeysequence_p.h>
 #include <qpa/qplatformmenu.h>
 #include "qdbusplatformmenu_p.h"
 
@@ -79,29 +86,27 @@ const QDBusArgument &operator>>(const QDBusArgument &arg, QDBusMenuItemKeys &key
     return arg;
 }
 
-uint QDBusMenuLayoutItem::populate(int id, int depth, const QStringList &propertyNames)
+uint QDBusMenuLayoutItem::populate(int id, int depth, const QStringList &propertyNames, const QDBusPlatformMenu *topLevelMenu)
 {
     qCDebug(qLcMenu) << id << "depth" << depth << propertyNames;
     m_id = id;
     if (id == 0) {
         m_properties.insert(QLatin1String("children-display"), QLatin1String("submenu"));
-        Q_FOREACH (const QDBusPlatformMenu *menu, QDBusPlatformMenu::topLevelMenus()) {
-            if (menu)
-                populate(menu, depth, propertyNames);
-        }
+        if (topLevelMenu)
+            populate(topLevelMenu, depth, propertyNames);
         return 1; // revision
     }
 
-    const QDBusPlatformMenu *menu = QDBusPlatformMenu::byId(id);
-    if (!menu) {
-        QDBusPlatformMenuItem *item = QDBusPlatformMenuItem::byId(id);
-        if (item)
-            menu = static_cast<const QDBusPlatformMenu *>(item->menu());
+    QDBusPlatformMenuItem *item = QDBusPlatformMenuItem::byId(id);
+    if (item) {
+        const QDBusPlatformMenu *menu = static_cast<const QDBusPlatformMenu *>(item->menu());
+
+        if (menu) {
+            if (depth != 0)
+                populate(menu, depth, propertyNames);
+            return menu->revision();
+        }
     }
-    if (depth != 0 && menu)
-        populate(menu, depth, propertyNames);
-    if (menu)
-        return menu->revision();
 
     return 1; // revision
 }
@@ -117,11 +122,13 @@ void QDBusMenuLayoutItem::populate(const QDBusPlatformMenu *menu, int depth, con
 
 void QDBusMenuLayoutItem::populate(const QDBusPlatformMenuItem *item, int depth, const QStringList &propertyNames)
 {
-    Q_UNUSED(depth)
-    Q_UNUSED(propertyNames)
     m_id = item->dbusID();
     QDBusMenuItem proxy(item);
     m_properties = proxy.m_properties;
+
+    const QDBusPlatformMenu *menu = static_cast<const QDBusPlatformMenu *>(item->menu());
+    if (depth != 0 && menu)
+        populate(menu, depth, propertyNames);
 }
 
 const QDBusArgument &operator<<(QDBusArgument &arg, const QDBusMenuLayoutItem &item)
@@ -165,6 +172,7 @@ void QDBusMenuItem::registerDBusTypes()
     qDBusRegisterMetaType<QDBusMenuLayoutItemList>();
     qDBusRegisterMetaType<QDBusMenuEvent>();
     qDBusRegisterMetaType<QDBusMenuEventList>();
+    qDBusRegisterMetaType<QDBusMenuShortcut>();
 }
 
 QDBusMenuItem::QDBusMenuItem(const QDBusPlatformMenuItem *item)
@@ -178,18 +186,15 @@ QDBusMenuItem::QDBusMenuItem(const QDBusPlatformMenuItem *item)
             m_properties.insert(QLatin1String("children-display"), QLatin1String("submenu"));
         m_properties.insert(QLatin1String("enabled"), item->isEnabled());
         if (item->isCheckable()) {
-            // dbusmenu supports "radio" too, but QPlatformMenuItem doesn't seem to
-            // (QAction would have an exclusive actionGroup)
-            m_properties.insert(QLatin1String("toggle-type"), QLatin1String("checkmark"));
+            QString toggleType = item->hasExclusiveGroup() ? QLatin1String("radio") : QLatin1String("checkmark");
+            m_properties.insert(QLatin1String("toggle-type"), toggleType);
             m_properties.insert(QLatin1String("toggle-state"), item->isChecked() ? 1 : 0);
         }
-        /* TODO support shortcuts
         const QKeySequence &scut = item->shortcut();
         if (!scut.isEmpty()) {
-            QDBusMenuShortcut shortcut(scut);
-            properties.insert(QLatin1String("shortcut"), QVariant::fromValue(shortcut));
+            QDBusMenuShortcut shortcut = convertKeySequence(scut);
+            m_properties.insert(QLatin1String("shortcut"), QVariant::fromValue(shortcut));
         }
-        */
         const QIcon &icon = item->icon();
         if (!icon.name().isEmpty()) {
             m_properties.insert(QLatin1String("icon-name"), icon.name());
@@ -199,8 +204,7 @@ QDBusMenuItem::QDBusMenuItem(const QDBusPlatformMenuItem *item)
             m_properties.insert(QLatin1String("icon-data"), buf.data());
         }
     }
-    if (!item->isVisible())
-        m_properties.insert(QLatin1String("visible"), false);
+    m_properties.insert(QLatin1String("visible"), item->isVisible());
 }
 
 QDBusMenuItemList QDBusMenuItem::items(const QList<int> &ids, const QStringList &propertyNames)
@@ -226,6 +230,35 @@ QString QDBusMenuItem::convertMnemonic(const QString &label)
     return ret;
 }
 
+QDBusMenuShortcut QDBusMenuItem::convertKeySequence(const QKeySequence &sequence)
+{
+    QDBusMenuShortcut shortcut;
+    for (int i = 0; i < sequence.count(); ++i) {
+        QStringList tokens;
+        int key = sequence[i];
+        if (key & Qt::MetaModifier)
+            tokens << QStringLiteral("Super");
+        if (key & Qt::ControlModifier)
+            tokens << QStringLiteral("Control");
+        if (key & Qt::AltModifier)
+            tokens << QStringLiteral("Alt");
+        if (key & Qt::ShiftModifier)
+            tokens << QStringLiteral("Shift");
+        if (key & Qt::KeypadModifier)
+            tokens << QStringLiteral("Num");
+
+        QString keyName = QKeySequencePrivate::keyName(key, QKeySequence::PortableText);
+        if (keyName == QLatin1String("+"))
+            tokens << QStringLiteral("plus");
+        else if (keyName == QLatin1String("-"))
+            tokens << QStringLiteral("minus");
+        else
+            tokens << keyName;
+        shortcut << tokens;
+    }
+    return shortcut;
+}
+
 const QDBusArgument &operator<<(QDBusArgument &arg, const QDBusMenuEvent &ev)
 {
     arg.beginStructure();
@@ -247,7 +280,7 @@ QDebug operator<<(QDebug d, const QDBusMenuItem &item)
 {
     QDebugStateSaver saver(d);
     d.nospace();
-    d << "QDBusMenuItem(id=" << item.m_id << ", properties=" << item.m_properties << ")";
+    d << "QDBusMenuItem(id=" << item.m_id << ", properties=" << item.m_properties << ')';
     return d;
 }
 

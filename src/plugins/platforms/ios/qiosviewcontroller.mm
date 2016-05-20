@@ -1,36 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
+#include "qiosglobal.h"
 #import "qiosviewcontroller.h"
 
 #include <QtCore/qscopedvaluerollback.h>
@@ -185,7 +192,14 @@
 
 - (void)setFrame:(CGRect)newFrame
 {
-    [super setFrame:CGRectMake(0, 0, CGRectGetWidth(newFrame), CGRectGetHeight(self.window.bounds))];
+    Q_UNUSED(newFrame);
+    Q_ASSERT(!self.window || self.window.rootViewController.view == self);
+
+    // When presenting view controllers our view may be temporarily reparented into a UITransitionView
+    // instead of the UIWindow, and the UITransitionView may have a transform set, so we need to do a
+    // mapping even if we still expect to always be the root view-controller.
+    CGRect transformedWindowBounds = [self.superview convertRect:self.window.bounds fromView:self.window];
+    [super setFrame:transformedWindowBounds];
 }
 
 - (void)setBounds:(CGRect)newBounds
@@ -240,13 +254,15 @@
             [[UIApplication sharedApplication] setStatusBarStyle:UIStatusBarStyleBlackTranslucent];
 #endif
 
-        self.lockedOrientation = UIInterfaceOrientationUnknown;
         self.changingOrientation = NO;
+#ifndef Q_OS_TVOS
+        self.lockedOrientation = UIInterfaceOrientationUnknown;
 
         // Status bar may be initially hidden at startup through Info.plist
         self.prefersStatusBarHidden = infoPlistValue(@"UIStatusBarHidden", false);
         self.preferredStatusBarUpdateAnimation = UIStatusBarAnimationNone;
         self.preferredStatusBarStyle = UIStatusBarStyle(infoPlistValue(@"UIStatusBarStyle", UIStatusBarStyleDefault));
+#endif
 
         m_focusWindowChangeConnection = QObject::connect(qApp, &QGuiApplication::focusWindowChanged, [self]() {
             [self updateProperties];
@@ -271,6 +287,7 @@
 {
     [super viewDidLoad];
 
+#ifndef Q_OS_TVOS
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center addObserver:self selector:@selector(willChangeStatusBarFrame:)
             name:UIApplicationWillChangeStatusBarFrameNotification
@@ -279,6 +296,7 @@
     [center addObserver:self selector:@selector(didChangeStatusBarOrientation:)
             name:UIApplicationDidChangeStatusBarOrientationNotification
             object:[UIApplication sharedApplication]];
+#endif
 }
 
 - (void)viewDidUnload
@@ -291,7 +309,11 @@
 
 - (BOOL)shouldAutorotate
 {
+#ifndef Q_OS_TVOS
     return m_screen && m_screen->uiScreen() == [UIScreen mainScreen] && !self.lockedOrientation;
+#else
+    return NO;
+#endif
 }
 
 #if QT_IOS_PLATFORM_SDK_EQUAL_OR_ABOVE(__IPHONE_6_0)
@@ -423,6 +445,7 @@
     // All decisions are based on the the top level window
     focusWindow = qt_window_private(focusWindow)->topLevelWindow();
 
+#ifndef Q_OS_TVOS
     UIApplication *uiApplication = [UIApplication sharedApplication];
 
     // -------------- Status bar style and visbility ---------------
@@ -500,6 +523,7 @@
             [UIViewController attemptRotationToDeviceOrientation];
         }
     }
+#endif
 }
 
 @end

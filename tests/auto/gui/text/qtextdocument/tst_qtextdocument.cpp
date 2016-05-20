@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -64,13 +59,11 @@ class tst_QTextDocument : public QObject
 
 public:
     tst_QTextDocument();
-    virtual ~tst_QTextDocument();
 
-public slots:
+private slots:
     void init();
     void cleanup();
     void cleanupTestCase();
-private slots:
     void getSetCheck();
     void isEmpty();
     void find_data();
@@ -94,6 +87,8 @@ private slots:
     void mightBeRichText_data();
 
     void task240325();
+
+    void preFont();
 
     void stylesheetFont_data();
     void stylesheetFont();
@@ -188,6 +183,8 @@ private slots:
 
     void textCursorUsageWithinContentsChange();
     void cssInheritance();
+
+    void lineHeightType();
 private:
     void backgroundImage_checkExpectedHtml(const QTextDocument &doc);
     void buildRegExpData();
@@ -216,8 +213,8 @@ public:
 QString tst_QTextDocument::cssFontSizeString(const QFont &font)
 {
     return font.pointSize() >= 0
-            ? QStringLiteral("%1pt").arg(font.pointSizeF())
-            : QStringLiteral("%1px").arg(font.pixelSize());
+            ? QString::number(font.pointSizeF()) + QStringLiteral("pt")
+            : QString::number(font.pixelSize()) + QStringLiteral("px");
 }
 
 // Testing get/set functions
@@ -245,10 +242,6 @@ tst_QTextDocument::tst_QTextDocument()
 {
     QImage img(16, 16, QImage::Format_ARGB32_Premultiplied);
     img.save("foo.png");
-}
-
-tst_QTextDocument::~tst_QTextDocument()
-{
 }
 
 void tst_QTextDocument::init()
@@ -673,6 +666,30 @@ void tst_QTextDocument::stylesheetFont()
 
     QCOMPARE(actualFont.bold(), font.bold());
     QCOMPARE(actualFont.pixelSize(), font.pixelSize());
+}
+
+void tst_QTextDocument::preFont()
+{
+    const QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    const QString html = QString::fromLatin1(   "<html>"
+                                                "<body>"
+                                                "<pre>"
+                                                "Foobar"
+                                                "</pre>"
+                                                "</body>"
+                                                "</html>");
+
+    doc->setHtml(html);
+    QCOMPARE(doc->blockCount(), 1);
+
+    // First and only block
+    QTextBlock block = doc->firstBlock();
+
+    QString text = block.text();
+    QCOMPARE(text, QString::fromLatin1("Foobar"));
+
+    QFont actualFont = block.charFormat().font();
+    QCOMPARE(actualFont.family(), font.family());
 }
 
 void tst_QTextDocument::noundo_moreIsModified()
@@ -2884,14 +2901,27 @@ void tst_QTextDocument::testUndoBlocks()
     doc->undo();
     QCOMPARE(doc->toPlainText(), QString(""));
 
+    cursor.insertText("town");
+    cursor.beginEditBlock(); // Edit block 1 - Deletion/Insertion
+    cursor.setPosition(0, QTextCursor::KeepAnchor);
+    cursor.insertText("r");
+    cursor.endEditBlock();
+    cursor.insertText("est"); // Merged into edit block 1
+    QCOMPARE(doc->toPlainText(), QString("rest"));
+    doc->undo();
+    QCOMPARE(doc->toPlainText(), QString("town"));
+    doc->undo();
+    QCOMPARE(doc->toPlainText(), QString(""));
+
+    // This case would not happen in practice. If the user typed out this text, it would all be part of one
+    // edit block. This would cause the undo to clear all text. But for the purpose of testing the beginEditBlock
+    // and endEditBlock calls with respect to qtextdocument this is tested.
     cursor.insertText("quod");
-    cursor.beginEditBlock();
+    cursor.beginEditBlock(); // Edit block 1 - Insertion
     cursor.insertText(" erat");
     cursor.endEditBlock();
-    cursor.insertText(" demonstrandum");
+    cursor.insertText(" demonstrandum"); // Merged into edit block 1
     QCOMPARE(doc->toPlainText(), QString("quod erat demonstrandum"));
-    doc->undo();
-    QCOMPARE(doc->toPlainText(), QString("quod erat"));
     doc->undo();
     QCOMPARE(doc->toPlainText(), QString("quod"));
     doc->undo();
@@ -3082,7 +3112,7 @@ void tst_QTextDocument::baseUrl()
     document.setBaseUrl(base);
     QCOMPARE(document.baseUrl(), base);
 
-    document.setHtml(QString("<img src='%1'/>").arg(resource.toString()));
+    document.setHtml(QLatin1String("<img src='") + resource.toString() + QLatin1String("'/>"));
     document.resource(QTextDocument::ImageResource, resource);
     QCOMPARE(document.loadedResource(), loaded);
 }
@@ -3176,7 +3206,7 @@ void tst_QTextDocument::cssInheritance()
                    "<p style=\"line-height: 40px\">Foo</p><p>Bar</p><p>Baz</p></body></html>");
         QTextBlock block = td.begin();
         QTextBlockFormat fmt = block.blockFormat();
-        QCOMPARE(fmt.lineHeightType(), int(QTextBlockFormat::FixedHeight));
+        QCOMPARE(fmt.lineHeightType(), int(QTextBlockFormat::MinimumHeight));
         QCOMPARE(fmt.lineHeight(), qreal(40));
         block = block.next();
         fmt = block.blockFormat();
@@ -3258,6 +3288,90 @@ void tst_QTextDocument::cssInheritance()
         QVERIFY(currentFragment.isValid());
         fmt = currentFragment.charFormat();
         QVERIFY(fmt.font().bold());
+    }
+}
+
+void tst_QTextDocument::lineHeightType()
+{
+    {
+        QTextDocument td;
+        td.setHtml("<html><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::SingleHeight));
+        QCOMPARE(format.lineHeight(), 0.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 40px; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::MinimumHeight));
+        QCOMPARE(format.lineHeight(), 40.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 200%; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 200.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 200%; -qt-line-height-type: single; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::SingleHeight));
+        QCOMPARE(format.lineHeight(), 200.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 40px; -qt-line-height-type: proportional; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::ProportionalHeight));
+        QCOMPARE(format.lineHeight(), 40.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 10; -qt-line-height-type: fixed; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::FixedHeight));
+        QCOMPARE(format.lineHeight(), 10.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { line-height: 33; -qt-line-height-type: minimum; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::MinimumHeight));
+        QCOMPARE(format.lineHeight(), 33.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { -qt-line-height-type: fixed; line-height: 200%; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::FixedHeight));
+        QCOMPARE(format.lineHeight(), 200.0);
+    }
+
+    {
+        QTextDocument td;
+        td.setHtml("<html><head><style type=\"text/css\">body { -qt-line-height-type: fixed; line-height: 200px; }</style></head><body>Foobar</body></html>");
+        QTextBlock block = td.begin();
+        QTextBlockFormat format = block.blockFormat();
+        QCOMPARE(int(format.lineHeightType()), int(QTextBlockFormat::FixedHeight));
+        QCOMPARE(format.lineHeight(), 200.0);
     }
 }
 

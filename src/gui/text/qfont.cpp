@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -131,7 +137,7 @@ extern bool qt_is_gui_used;
 
 Q_GUI_EXPORT int qt_defaultDpiX()
 {
-    if (qApp->testAttribute(Qt::AA_Use96Dpi))
+    if (QCoreApplication::instance()->testAttribute(Qt::AA_Use96Dpi))
         return 96;
 
     if (!qt_is_gui_used)
@@ -146,7 +152,7 @@ Q_GUI_EXPORT int qt_defaultDpiX()
 
 Q_GUI_EXPORT int qt_defaultDpiY()
 {
-    if (qApp->testAttribute(Qt::AA_Use96Dpi))
+    if (QCoreApplication::instance()->testAttribute(Qt::AA_Use96Dpi))
         return 96;
 
     if (!qt_is_gui_used)
@@ -549,7 +555,7 @@ QFont::QFont(const QFont &font, QPaintDevice *pd)
         d->dpi = dpi;
         d->screen = screen;
     } else {
-        d = font.d.data();
+        d = font.d;
     }
 }
 
@@ -654,7 +660,7 @@ QFont::QFont(const QString &family, int pointSize, int weight, bool italic)
     Constructs a font that is a copy of \a font.
 */
 QFont::QFont(const QFont &font)
-    : d(font.d.data()), resolve_mask(font.resolve_mask)
+    : d(font.d), resolve_mask(font.resolve_mask)
 {
 }
 
@@ -670,7 +676,7 @@ QFont::~QFont()
 */
 QFont &QFont::operator=(const QFont &font)
 {
-    d = font.d.data();
+    d = font.d;
     resolve_mask = font.resolve_mask;
     return *this;
 }
@@ -1647,8 +1653,8 @@ bool QFont::operator<(const QFont &f) const
 {
     if (f.d == d) return false;
     // the < operator for fontdefs ignores point sizes.
-    QFontDef &r1 = f.d->request;
-    QFontDef &r2 = d->request;
+    const QFontDef &r1 = f.d->request;
+    const QFontDef &r2 = d->request;
     if (r1.pointSize != r2.pointSize) return r1.pointSize < r2.pointSize;
     if (r1.pixelSize != r2.pixelSize) return r1.pixelSize < r2.pixelSize;
     if (r1.weight != r2.weight) return r1.weight < r2.weight;
@@ -1825,7 +1831,7 @@ void QFont::insertSubstitutions(const QString &familyName,
     QFontSubst *fontSubst = globalFontSubst();
     Q_ASSERT(fontSubst != 0);
     QStringList &list = (*fontSubst)[familyName.toLower()];
-    foreach (const QString &substituteName, substituteNames) {
+    for (const QString &substituteName : substituteNames) {
         const QString lowerSubstituteName = substituteName.toLower();
         if (!list.contains(lowerSubstituteName))
             list.append(lowerSubstituteName);
@@ -2110,6 +2116,9 @@ QString QFont::lastResortFamily() const
     return QString::fromLatin1("helvetica");
 }
 
+extern QStringList qt_fallbacksForFamily(const QString &family, QFont::Style style,
+                                         QFont::StyleHint styleHint, QChar::Script script);
+
 /*!
     \fn QString QFont::defaultFamily() const
 
@@ -2120,8 +2129,7 @@ QString QFont::lastResortFamily() const
 */
 QString QFont::defaultFamily() const
 {
-    QPlatformFontDatabase *fontDB = QGuiApplicationPrivate::platformIntegration()->fontDatabase();
-    const QStringList fallbacks = fontDB->fallbacksForFamily(QString(), QFont::StyleNormal
+    const QStringList fallbacks = qt_fallbacksForFamily(QString(), QFont::StyleNormal
                                       , QFont::StyleHint(d->request.styleHint), QChar::Script_Common);
     if (!fallbacks.isEmpty())
         return fallbacks.first();
@@ -2386,7 +2394,7 @@ QDataStream &operator>>(QDataStream &s, QFont &font)
     that is not screen-compatible.
 */
 QFontInfo::QFontInfo(const QFont &font)
-    : d(font.d.data())
+    : d(font.d)
 {
 }
 
@@ -2394,7 +2402,7 @@ QFontInfo::QFontInfo(const QFont &font)
     Constructs a copy of \a fi.
 */
 QFontInfo::QFontInfo(const QFontInfo &fi)
-    : d(fi.d.data())
+    : d(fi.d)
 {
 }
 
@@ -2410,7 +2418,7 @@ QFontInfo::~QFontInfo()
 */
 QFontInfo &QFontInfo::operator=(const QFontInfo &fi)
 {
-    d = fi.d.data();
+    d = fi.d;
     return *this;
 }
 
@@ -2794,6 +2802,10 @@ void QFontCache::insertEngineData(const QFontDef &def, QFontEngineData *engineDa
     Q_ASSERT(!engineDataCache.contains(def));
 
     engineData->ref.ref();
+    // Decrease now rather than waiting
+    if (total_cost > min_cost * 2)
+        decreaseCache();
+
     engineDataCache.insert(def, engineData);
     increaseCost(sizeof(QFontEngineData));
 }
@@ -2803,6 +2815,10 @@ QFontEngine *QFontCache::findEngine(const Key &key)
     EngineCache::Iterator it = engineCache.find(key),
                          end = engineCache.end();
     if (it == end) return 0;
+
+    Q_ASSERT(it.value().data != Q_NULLPTR);
+    Q_ASSERT(key.multi == (it.value().data->type() == QFontEngine::Multi));
+
     // found... update the hitcount and timestamp
     updateHitCountAndTimeStamp(it.value());
 
@@ -2823,6 +2839,9 @@ void QFontCache::updateHitCountAndTimeStamp(Engine &value)
 
 void QFontCache::insertEngine(const Key &key, QFontEngine *engine, bool insertMulti)
 {
+    Q_ASSERT(engine != Q_NULLPTR);
+    Q_ASSERT(key.multi == (engine->type() == QFontEngine::Multi));
+
 #ifdef QFONTCACHE_DEBUG
     FC_DEBUG("QFontCache: inserting new engine %p, refcount %d", engine, engine->ref.load());
     if (!insertMulti && engineCache.contains(key)) {
@@ -2831,8 +2850,10 @@ void QFontCache::insertEngine(const Key &key, QFontEngine *engine, bool insertMu
                  key.def.pixelSize, key.def.weight, key.def.style, key.def.fixedPitch);
     }
 #endif
-
     engine->ref.ref();
+    // Decrease now rather than waiting
+    if (total_cost > min_cost * 2)
+        decreaseCache();
 
     Engine data(engine);
     data.timestamp = ++current_timestamp;
@@ -2893,7 +2914,11 @@ void QFontCache::timerEvent(QTimerEvent *)
 
         return;
     }
+    decreaseCache();
+}
 
+void QFontCache::decreaseCache()
+{
     // go through the cache and count up everything in use
     uint in_use_cost = 0;
 

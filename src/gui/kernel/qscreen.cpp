@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,6 +46,7 @@
 
 #include <QtCore/QDebug>
 #include <QtCore/private/qobject_p.h>
+#include "qhighdpiscaling_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -116,8 +123,9 @@ QScreen::~QScreen()
     bool movingFromVirtualSibling = primaryScreen && primaryScreen->handle()->virtualSiblings().contains(handle());
 
     // Move any leftover windows to the primary screen
-    foreach (QWindow *window, QGuiApplication::topLevelWindows()) {
-        if (window->screen() != this)
+    const auto allWindows = QGuiApplication::allWindows();
+    for (QWindow *window : allWindows) {
+        if (!window->isTopLevel() || window->screen() != this)
             continue;
 
         const bool wasVisible = window->isVisible();
@@ -357,10 +365,10 @@ QRect QScreen::availableGeometry() const
 QList<QScreen *> QScreen::virtualSiblings() const
 {
     Q_D(const QScreen);
-    QList<QPlatformScreen *> platformScreens = d->platformScreen->virtualSiblings();
+    const QList<QPlatformScreen *> platformScreens = d->platformScreen->virtualSiblings();
     QList<QScreen *> screens;
     screens.reserve(platformScreens.count());
-    foreach (QPlatformScreen *platformScreen, platformScreens)
+    for (QPlatformScreen *platformScreen : platformScreens)
         screens << platformScreen->screen();
     return screens;
 }
@@ -393,7 +401,8 @@ QSize QScreen::virtualSize() const
 QRect QScreen::virtualGeometry() const
 {
     QRect result;
-    foreach (QScreen *screen, virtualSiblings())
+    const auto screens = virtualSiblings();
+    for (QScreen *screen : screens)
         result |= screen->geometry();
     return result;
 }
@@ -426,7 +435,8 @@ QSize QScreen::availableVirtualSize() const
 QRect QScreen::availableVirtualGeometry() const
 {
     QRect result;
-    foreach (QScreen *screen, virtualSiblings())
+    const auto screens = virtualSiblings();
+    for (QScreen *screen : screens)
         result |= screen->availableGeometry();
     return result;
 }
@@ -680,10 +690,22 @@ QPixmap QScreen::grabWindow(WId window, int x, int y, int width, int height)
 {
     const QPlatformScreen *platformScreen = handle();
     if (!platformScreen) {
-        qWarning("%s invoked with handle==0", Q_FUNC_INFO);
+        qWarning("invoked with handle==0");
         return QPixmap();
     }
-    return platformScreen->grabWindow(window, x, y, width, height);
+    const qreal factor = QHighDpiScaling::factor(this);
+    if (qFuzzyCompare(factor, 1))
+        return platformScreen->grabWindow(window, x, y, width, height);
+
+    const QPoint nativePos = QHighDpi::toNative(QPoint(x, y), factor);
+    QSize nativeSize(width, height);
+    if (nativeSize.isValid())
+        nativeSize = QHighDpi::toNative(nativeSize, factor);
+    QPixmap result =
+        platformScreen->grabWindow(window, nativePos.x(), nativePos.y(),
+                                   nativeSize.width(), nativeSize.height());
+    result.setDevicePixelRatio(factor);
+    return result;
 }
 
 #ifndef QT_NO_DEBUG_STREAM

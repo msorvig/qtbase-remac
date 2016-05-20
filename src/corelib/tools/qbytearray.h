@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -49,11 +56,9 @@
 #error qbytearray.h must be included before any header file that defines truncate
 #endif
 
-#ifdef Q_OS_MAC
+#if defined(Q_OS_MAC)
 Q_FORWARD_DECLARE_CF_TYPE(CFData);
-#  ifdef __OBJC__
 Q_FORWARD_DECLARE_OBJC_CLASS(NSData);
-#  endif
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -330,7 +335,7 @@ public:
     QT_ASCII_CAST_WARN int indexOf(const QString &s, int from = 0) const;
     QT_ASCII_CAST_WARN int lastIndexOf(const QString &s, int from = -1) const;
 #endif
-#ifndef QT_NO_CAST_FROM_ASCII
+#if !defined(QT_NO_CAST_FROM_ASCII) && !defined(QT_RESTRICTED_CAST_FROM_ASCII)
     inline QT_ASCII_CAST_WARN bool operator==(const QString &s2) const;
     inline QT_ASCII_CAST_WARN bool operator!=(const QString &s2) const;
     inline QT_ASCII_CAST_WARN bool operator<(const QString &s2) const;
@@ -382,12 +387,10 @@ public:
     static QByteArray fromRawCFData(CFDataRef data);
     CFDataRef toCFData() const Q_DECL_CF_RETURNS_RETAINED;
     CFDataRef toRawCFData() const Q_DECL_CF_RETURNS_RETAINED;
-#  if defined(__OBJC__) || defined(Q_QDOC)
     static QByteArray fromNSData(const NSData *data);
     static QByteArray fromRawNSData(const NSData *data);
     NSData *toNSData() const Q_DECL_NS_RETURNS_AUTORELEASED;
     NSData *toRawNSData() const Q_DECL_NS_RETURNS_AUTORELEASED;
-#  endif
 #endif
 
     typedef char *iterator;
@@ -597,41 +600,41 @@ inline bool QByteArray::contains(const QByteArray &a) const
 { return indexOf(a) != -1; }
 inline bool QByteArray::contains(char c) const
 { return indexOf(c) != -1; }
-inline bool operator==(const QByteArray &a1, const QByteArray &a2)
+inline bool operator==(const QByteArray &a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return (a1.size() == a2.size()) && (memcmp(a1.constData(), a2.constData(), a1.size())==0); }
-inline bool operator==(const QByteArray &a1, const char *a2)
+inline bool operator==(const QByteArray &a1, const char *a2) Q_DECL_NOTHROW
 { return a2 ? qstrcmp(a1,a2) == 0 : a1.isEmpty(); }
-inline bool operator==(const char *a1, const QByteArray &a2)
+inline bool operator==(const char *a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return a1 ? qstrcmp(a1,a2) == 0 : a2.isEmpty(); }
-inline bool operator!=(const QByteArray &a1, const QByteArray &a2)
+inline bool operator!=(const QByteArray &a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return !(a1==a2); }
-inline bool operator!=(const QByteArray &a1, const char *a2)
+inline bool operator!=(const QByteArray &a1, const char *a2) Q_DECL_NOTHROW
 { return a2 ? qstrcmp(a1,a2) != 0 : !a1.isEmpty(); }
-inline bool operator!=(const char *a1, const QByteArray &a2)
+inline bool operator!=(const char *a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return a1 ? qstrcmp(a1,a2) != 0 : !a2.isEmpty(); }
-inline bool operator<(const QByteArray &a1, const QByteArray &a2)
+inline bool operator<(const QByteArray &a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) < 0; }
- inline bool operator<(const QByteArray &a1, const char *a2)
+ inline bool operator<(const QByteArray &a1, const char *a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) < 0; }
-inline bool operator<(const char *a1, const QByteArray &a2)
+inline bool operator<(const char *a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) < 0; }
-inline bool operator<=(const QByteArray &a1, const QByteArray &a2)
+inline bool operator<=(const QByteArray &a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) <= 0; }
-inline bool operator<=(const QByteArray &a1, const char *a2)
+inline bool operator<=(const QByteArray &a1, const char *a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) <= 0; }
-inline bool operator<=(const char *a1, const QByteArray &a2)
+inline bool operator<=(const char *a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) <= 0; }
-inline bool operator>(const QByteArray &a1, const QByteArray &a2)
+inline bool operator>(const QByteArray &a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) > 0; }
-inline bool operator>(const QByteArray &a1, const char *a2)
+inline bool operator>(const QByteArray &a1, const char *a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) > 0; }
-inline bool operator>(const char *a1, const QByteArray &a2)
+inline bool operator>(const char *a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) > 0; }
-inline bool operator>=(const QByteArray &a1, const QByteArray &a2)
+inline bool operator>=(const QByteArray &a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) >= 0; }
-inline bool operator>=(const QByteArray &a1, const char *a2)
+inline bool operator>=(const QByteArray &a1, const char *a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) >= 0; }
-inline bool operator>=(const char *a1, const QByteArray &a2)
+inline bool operator>=(const char *a1, const QByteArray &a2) Q_DECL_NOTHROW
 { return qstrcmp(a1, a2) >= 0; }
 #if !defined(QT_USE_QSTRINGBUILDER)
 inline const QByteArray operator+(const QByteArray &a1, const QByteArray &a2)

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -536,7 +542,7 @@ static void _q_parseUnixDir(const QStringList &tokens, const QString &userName, 
 
     // Resolve permissions
     int permissions = 0;
-    QString p = tokens.at(2);
+    const QString &p = tokens.at(2);
     permissions |= (p[0] == QLatin1Char('r') ? QUrlInfo::ReadOwner : 0);
     permissions |= (p[1] == QLatin1Char('w') ? QUrlInfo::WriteOwner : 0);
     permissions |= (p[2] == QLatin1Char('x') ? QUrlInfo::ExeOwner : 0);
@@ -581,10 +587,10 @@ static void _q_parseDosDir(const QStringList &tokens, const QString &userName, Q
     int permissions = QUrlInfo::ReadOwner | QUrlInfo::WriteOwner
                       | QUrlInfo::ReadGroup | QUrlInfo::WriteGroup
                       | QUrlInfo::ReadOther | QUrlInfo::WriteOther;
-    QString ext;
+    QStringRef ext;
     int extIndex = name.lastIndexOf(QLatin1Char('.'));
     if (extIndex != -1)
-        ext = name.mid(extIndex + 1);
+        ext = name.midRef(extIndex + 1);
     if (ext == QLatin1String("exe") || ext == QLatin1String("bat") || ext == QLatin1String("com"))
         permissions |= QUrlInfo::ExeOwner | QUrlInfo::ExeGroup | QUrlInfo::ExeOther;
     info->setPermissions(permissions);
@@ -611,7 +617,7 @@ bool QFtpDTP::parseDir(const QByteArray &buffer, const QString &userName, QUrlIn
     if (buffer.isEmpty())
         return false;
 
-    QString bufferStr = QString::fromLatin1(buffer).trimmed();
+    QString bufferStr = QString::fromUtf8(buffer).trimmed();
 
     // Unix style FTP servers
     QRegExp unixPattern(QLatin1String("^([\\-dl])([a-zA-Z\\-]{9,9})\\s+\\d+\\s+(\\S*)\\s+"
@@ -676,7 +682,7 @@ void QFtpDTP::socketReadyRead()
                 // does not exist, but rather write a text to the data socket
                 // -- try to catch these cases
                 if (line.endsWith("No such file or directory\r\n"))
-                    err = QString::fromLatin1(line);
+                    err = QString::fromUtf8(line);
             }
         }
     } else {
@@ -932,7 +938,7 @@ void QFtpPI::readyRead()
 
     while (commandSocket.canReadLine()) {
         // read line with respect to line continuation
-        QString line = QString::fromLatin1(commandSocket.readLine());
+        QString line = QString::fromUtf8(commandSocket.readLine());
         if (replyText.isEmpty()) {
             if (line.length() < 3) {
                 // protocol error
@@ -941,7 +947,7 @@ void QFtpPI::readyRead()
             const int lowerLimit[3] = {1,0,0};
             const int upperLimit[3] = {5,5,9};
             for (int i=0; i<3; i++) {
-                replyCode[i] = line[i].digitValue();
+                replyCode[i] = line.at(i).digitValue();
                 if (replyCode[i]<lowerLimit[i] || replyCode[i]>upperLimit[i]) {
                     // protocol error
                     return;
@@ -955,19 +961,19 @@ void QFtpPI::readyRead()
         endOfMultiLine[3] = QLatin1Char(' ');
         QString lineCont(endOfMultiLine);
         lineCont[3] = QLatin1Char('-');
-        QString lineLeft4 = line.left(4);
+        QStringRef lineLeft4 = line.leftRef(4);
 
         while (lineLeft4 != endOfMultiLine) {
             if (lineLeft4 == lineCont)
-                replyText += line.mid(4); // strip 'xyz-'
+                replyText += line.midRef(4); // strip 'xyz-'
             else
                 replyText += line;
             if (!commandSocket.canReadLine())
                 return;
-            line = QString::fromLatin1(commandSocket.readLine());
-            lineLeft4 = line.left(4);
+            line = QString::fromUtf8(commandSocket.readLine());
+            lineLeft4 = line.leftRef(4);
         }
-        replyText += line.mid(4); // strip reply code 'xyz '
+        replyText += line.midRef(4); // strip reply code 'xyz '
         if (replyText.endsWith(QLatin1String("\r\n")))
             replyText.chop(2);
 
@@ -1066,7 +1072,7 @@ bool QFtpPI::processReply()
 #endif
             // this error should be reported
         } else {
-            QStringList lst = addrPortPattern.capturedTexts();
+            const QStringList lst = addrPortPattern.capturedTexts();
             QString host = lst[1] + QLatin1Char('.') + lst[2] + QLatin1Char('.') + lst[3] + QLatin1Char('.') + lst[4];
             quint16 port = (lst[5].toUInt() << 8) + lst[6].toUInt();
             waitForDtpToConnect = true;
@@ -1083,7 +1089,7 @@ bool QFtpPI::processReply()
         } else {
             ++portPos;
             QChar delimiter = replyText.at(portPos);
-            QStringList epsvParameters = replyText.mid(portPos).split(delimiter);
+            const auto epsvParameters = replyText.midRef(portPos).split(delimiter);
 
             waitForDtpToConnect = true;
             dtp.connectToHost(commandSocket.peerAddress().toString(),
@@ -1092,7 +1098,7 @@ bool QFtpPI::processReply()
 
     } else if (replyCodeInt == 230) {
         if (currentCmd.startsWith(QLatin1String("USER ")) && pendingCommands.count()>0 &&
-            pendingCommands.first().startsWith(QLatin1String("PASS "))) {
+            pendingCommands.constFirst().startsWith(QLatin1String("PASS "))) {
             // no need to send the PASS -- we are already logged in
             pendingCommands.pop_front();
         }
@@ -1171,7 +1177,7 @@ bool QFtpPI::startNextCmd()
         emit finished(replyText);
         return false;
     }
-    currentCmd = pendingCommands.first();
+    currentCmd = pendingCommands.constFirst();
 
     // PORT and PASV are edited in-place, depending on whether we
     // should try the extended transfer connection commands EPRT and
@@ -1215,7 +1221,7 @@ bool QFtpPI::startNextCmd()
     qDebug("QFtpPI send: %s", currentCmd.left(currentCmd.length()-2).toLatin1().constData());
 #endif
     state = Waiting;
-    commandSocket.write(currentCmd.toLatin1());
+    commandSocket.write(currentCmd.toUtf8());
     return true;
 }
 
@@ -2235,7 +2241,7 @@ void QFtpPrivate::_q_startNextCommand()
     Q_Q(QFtp);
     if (pending.isEmpty())
         return;
-    QFtpCommand *c = pending.first();
+    QFtpCommand *c = pending.constFirst();
 
     error = QFtp::NoError;
     errorString = QT_TRANSLATE_NOOP(QFtp, QLatin1String("Unknown error"));
@@ -2247,7 +2253,7 @@ void QFtpPrivate::_q_startNextCommand()
     // Proxy support, replace the Login argument in place, then fall
     // through.
     if (c->command == QFtp::Login && !proxyHost.isEmpty()) {
-        QString loginString = c->rawCmds.first().trimmed();
+        QString loginString = c->rawCmds.constFirst().trimmed();
         loginString += QLatin1Char('@') + host;
         if (port && port != 21)
             loginString += QLatin1Char(':') + QString::number(port);
@@ -2258,8 +2264,8 @@ void QFtpPrivate::_q_startNextCommand()
     if (c->command == QFtp::SetTransferMode) {
         _q_piFinished(QLatin1String("Transfer mode set"));
     } else if (c->command == QFtp::SetProxy) {
-        proxyHost = c->rawCmds[0];
-        proxyPort = c->rawCmds[1].toUInt();
+        proxyHost = c->rawCmds.at(0);
+        proxyPort = c->rawCmds.at(1).toUInt();
         c->rawCmds.clear();
         _q_piFinished(QLatin1String("Proxy set to ") + proxyHost + QLatin1Char(':') + QString::number(proxyPort));
     } else if (c->command == QFtp::ConnectToHost) {
@@ -2268,11 +2274,11 @@ void QFtpPrivate::_q_startNextCommand()
         pi.setProperty("_q_networksession", q->property("_q_networksession"));
 #endif
         if (!proxyHost.isEmpty()) {
-            host = c->rawCmds[0];
-            port = c->rawCmds[1].toUInt();
+            host = c->rawCmds.at(0);
+            port = c->rawCmds.at(1).toUInt();
             pi.connectToHost(proxyHost, proxyPort);
         } else {
-            pi.connectToHost(c->rawCmds[0], c->rawCmds[1].toUInt());
+            pi.connectToHost(c->rawCmds.at(0), c->rawCmds.at(1).toUInt());
         }
     } else {
         if (c->command == QFtp::Put) {
@@ -2307,7 +2313,7 @@ void QFtpPrivate::_q_piFinished(const QString&)
 {
     if (pending.isEmpty())
         return;
-    QFtpCommand *c = pending.first();
+    QFtpCommand *c = pending.constFirst();
 
     if (c->command == QFtp::Close) {
         // The order of in which the slots are called is arbitrary, so
@@ -2342,7 +2348,7 @@ void QFtpPrivate::_q_piError(int errorCode, const QString &text)
         return;
     }
 
-    QFtpCommand *c = pending.first();
+    QFtpCommand *c = pending.constFirst();
 
     // non-fatal errors
     if (c->command == QFtp::Get && pi.currentCommand().startsWith(QLatin1String("SIZE "))) {

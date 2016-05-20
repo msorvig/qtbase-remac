@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -654,8 +660,9 @@ void QComboBoxPrivateContainer::changeEvent(QEvent *e)
 bool QComboBoxPrivateContainer::eventFilter(QObject *o, QEvent *e)
 {
     switch (e->type()) {
-    case QEvent::ShortcutOverride:
-        switch (static_cast<QKeyEvent*>(e)->key()) {
+    case QEvent::ShortcutOverride: {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent*>(e);
+        switch (keyEvent->key()) {
         case Qt::Key_Enter:
         case Qt::Key_Return:
 #ifdef QT_KEYPAD_NAVIGATION
@@ -667,17 +674,21 @@ bool QComboBoxPrivateContainer::eventFilter(QObject *o, QEvent *e)
             }
             return true;
         case Qt::Key_Down:
-            if (!(static_cast<QKeyEvent*>(e)->modifiers() & Qt::AltModifier))
+            if (!(keyEvent->modifiers() & Qt::AltModifier))
                 break;
             // fall through
         case Qt::Key_F4:
-        case Qt::Key_Escape:
             combo->hidePopup();
             return true;
         default:
+            if (keyEvent->matches(QKeySequence::Cancel)) {
+                combo->hidePopup();
+                return true;
+            }
             break;
         }
-    break;
+        break;
+    }
     case QEvent::MouseMove:
         if (isVisible()) {
             QMouseEvent *m = static_cast<QMouseEvent *>(e);
@@ -1306,8 +1317,8 @@ void QComboBoxPrivate::_q_emitCurrentIndexChanged(const QModelIndex &index)
     if (!lineEdit)
         emit q->currentTextChanged(text);
 #ifndef QT_NO_ACCESSIBILITY
-        QAccessibleValueChangeEvent event(q, text);
-        QAccessible::updateAccessibility(&event);
+    QAccessibleValueChangeEvent event(q, text);
+    QAccessible::updateAccessibility(&event);
 #endif
 }
 
@@ -1355,7 +1366,7 @@ int QComboBox::maxVisibleItems() const
 void QComboBox::setMaxVisibleItems(int maxItems)
 {
     Q_D(QComboBox);
-    if (maxItems < 0) {
+    if (Q_UNLIKELY(maxItems < 0)) {
         qWarning("QComboBox::setMaxVisibleItems: "
                  "Invalid max visible items (%d) must be >= 0", maxItems);
         return;
@@ -1390,13 +1401,14 @@ int QComboBox::count() const
 void QComboBox::setMaxCount(int max)
 {
     Q_D(QComboBox);
-    if (max < 0) {
+    if (Q_UNLIKELY(max < 0)) {
         qWarning("QComboBox::setMaxCount: Invalid count (%d) must be >= 0", max);
         return;
     }
 
-    if (max < count())
-        d->model->removeRows(max, count() - max, d->root);
+    const int rowCount = count();
+    if (rowCount > max)
+        d->model->removeRows(max, rowCount - max, d->root);
 
     d->maxCount = max;
 }
@@ -1443,7 +1455,7 @@ void QComboBox::setAutoCompletion(bool enable)
     Q_D(QComboBox);
 
 #ifdef QT_KEYPAD_NAVIGATION
-    if (QApplication::keypadNavigationEnabled() && !enable && isEditable())
+    if (Q_UNLIKELY(QApplication::keypadNavigationEnabled() && !enable && isEditable()))
         qWarning("QComboBox::setAutoCompletion: auto completion is mandatory when combo box editable");
 #endif
 
@@ -1542,9 +1554,8 @@ void QComboBox::setDuplicatesEnabled(bool enable)
 int QComboBox::findData(const QVariant &data, int role, Qt::MatchFlags flags) const
 {
     Q_D(const QComboBox);
-    QModelIndexList result;
     QModelIndex start = d->model->index(0, d->modelColumn, d->root);
-    result = d->model->match(start, role, data, 1, flags);
+    const QModelIndexList result = d->model->match(start, role, data, 1, flags);
     if (result.isEmpty())
         return -1;
     return result.first().row();
@@ -1753,7 +1764,7 @@ void QComboBox::setEditable(bool editable)
 void QComboBox::setLineEdit(QLineEdit *edit)
 {
     Q_D(QComboBox);
-    if (!edit) {
+    if (Q_UNLIKELY(!edit)) {
         qWarning("QComboBox::setLineEdit: cannot set a 0 line edit");
         return;
     }
@@ -1912,7 +1923,7 @@ QAbstractItemDelegate *QComboBox::itemDelegate() const
 */
 void QComboBox::setItemDelegate(QAbstractItemDelegate *delegate)
 {
-    if (!delegate) {
+    if (Q_UNLIKELY(!delegate)) {
         qWarning("QComboBox::setItemDelegate: cannot set a 0 delegate");
         return;
     }
@@ -1944,7 +1955,7 @@ void QComboBox::setModel(QAbstractItemModel *model)
 {
     Q_D(QComboBox);
 
-    if (!model) {
+    if (Q_UNLIKELY(!model)) {
         qWarning("QComboBox::setModel: cannot set a 0 model");
         return;
     }
@@ -2390,7 +2401,7 @@ QAbstractItemView *QComboBox::view() const
 void QComboBox::setView(QAbstractItemView *itemView)
 {
     Q_D(QComboBox);
-    if (!itemView) {
+    if (Q_UNLIKELY(!itemView)) {
         qWarning("QComboBox::setView: cannot set a 0 view");
         return;
     }
@@ -2429,7 +2440,12 @@ struct IndexSetter {
     int index;
     QComboBox *cb;
 
-    void operator()(void) { cb->setCurrentIndex(index); }
+    void operator()(void)
+    {
+        cb->setCurrentIndex(index);
+        emit cb->activated(index);
+        emit cb->activated(cb->itemText(index));
+    }
 };
 }
 
@@ -2580,7 +2596,7 @@ void QComboBox::showPopup()
 #endif
         while (!toCheck.isEmpty()) {
             QModelIndex parent = toCheck.pop();
-            for (int i = 0; i < d->model->rowCount(parent); ++i) {
+            for (int i = 0, end = d->model->rowCount(parent); i < end; ++i) {
                 QModelIndex idx = d->model->index(i, d->modelColumn, parent);
                 if (!idx.isValid())
                     continue;
@@ -2823,8 +2839,8 @@ void QComboBox::clear()
     Q_D(QComboBox);
     d->model->removeRows(0, d->model->rowCount(d->root), d->root);
 #ifndef QT_NO_ACCESSIBILITY
-        QAccessibleValueChangeEvent event(this, QString());
-        QAccessible::updateAccessibility(&event);
+    QAccessibleValueChangeEvent event(this, QString());
+    QAccessible::updateAccessibility(&event);
 #endif
 }
 
@@ -2837,8 +2853,8 @@ void QComboBox::clearEditText()
     if (d->lineEdit)
         d->lineEdit->clear();
 #ifndef QT_NO_ACCESSIBILITY
-        QAccessibleValueChangeEvent event(this, QString());
-        QAccessible::updateAccessibility(&event);
+    QAccessibleValueChangeEvent event(this, QString());
+    QAccessible::updateAccessibility(&event);
 #endif
 }
 
@@ -2851,8 +2867,8 @@ void QComboBox::setEditText(const QString &text)
     if (d->lineEdit)
         d->lineEdit->setText(text);
 #ifndef QT_NO_ACCESSIBILITY
-        QAccessibleValueChangeEvent event(this, text);
-        QAccessible::updateAccessibility(&event);
+    QAccessibleValueChangeEvent event(this, text);
+    QAccessible::updateAccessibility(&event);
 #endif
 }
 
@@ -2997,8 +3013,8 @@ bool QComboBox::event(QEvent *event)
     case QEvent::HoverEnter:
     case QEvent::HoverLeave:
     case QEvent::HoverMove:
-    if (const QHoverEvent *he = static_cast<const QHoverEvent *>(event))
-        d->updateHoverControl(he->pos());
+        if (const QHoverEvent *he = static_cast<const QHoverEvent *>(event))
+            d->updateHoverControl(he->pos());
         break;
     case QEvent::ShortcutOverride:
         if (d->lineEdit)
@@ -3189,6 +3205,8 @@ void QComboBox::keyPressEvent(QKeyEvent *e)
         }
     }
 
+    const int rowCount = count();
+
     if (move != NoMove) {
         e->accept();
         switch (move) {
@@ -3196,11 +3214,11 @@ void QComboBox::keyPressEvent(QKeyEvent *e)
             newIndex = -1;
         case MoveDown:
             newIndex++;
-            while ((newIndex < count()) && !(d->model->flags(d->model->index(newIndex,d->modelColumn,d->root)) & Qt::ItemIsEnabled))
+            while (newIndex < rowCount && !(d->model->index(newIndex, d->modelColumn, d->root).flags() & Qt::ItemIsEnabled))
                 newIndex++;
             break;
         case MoveLast:
-            newIndex = count();
+            newIndex = rowCount;
         case MoveUp:
             newIndex--;
             while ((newIndex >= 0) && !(d->model->flags(d->model->index(newIndex,d->modelColumn,d->root)) & Qt::ItemIsEnabled))
@@ -3211,7 +3229,7 @@ void QComboBox::keyPressEvent(QKeyEvent *e)
             break;
         }
 
-        if (newIndex >= 0 && newIndex < count() && newIndex != currentIndex()) {
+        if (newIndex >= 0 && newIndex < rowCount && newIndex != currentIndex()) {
             setCurrentIndex(newIndex);
             d->emitActivated(d->currentIndex);
         }
@@ -3239,8 +3257,12 @@ void QComboBox::keyReleaseEvent(QKeyEvent *e)
 #ifndef QT_NO_WHEELEVENT
 void QComboBox::wheelEvent(QWheelEvent *e)
 {
+#ifdef Q_OS_DARWIN
+    Q_UNUSED(e);
+#else
     Q_D(QComboBox);
     if (!d->viewContainer()->isVisible()) {
+        const int rowCount = count();
         int newIndex = currentIndex();
 
         if (e->delta() > 0) {
@@ -3249,16 +3271,17 @@ void QComboBox::wheelEvent(QWheelEvent *e)
                 newIndex--;
         } else if (e->delta() < 0) {
             newIndex++;
-            while ((newIndex < count()) && !(d->model->flags(d->model->index(newIndex,d->modelColumn,d->root)) & Qt::ItemIsEnabled))
+            while (newIndex < rowCount && !(d->model->index(newIndex, d->modelColumn, d->root).flags() & Qt::ItemIsEnabled))
                 newIndex++;
         }
 
-        if (newIndex >= 0 && newIndex < count() && newIndex != currentIndex()) {
+        if (newIndex >= 0 && newIndex < rowCount && newIndex != currentIndex()) {
             setCurrentIndex(newIndex);
             d->emitActivated(d->currentIndex);
         }
         e->accept();
     }
+#endif
 }
 #endif
 
@@ -3326,6 +3349,16 @@ QVariant QComboBox::inputMethodQuery(Qt::InputMethodQuery query) const
     Q_D(const QComboBox);
     if (d->lineEdit)
         return d->lineEdit->inputMethodQuery(query);
+    return QWidget::inputMethodQuery(query);
+}
+
+/*!\internal
+*/
+QVariant QComboBox::inputMethodQuery(Qt::InputMethodQuery query, const QVariant &argument) const
+{
+    Q_D(const QComboBox);
+    if (d->lineEdit)
+        return d->lineEdit->inputMethodQuery(query, argument);
     return QWidget::inputMethodQuery(query);
 }
 
@@ -3417,5 +3450,6 @@ void QComboBox::setModelColumn(int visibleColumn)
 QT_END_NAMESPACE
 
 #include "moc_qcombobox.cpp"
+#include "moc_qcombobox_p.cpp"
 
 #endif // QT_NO_COMBOBOX

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -406,6 +412,10 @@ bool ControlLabel::event(QEvent *event)
 {
     if (event->type() == QEvent::WindowIconChange)
         updateWindowIcon();
+    else if (event->type() == QEvent::StyleChange) {
+        updateWindowIcon();
+        setFixedSize(label.size());
+    }
 #ifndef QT_NO_TOOLTIP
     else if (event->type() == QEvent::ToolTip) {
         QStyleOptionTitleBar options;
@@ -474,7 +484,8 @@ void ControlLabel::updateWindowIcon()
     QIcon menuIcon = windowIcon();
     if (menuIcon.isNull())
         menuIcon = style()->standardIcon(QStyle::SP_TitleBarMenuButton, 0, parentWidget());
-    label = menuIcon.pixmap(16, 16);
+    const int iconSize = style()->pixelMetric(QStyle::PM_TitleBarButtonIconSize, 0, parentWidget());
+    label = menuIcon.pixmap(iconSize);
     update();
 }
 
@@ -550,7 +561,8 @@ QSize ControllerWidget::sizeHint() const
     ensurePolished();
     QStyleOptionComplex opt;
     initStyleOption(&opt);
-    QSize size(48, 16);
+    const int buttonSize = style()->pixelMetric(QStyle::PM_TitleBarButtonSize, &opt, mdiArea);
+    QSize size(3 * buttonSize, buttonSize);
     return style()->sizeFromContents(QStyle::CT_MdiControls, &opt, size, mdiArea);
 }
 
@@ -569,10 +581,7 @@ void ControllerWidget::setControlVisible(QMdiSubWindowPrivate::WindowStateAction
     if (subControl == QStyle::SC_None)
         return;
 
-    if (visible && !(visibleControls & subControl))
-        visibleControls |= subControl;
-    else if (!visible && (visibleControls & subControl))
-        visibleControls &= ~subControl;
+    visibleControls.setFlag(subControl, visible && !(visibleControls & subControl));
 }
 
 /*
@@ -1766,7 +1775,7 @@ bool QMdiSubWindowPrivate::drawTitleBarWhenMaximized() const
     if (isChildOfTabbedQMdiArea(q))
         return false;
 
-#if defined(Q_OS_MAC) && !defined(QT_NO_STYLE_MAC) || defined(Q_OS_WINCE_WM)
+#if defined(Q_OS_DARWIN) && !defined(QT_NO_STYLE_MAC)
     Q_UNUSED(isChildOfQMdiSubWindow);
     return true;
 #else
@@ -2206,8 +2215,8 @@ void QMdiSubWindowPrivate::setSizeGrip(QSizeGrip *newSizeGrip)
 void QMdiSubWindowPrivate::setSizeGripVisible(bool visible) const
 {
     // See if we can find any size grips
-    QList<QSizeGrip *> sizeGrips = q_func()->findChildren<QSizeGrip *>();
-    foreach (QSizeGrip *grip, sizeGrips)
+    const QList<QSizeGrip *> sizeGrips = q_func()->findChildren<QSizeGrip *>();
+    for (QSizeGrip *grip : sizeGrips)
         grip->setVisible(visible);
 }
 
@@ -2309,7 +2318,7 @@ void QMdiSubWindow::setWidget(QWidget *widget)
         return;
     }
 
-    if (widget == d->baseWidget) {
+    if (Q_UNLIKELY(widget == d->baseWidget)) {
         qWarning("QMdiSubWindow::setWidget: widget is already set");
         return;
     }
@@ -2411,10 +2420,7 @@ bool QMdiSubWindow::isShaded() const
 void QMdiSubWindow::setOption(SubWindowOption option, bool on)
 {
     Q_D(QMdiSubWindow);
-    if (on && !(d->options & option))
-        d->options |= option;
-    else if (!on && (d->options & option))
-        d->options &= ~option;
+    d->options.setFlag(option, on);
 
 #ifndef QT_NO_RUBBERBAND
     if ((option & (RubberBandResize | RubberBandMove)) && !on && d->isInRubberBandMode)
@@ -2507,7 +2513,7 @@ void QMdiSubWindow::setKeyboardPageStep(int step)
 void QMdiSubWindow::setSystemMenu(QMenu *systemMenu)
 {
     Q_D(QMdiSubWindow);
-    if (systemMenu && systemMenu == d->systemMenu) {
+    if (Q_UNLIKELY(systemMenu && systemMenu == d->systemMenu)) {
         qWarning("QMdiSubWindow::setSystemMenu: system menu is already set");
         return;
     }
@@ -2691,7 +2697,10 @@ bool QMdiSubWindow::eventFilter(QObject *object, QEvent *event)
     // System menu events.
     if (d->systemMenu && d->systemMenu == object) {
         if (event->type() == QEvent::MouseButtonDblClick) {
-            close();
+            const QMouseEvent *mouseEvent = static_cast<const QMouseEvent *>(event);
+            const QAction *action = d->systemMenu->actionAt(mouseEvent->pos());
+            if (!action || action->isEnabled())
+                close();
         } else if (event->type() == QEvent::MouseMove) {
             QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
             d->hoveredSubControl = d->getSubControl(mapFromGlobal(mouseEvent->globalPos()));
@@ -3163,10 +3172,7 @@ void QMdiSubWindow::paintEvent(QPaintEvent *paintEvent)
     QStyleOptionFrame frameOptions;
     frameOptions.initFrom(this);
     frameOptions.lineWidth = style()->pixelMetric(QStyle::PM_MdiSubWindowFrameWidth, 0, this);
-    if (d->isActive)
-        frameOptions.state |= QStyle::State_Active;
-    else
-        frameOptions.state &= ~QStyle::State_Active;
+    frameOptions.state.setFlag(QStyle::State_Active, d->isActive);
 
     // ### Ensure that we do not require setting the cliprect for 4.4
     if (!isMinimized() && !d->hasBorder(d->cachedStyleOptions))

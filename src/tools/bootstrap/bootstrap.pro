@@ -2,8 +2,9 @@ option(host_build)
 
 TARGET = QtBootstrap
 QT =
-CONFIG += internal_module force_bootstrap
+CONFIG += minimal_syncqt internal_module force_bootstrap
 
+MODULE_INCNAME = QtCore QtXml
 MODULE_DEFINES = \
         QT_BOOTSTRAPPED \
         QT_LITE_UNICODE \
@@ -25,29 +26,6 @@ DEFINES += \
     QT_NO_CAST_FROM_ASCII
 
 DEFINES -= QT_EVAL
-
-MODULE_INCLUDES = \
-    \$\$QT_MODULE_INCLUDE_BASE \
-    \$\$QT_MODULE_INCLUDE_BASE/QtCore \
-    \$\$QT_MODULE_INCLUDE_BASE/QtXml
-MODULE_PRIVATE_INCLUDES = \
-    \$\$QT_MODULE_INCLUDE_BASE/QtCore/$$QT_VERSION \
-    \$\$QT_MODULE_INCLUDE_BASE/QtCore/$$QT_VERSION/QtCore \
-    \$\$QT_MODULE_INCLUDE_BASE/QtXml/$$QT_VERSION \
-    \$\$QT_MODULE_INCLUDE_BASE/QtXml/$$QT_VERSION/QtXml
-
-# We need the forwarding headers before their respective modules are built,
-# so do a minimal syncqt run.
-CONFIG += minimal_syncqt
-QMAKE_SYNCQT_OPTIONS = -module QtCore -module QtDBus -module QtXml
-contains(QT_CONFIG, zlib): \
-    QMAKE_SYNCQT_OPTIONS += -module QtZlib
-QMAKE_SYNCQT_OPTIONS += -version $$QT_VERSION
-
-load(qt_module)
-
-# otherwise mingw headers do not declare common functions like putenv
-mingw: CONFIG -= strict_c++
 
 SOURCES += \
            ../../corelib/codecs/qlatincodec.cpp \
@@ -71,6 +49,7 @@ SOURCES += \
            ../../corelib/io/qfsfileengine_iterator.cpp \
            ../../corelib/io/qiodevice.cpp \
            ../../corelib/io/qfiledevice.cpp \
+           ../../corelib/io/qresource.cpp \
            ../../corelib/io/qtemporaryfile.cpp \
            ../../corelib/io/qtextstream.cpp \
            ../../corelib/io/qstandardpaths.cpp \
@@ -103,6 +82,7 @@ SOURCES += \
            ../../corelib/tools/qsize.cpp \
            ../../corelib/tools/qline.cpp \
            ../../corelib/tools/qstring.cpp \
+           ../../corelib/tools/qstringbuilder.cpp \
            ../../corelib/tools/qstring_compat.cpp \
            ../../corelib/tools/qstringlist.cpp \
            ../../corelib/tools/qvector.cpp \
@@ -138,12 +118,12 @@ mac {
 
     LIBS += -framework Foundation
     osx: LIBS_PRIVATE += -framework CoreServices
-    ios: LIBS_PRIVATE += -framework UIKit
+    uikit: LIBS_PRIVATE += -framework UIKit
 }
 
 macx {
     OBJECTIVE_SOURCES += \
-        ../../corelib/tools/qstring_mac.mm \
+        ../../corelib/kernel/qcore_foundation.mm \
         ../../corelib/io/qstandardpaths_mac.mm
 } else:unix {
     SOURCES += \
@@ -153,10 +133,15 @@ macx {
         ../../corelib/io/qstandardpaths_win.cpp
 }
 
-if(contains(QT_CONFIG, zlib)|cross_compile):include(../../3rdparty/zlib.pri)
+!contains(QT_CONFIG, system-zlib)|cross_compile:include(../../3rdparty/zlib.pri)
 else:include(../../3rdparty/zlib_dependency.pri)
 
 win32:LIBS += -luser32 -lole32 -ladvapi32 -lshell32
+
+load(qt_module)
+
+# otherwise mingw headers do not declare common functions like putenv
+mingw: CONFIG -= strict_c++
 
 lib.CONFIG = dummy_install
 INSTALLS += lib

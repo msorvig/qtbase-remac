@@ -1,34 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,7 +42,6 @@
 #include <private/qeventdispatcher_winrt_p.h>
 
 #include <EGL/egl.h>
-#define EGL_EGLEXT_PROTOTYPES
 #include <EGL/eglext.h>
 
 #include <qfunctions_winrt.h>
@@ -68,6 +70,8 @@ using namespace ABI::Windows::UI::Xaml;
 using namespace ABI::Windows::UI::Xaml::Controls;
 
 QT_BEGIN_NAMESPACE
+
+Q_LOGGING_CATEGORY(lcQpaWindows, "qt.qpa.windows");
 
 static void setUIElementVisibility(IUIElement *uiElement, bool visibility)
 {
@@ -101,6 +105,7 @@ QWinRTWindow::QWinRTWindow(QWindow *window)
     , d_ptr(new QWinRTWindowPrivate)
 {
     Q_D(QWinRTWindow);
+    qCDebug(lcQpaWindows) << __FUNCTION__ << this;
 
     d->surface = EGL_NO_SURFACE;
     d->display = EGL_NO_DISPLAY;
@@ -133,6 +138,15 @@ QWinRTWindow::QWinRTWindow(QWindow *window)
         hr = d->swapChainPanel.As(&d->uiElement);
         Q_ASSERT_SUCCEEDED(hr);
 
+        ComPtr<Xaml::IFrameworkElement> frameworkElement;
+        hr = d->swapChainPanel.As(&frameworkElement);
+        Q_ASSERT_SUCCEEDED(hr);
+        const QSizeF size = QSizeF(d->screen->geometry().size()) / d->screen->scaleFactor();
+        hr = frameworkElement->put_Width(size.width());
+        Q_ASSERT_SUCCEEDED(hr);
+        hr = frameworkElement->put_Height(size.height());
+        Q_ASSERT_SUCCEEDED(hr);
+
         ComPtr<IDependencyObject> canvas = d->screen->canvas();
         ComPtr<IPanel> panel;
         hr = canvas.As(&panel);
@@ -152,6 +166,7 @@ QWinRTWindow::QWinRTWindow(QWindow *window)
 QWinRTWindow::~QWinRTWindow()
 {
     Q_D(QWinRTWindow);
+    qCDebug(lcQpaWindows) << __FUNCTION__ << this;
 
     HRESULT hr;
     hr = QEventDispatcherWinRT::runOnXamlThread([d]() {
@@ -175,9 +190,14 @@ QWinRTWindow::~QWinRTWindow()
     });
     RETURN_VOID_IF_FAILED("Failed to completely destroy window resources, likely because the application is shutting down");
 
+    if (!d->surface)
+        return;
+
+    qCDebug(lcQpaWindows) << __FUNCTION__ << ": Destroying surface";
+
     EGLBoolean value = eglDestroySurface(d->display, d->surface);
     d->surface = EGL_NO_SURFACE;
-    if (value == EGL_FALSE)
+    if (Q_UNLIKELY(value == EGL_FALSE))
         qCritical("Failed to destroy EGL window surface: 0x%x", eglGetError());
 }
 
@@ -202,11 +222,15 @@ bool QWinRTWindow::isExposed() const
 void QWinRTWindow::setGeometry(const QRect &rect)
 {
     Q_D(QWinRTWindow);
+    qCDebug(lcQpaWindows) << __FUNCTION__ << this << rect;
 
     const Qt::WindowFlags windowFlags = window()->flags();
-    if (window()->isTopLevel() && (windowFlags & Qt::WindowType_Mask) == Qt::Window) {
-        QPlatformWindow::setGeometry(windowFlags & Qt::MaximizeUsingFullscreenGeometryHint
-                                     ? d->screen->geometry() : d->screen->availableGeometry());
+    const Qt::WindowFlags windowType = windowFlags & Qt::WindowType_Mask;
+    if (window()->isTopLevel() && (windowType == Qt::Window || windowType == Qt::Dialog)) {
+        const QRect screenRect = windowFlags & Qt::MaximizeUsingFullscreenGeometryHint
+                                    ? d->screen->geometry() : d->screen->availableGeometry();
+        qCDebug(lcQpaWindows) << __FUNCTION__ << "top-level, overwrite" << screenRect;
+        QPlatformWindow::setGeometry(screenRect);
         QWindowSystemInterface::handleGeometryChange(window(), geometry());
     } else {
         QPlatformWindow::setGeometry(rect);
@@ -230,6 +254,8 @@ void QWinRTWindow::setGeometry(const QRect &rect)
         Q_ASSERT_SUCCEEDED(hr);
         hr = frameworkElement->put_Height(size.height());
         Q_ASSERT_SUCCEEDED(hr);
+        qCDebug(lcQpaWindows) << __FUNCTION__ << "(setGeometry Xaml)" << this
+                             << topLeft << size;
         return S_OK;
     });
     Q_ASSERT_SUCCEEDED(hr);
@@ -238,6 +264,8 @@ void QWinRTWindow::setGeometry(const QRect &rect)
 void QWinRTWindow::setVisible(bool visible)
 {
     Q_D(QWinRTWindow);
+    qCDebug(lcQpaWindows) << __FUNCTION__ << this << visible;
+
     if (!window()->isTopLevel())
         return;
     if (visible) {
@@ -259,6 +287,7 @@ void QWinRTWindow::setWindowTitle(const QString &title)
 void QWinRTWindow::raise()
 {
     Q_D(QWinRTWindow);
+    qCDebug(lcQpaWindows) << __FUNCTION__ << this;
     if (!window()->isTopLevel())
         return;
     d->screen->raise(window());
@@ -267,6 +296,7 @@ void QWinRTWindow::raise()
 void QWinRTWindow::lower()
 {
     Q_D(QWinRTWindow);
+    qCDebug(lcQpaWindows) << __FUNCTION__ << this;
     if (!window()->isTopLevel())
         return;
     d->screen->lower(window());
@@ -286,12 +316,10 @@ qreal QWinRTWindow::devicePixelRatio() const
 void QWinRTWindow::setWindowState(Qt::WindowState state)
 {
     Q_D(QWinRTWindow);
+    qCDebug(lcQpaWindows) << __FUNCTION__ << this << state;
+
     if (d->state == state)
         return;
-
-#ifdef Q_OS_WINPHONE
-    d->screen->setStatusBarVisibility(state == Qt::WindowMaximized || state == Qt::WindowNoState, window());
-#endif
 
     if (state == Qt::WindowMinimized)
         setUIElementVisibility(d->uiElement.Get(), false);
@@ -317,7 +345,7 @@ void QWinRTWindow::createEglSurface(EGLDisplay display, EGLConfig config)
             d->surface = eglCreateWindowSurface(display, config,
                                                 reinterpret_cast<EGLNativeWindowType>(winId()),
                                                 nullptr);
-            if (d->surface == EGL_NO_SURFACE)
+            if (Q_UNLIKELY(d->surface == EGL_NO_SURFACE))
                 qCritical("Failed to create EGL window surface: 0x%x", eglGetError());
             return S_OK;
         });

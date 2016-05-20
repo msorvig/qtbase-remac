@@ -1,34 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2014-2015 Canonical, Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,20 +43,23 @@
 
 #include <qpa/qplatformwindow.h>
 #include <QSharedPointer>
+#include <QMutex>
 
-#include <mir_toolkit/mir_client_library.h>
+#include <memory>
 
 class QMirClientClipboard;
 class QMirClientInput;
 class QMirClientScreen;
-class QMirClientWindowPrivate;
+class QMirClientSurface;
+struct MirConnection;
+struct MirSurface;
 
 class QMirClientWindow : public QObject, public QPlatformWindow
 {
     Q_OBJECT
 public:
-    QMirClientWindow(QWindow *w, QSharedPointer<QMirClientClipboard> clipboard, QMirClientScreen *screen,
-                 QMirClientInput *input, MirConnection *mir_connection);
+    QMirClientWindow(QWindow *w, const QSharedPointer<QMirClientClipboard> &clipboard, QMirClientScreen *screen,
+                 QMirClientInput *input, MirConnection *mirConnection);
     virtual ~QMirClientWindow();
 
     // QPlatformWindow methods.
@@ -61,20 +67,22 @@ public:
     void setGeometry(const QRect&) override;
     void setWindowState(Qt::WindowState state) override;
     void setVisible(bool visible) override;
+    void setWindowTitle(const QString &title) override;
+    void propagateSizeHints() override;
 
     // New methods.
-    void* eglSurface() const;
-    void handleSurfaceResize(int width, int height);
-    void handleSurfaceFocusChange(bool focused);
-    void onBuffersSwapped_threadSafe(int newBufferWidth, int newBufferHeight);
-
-    QMirClientWindowPrivate* priv() { return d; }
+    void *eglSurface() const;
+    MirSurface *mirSurface() const;
+    void handleSurfaceResized(int width, int height);
+    void handleSurfaceFocused();
+    void onSwapBuffersDone();
 
 private:
-    void createWindow();
-    void moveResize(const QRect& rect);
-
-    QMirClientWindowPrivate *d;
+    void updatePanelHeightHack(Qt::WindowState);
+    mutable QMutex mMutex;
+    const WId mId;
+    const QSharedPointer<QMirClientClipboard> mClipboard;
+    std::unique_ptr<QMirClientSurface> mSurface;
 };
 
 #endif // QMIRCLIENTWINDOW_H

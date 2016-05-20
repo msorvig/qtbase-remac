@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -56,15 +51,15 @@ static Qt::KeyboardModifiers getModifiersFromQuartzEvent(CGEventRef inEvent)
 
 static void setModifiersFromQNativeEvent(CGEventRef inEvent, const QNativeEvent &event)
 {
-    CGEventFlags flags = 0;
+    CGEventFlags flags = CGEventFlags(0);
     if (event.modifiers.testFlag(Qt::ShiftModifier))
-        flags |= kCGEventFlagMaskShift;
+        flags = CGEventFlags(flags | kCGEventFlagMaskShift);
     if (event.modifiers.testFlag(Qt::ControlModifier))
-        flags |= kCGEventFlagMaskControl;
+        flags = CGEventFlags(flags | kCGEventFlagMaskControl);
     if (event.modifiers.testFlag(Qt::AltModifier))
-        flags |= kCGEventFlagMaskAlternate;
+        flags = CGEventFlags(flags | kCGEventFlagMaskAlternate);
     if (event.modifiers.testFlag(Qt::MetaModifier))
-        flags |= kCGEventFlagMaskCommand;
+        flags = CGEventFlags(flags | kCGEventFlagMaskCommand);
     CGEventSetFlags(inEvent, flags);
 }
 
@@ -240,7 +235,7 @@ Qt::Native::Status sendNativeMouseMoveEvent_Quartz(const QNativeMouseMoveEvent &
     pos.x = event.globalPos.x();
     pos.y = event.globalPos.y();
 
-    CGEventRef e = CGEventCreateMouseEvent(0, kCGEventMouseMoved, pos, 0);
+    CGEventRef e = CGEventCreateMouseEvent(0, kCGEventMouseMoved, pos, kCGMouseButtonLeft /* ignored */);
     setModifiersFromQNativeEvent(e, event);
     CGEventPost(kCGHIDEventTap, e);
     CFRelease(e);
@@ -253,7 +248,7 @@ Qt::Native::Status sendNativeMouseButtonEvent_Quartz(const QNativeMouseButtonEve
     pos.x = event.globalPos.x();
     pos.y = event.globalPos.y();
 
-    CGEventType type = 0;
+    CGEventType type = kCGEventNull;
     if (event.button == Qt::LeftButton)
         type = (event.clickCount > 0) ? kCGEventLeftMouseDown : kCGEventLeftMouseUp;
     else if (event.button == Qt::RightButton)
@@ -261,7 +256,12 @@ Qt::Native::Status sendNativeMouseButtonEvent_Quartz(const QNativeMouseButtonEve
     else
         type = (event.clickCount > 0) ? kCGEventOtherMouseDown : kCGEventOtherMouseUp;
 
-    CGEventRef e = CGEventCreateMouseEvent(0, type, pos, event.button);
+    // The mouseButton argument to CGEventCreateMouseEvent() is ignored unless the type
+    // is kCGEventOtherSomething, so defaulting to kCGMouseButtonLeft is fine.
+    CGMouseButton mouseButton = (type == kCGEventOtherMouseDown || type == kCGEventOtherMouseUp) ?
+        kCGMouseButtonCenter : kCGMouseButtonLeft;
+
+    CGEventRef e = CGEventCreateMouseEvent(0, type, pos, mouseButton);
     setModifiersFromQNativeEvent(e, event);
     CGEventSetIntegerValueField(e, kCGMouseEventClickState, event.clickCount);
     CGEventPost(kCGHIDEventTap, e);
@@ -275,7 +275,7 @@ Qt::Native::Status sendNativeMouseDragEvent_Quartz(const QNativeMouseDragEvent &
     pos.x = event.globalPos.x();
     pos.y = event.globalPos.y();
 
-    CGEventType type = 0;
+    CGEventType type = kCGEventNull;
     if (event.button == Qt::LeftButton)
         type = kCGEventLeftMouseDragged;
     else if (event.button == Qt::RightButton)
@@ -283,7 +283,11 @@ Qt::Native::Status sendNativeMouseDragEvent_Quartz(const QNativeMouseDragEvent &
     else
         type = kCGEventOtherMouseDragged;
 
-    CGEventRef e = CGEventCreateMouseEvent(0, type, pos, event.button);
+    // The mouseButton argument to CGEventCreateMouseEvent() is ignored unless the type
+    // is kCGEventOtherSomething, so defaulting to kCGMouseButtonLeft is fine.
+    CGMouseButton mouseButton = type == kCGEventOtherMouseDragged ? kCGMouseButtonCenter : kCGMouseButtonLeft;
+
+    CGEventRef e = CGEventCreateMouseEvent(0, type, pos, mouseButton);
     setModifiersFromQNativeEvent(e, event);
     CGEventPost(kCGHIDEventTap, e);
     CFRelease(e);

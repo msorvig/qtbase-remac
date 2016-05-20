@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -760,17 +766,17 @@ QCalendarWidget *QDateTimeEdit::calendarWidget() const
 void QDateTimeEdit::setCalendarWidget(QCalendarWidget *calendarWidget)
 {
     Q_D(QDateTimeEdit);
-    if (!calendarWidget) {
+    if (Q_UNLIKELY(!calendarWidget)) {
         qWarning("QDateTimeEdit::setCalendarWidget: Cannot set a null calendar widget");
         return;
     }
 
-    if (!d->calendarPopup) {
+    if (Q_UNLIKELY(!d->calendarPopup)) {
         qWarning("QDateTimeEdit::setCalendarWidget: calendarPopup is set to false");
         return;
     }
 
-    if (!(d->display & QDateTimeParser::DateSectionMask)) {
+    if (Q_UNLIKELY(!(d->display & QDateTimeParser::DateSectionMask))) {
         qWarning("QDateTimeEdit::setCalendarWidget: no date sections specified");
         return;
     }
@@ -873,7 +879,7 @@ void QDateTimeEdit::setDisplayFormat(const QString &format)
             d->displayFormat.clear();
             for (int i=d->sectionNodes.size() - 1; i>=0; --i) {
                 d->displayFormat += d->separators.at(i + 1);
-                d->displayFormat += d->sectionFormat(i);
+                d->displayFormat += d->sectionNode(i).format();
             }
             d->displayFormat += d->separators.at(0);
             d->separators = reverse(d->separators);
@@ -1668,12 +1674,7 @@ QDateTimeEditPrivate::QDateTimeEditPrivate()
     cachedDay = -1;
     currentSectionIndex = FirstSectionIndex;
 
-    first.type = FirstSection;
-    last.type = LastSection;
-    none.type = NoSection;
     first.pos = 0;
-    last.pos = -1;
-    none.pos = -1;
     sections = 0;
     calendarPopup = false;
     minimum = QDATETIMEEDIT_COMPAT_DATETIME_MIN;
@@ -1685,6 +1686,10 @@ QDateTimeEditPrivate::QDateTimeEditPrivate()
 #ifdef QT_KEYPAD_NAVIGATION
     focusOnButton = false;
 #endif
+}
+
+QDateTimeEditPrivate::~QDateTimeEditPrivate()
+{
 }
 
 void QDateTimeEditPrivate::updateTimeSpec()
@@ -1864,7 +1869,7 @@ void QDateTimeEditPrivate::clearSection(int index)
     const QSignalBlocker blocker(edit);
     QString t = edit->text();
     const int pos = sectionPos(index);
-    if (pos == -1) {
+    if (Q_UNLIKELY(pos == -1)) {
         qWarning("QDateTimeEdit: Internal error (%s:%d)", __FILE__, __LINE__);
         return;
     }
@@ -2043,7 +2048,7 @@ QDateTime QDateTimeEditPrivate::stepBy(int sectionIndex, int steps, bool test) c
             // doesn't mean that we hit the floor in the other
             if (steps > 0) {
                 setDigit(v, sectionIndex, min);
-                if (!(sn.type & (DaySection|DayOfWeekSectionShort|DayOfWeekSectionLong)) && sections & DateSectionMask) {
+                if (!(sn.type & DaySectionMask) && sections & DateSectionMask) {
                     const int daysInMonth = v.date().daysInMonth();
                     if (v.date().day() < oldDay && v.date().day() < daysInMonth) {
                         const int adds = qMin(oldDay, daysInMonth);
@@ -2058,7 +2063,7 @@ QDateTime QDateTimeEditPrivate::stepBy(int sectionIndex, int steps, bool test) c
                 }
             } else {
                 setDigit(v, sectionIndex, max);
-                if (!(sn.type & (DaySection|DayOfWeekSectionShort|DayOfWeekSectionLong)) && sections & DateSectionMask) {
+                if (!(sn.type & DaySectionMask) && sections & DateSectionMask) {
                     const int daysInMonth = v.date().daysInMonth();
                     if (v.date().day() < oldDay && v.date().day() < daysInMonth) {
                         const int adds = qMin(oldDay, daysInMonth);
@@ -2076,7 +2081,7 @@ QDateTime QDateTimeEditPrivate::stepBy(int sectionIndex, int steps, bool test) c
             setDigit(v, sectionIndex, (steps > 0 ? localmax : localmin));
         }
     }
-    if (!test && oldDay != v.date().day() && !(sn.type & (DaySection|DayOfWeekSectionShort|DayOfWeekSectionLong))) {
+    if (!test && oldDay != v.date().day() && !(sn.type & DaySectionMask)) {
         // this should not happen when called from stepEnabled
         cachedDay = qMax<int>(oldDay, cachedDay);
     }
@@ -2210,9 +2215,9 @@ void QDateTimeEditPrivate::_q_editorCursorPositionChanged(int oldpos, int newpos
         }
     }
 
-    QDTEDEBUG << "currentSectionIndex is set to" << sectionName(sectionType(s))
+    QDTEDEBUG << "currentSectionIndex is set to" << sectionNode(s).name()
               << oldpos << newpos
-              << "was" << sectionName(sectionType(currentSectionIndex));
+              << "was" << sectionNode(currentSectionIndex).name();
 
     currentSectionIndex = s;
     Q_ASSERT_X(currentSectionIndex < sectionNodes.size(),
@@ -2268,15 +2273,15 @@ QDateTimeEdit::Sections QDateTimeEditPrivate::convertSections(QDateTimeParser::S
         ret |= QDateTimeEdit::SecondSection;
     if (s & QDateTimeParser::MinuteSection)
         ret |= QDateTimeEdit::MinuteSection;
-    if (s & (QDateTimeParser::Hour24Section|QDateTimeParser::Hour12Section))
+    if (s & (QDateTimeParser::HourSectionMask))
         ret |= QDateTimeEdit::HourSection;
     if (s & QDateTimeParser::AmPmSection)
         ret |= QDateTimeEdit::AmPmSection;
-    if (s & (QDateTimeParser::DaySection|QDateTimeParser::DayOfWeekSectionShort|QDateTimeParser::DayOfWeekSectionLong))
+    if (s & (QDateTimeParser::DaySectionMask))
         ret |= QDateTimeEdit::DaySection;
     if (s & QDateTimeParser::MonthSection)
         ret |= QDateTimeEdit::MonthSection;
-    if (s & (QDateTimeParser::YearSection|QDateTimeParser::YearSection2Digits))
+    if (s & (QDateTimeParser::YearSectionMask))
         ret |= QDateTimeEdit::YearSection;
 
     return ret;
@@ -2655,7 +2660,7 @@ bool QCalendarPopup::event(QEvent *event)
 {
     if (event->type() == QEvent::KeyPress) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
-        if (keyEvent->key()== Qt::Key_Escape)
+        if (keyEvent->matches(QKeySequence::Cancel))
             dateChanged = false;
     }
     return QWidget::event(event);
@@ -2682,5 +2687,6 @@ void QCalendarPopup::hideEvent(QHideEvent *)
 
 QT_END_NAMESPACE
 #include "moc_qdatetimeedit.cpp"
+#include "moc_qdatetimeedit_p.cpp"
 
 #endif // QT_NO_DATETIMEEDIT

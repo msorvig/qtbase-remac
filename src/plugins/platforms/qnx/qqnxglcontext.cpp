@@ -1,31 +1,37 @@
 /***************************************************************************
 **
 ** Copyright (C) 2011 - 2013 BlackBerry Limited. All rights reserved.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -56,12 +62,12 @@ QQnxGLContext::QQnxGLContext(QOpenGLContext *glContext)
       m_glContext(glContext),
       m_currentEglSurface(EGL_NO_SURFACE)
 {
-    qGLContextDebug() << Q_FUNC_INFO;
+    qGLContextDebug();
     QSurfaceFormat format = m_glContext->format();
 
     // Set current rendering API
     EGLBoolean eglResult = eglBindAPI(EGL_OPENGL_ES_API);
-    if (eglResult != EGL_TRUE)
+    if (Q_UNLIKELY(eglResult != EGL_TRUE))
         qFatal("QQNX: failed to set EGL API, err=%d", eglGetError());
 
     // Get colour channel sizes from window format
@@ -113,7 +119,7 @@ QQnxGLContext::QQnxGLContext(QOpenGLContext *glContext)
 
     // Select EGL config based on requested window format
     m_eglConfig = q_configFromGLFormat(ms_eglDisplay, format);
-    if (m_eglConfig == 0)
+    if (Q_UNLIKELY(m_eglConfig == 0))
         qFatal("QQnxGLContext: failed to find EGL config");
 
     QQnxGLContext *glShareContext = static_cast<QQnxGLContext*>(m_glContext->shareHandle());
@@ -121,7 +127,7 @@ QQnxGLContext::QQnxGLContext(QOpenGLContext *glContext)
 
     m_eglContext = eglCreateContext(ms_eglDisplay, m_eglConfig, m_eglShareContext,
                                     contextAttrs(format));
-    if (m_eglContext == EGL_NO_CONTEXT) {
+    if (Q_UNLIKELY(m_eglContext == EGL_NO_CONTEXT)) {
         checkEGLError("eglCreateContext");
         qFatal("QQnxGLContext: failed to create EGL context, err=%d", eglGetError());
     }
@@ -132,7 +138,7 @@ QQnxGLContext::QQnxGLContext(QOpenGLContext *glContext)
 
 QQnxGLContext::~QQnxGLContext()
 {
-    qGLContextDebug() << Q_FUNC_INFO;
+    qGLContextDebug();
 
     // Cleanup EGL context if it exists
     if (m_eglContext != EGL_NO_CONTEXT)
@@ -166,17 +172,17 @@ EGLenum QQnxGLContext::checkEGLError(const char *msg)
 
 void QQnxGLContext::initializeContext()
 {
-    qGLContextDebug() << Q_FUNC_INFO;
+    qGLContextDebug();
 
     // Initialize connection to EGL
     ms_eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (ms_eglDisplay == EGL_NO_DISPLAY) {
+    if (Q_UNLIKELY(ms_eglDisplay == EGL_NO_DISPLAY)) {
         checkEGLError("eglGetDisplay");
         qFatal("QQnxGLContext: failed to obtain EGL display");
     }
 
     EGLBoolean eglResult = eglInitialize(ms_eglDisplay, 0, 0);
-    if (eglResult != EGL_TRUE) {
+    if (Q_UNLIKELY(eglResult != EGL_TRUE)) {
         checkEGLError("eglInitialize");
         qFatal("QQnxGLContext: failed to initialize EGL display, err=%d", eglGetError());
     }
@@ -184,7 +190,7 @@ void QQnxGLContext::initializeContext()
 
 void QQnxGLContext::shutdownContext()
 {
-    qGLContextDebug() << Q_FUNC_INFO;
+    qGLContextDebug();
 
     // Close connection to EGL
     eglTerminate(ms_eglDisplay);
@@ -192,13 +198,13 @@ void QQnxGLContext::shutdownContext()
 
 bool QQnxGLContext::makeCurrent(QPlatformSurface *surface)
 {
-    qGLContextDebug() << Q_FUNC_INFO;
+    qGLContextDebug();
 
     Q_ASSERT(surface->surface()->surfaceType() == QSurface::OpenGLSurface);
 
     // Set current rendering API
     EGLBoolean eglResult = eglBindAPI(EGL_OPENGL_ES_API);
-    if (eglResult != EGL_TRUE)
+    if (Q_UNLIKELY(eglResult != EGL_TRUE))
         qFatal("QQnxGLContext: failed to set EGL API, err=%d", eglGetError());
 
     QQnxEglWindow *platformWindow = dynamic_cast<QQnxEglWindow*>(surface);
@@ -223,22 +229,22 @@ bool QQnxGLContext::makeCurrent(QPlatformSurface *surface)
 
 void QQnxGLContext::doneCurrent()
 {
-    qGLContextDebug() << Q_FUNC_INFO;
+    qGLContextDebug();
 
     // set current rendering API
     EGLBoolean eglResult = eglBindAPI(EGL_OPENGL_ES_API);
-    if (eglResult != EGL_TRUE)
+    if (Q_UNLIKELY(eglResult != EGL_TRUE))
         qFatal("QQNX: failed to set EGL API, err=%d", eglGetError());
 
     // clear curent EGL context and unbind EGL surface
     eglResult = eglMakeCurrent(ms_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-    if (eglResult != EGL_TRUE)
+    if (Q_UNLIKELY(eglResult != EGL_TRUE))
         qFatal("QQNX: failed to clear current EGL context, err=%d", eglGetError());
 }
 
 void QQnxGLContext::swapBuffers(QPlatformSurface *surface)
 {
-    qGLContextDebug() << Q_FUNC_INFO;
+    qGLContextDebug();
     QQnxEglWindow *platformWindow = dynamic_cast<QQnxEglWindow*>(surface);
     if (!platformWindow)
         return;
@@ -246,17 +252,17 @@ void QQnxGLContext::swapBuffers(QPlatformSurface *surface)
     platformWindow->swapEGLBuffers();
 }
 
-QFunctionPointer QQnxGLContext::getProcAddress(const QByteArray &procName)
+QFunctionPointer QQnxGLContext::getProcAddress(const char *procName)
 {
-    qGLContextDebug() << Q_FUNC_INFO;
+    qGLContextDebug();
 
     // Set current rendering API
     EGLBoolean eglResult = eglBindAPI(EGL_OPENGL_ES_API);
-    if (eglResult != EGL_TRUE)
+    if (Q_UNLIKELY(eglResult != EGL_TRUE))
         qFatal("QQNX: failed to set EGL API, err=%d", eglGetError());
 
     // Lookup EGL extension function pointer
-    return static_cast<QFunctionPointer>(eglGetProcAddress(procName.constData()));
+    return static_cast<QFunctionPointer>(eglGetProcAddress(procName));
 }
 
 bool QQnxGLContext::isSharing() const
@@ -270,7 +276,7 @@ EGLDisplay QQnxGLContext::getEglDisplay() {
 
 EGLint *QQnxGLContext::contextAttrs(const QSurfaceFormat &format)
 {
-    qGLContextDebug() << Q_FUNC_INFO;
+    qGLContextDebug();
 
     // Choose EGL settings based on OpenGL version
 #if defined(QT_OPENGL_ES_2)

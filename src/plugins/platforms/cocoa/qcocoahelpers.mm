@@ -1,35 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
+
+#include <qpa/qplatformtheme.h>
 
 #include "qcocoahelpers.h"
 
@@ -46,7 +54,30 @@
 
 #include <algorithm>
 
+#include <Carbon/Carbon.h>
+
+@interface NSGraphicsContext (QtAdditions)
+
++ (NSGraphicsContext *)qt_graphicsContextWithCGContext:(CGContextRef)graphicsPort flipped:(BOOL)initialFlippedState;
+
+@end
+
+@implementation NSGraphicsContext (QtAdditions)
+
++ (NSGraphicsContext *)qt_graphicsContextWithCGContext:(CGContextRef)graphicsPort flipped:(BOOL)initialFlippedState
+{
+#if QT_MAC_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_10_10, __IPHONE_NA)
+    if (QSysInfo::MacintoshVersion >= QSysInfo::MV_10_10)
+        return [self graphicsContextWithCGContext:graphicsPort flipped:initialFlippedState];
+#endif
+    return [self graphicsContextWithGraphicsPort:graphicsPort flipped:initialFlippedState];
+}
+
+@end
+
 QT_BEGIN_NAMESPACE
+
+Q_LOGGING_CATEGORY(lcQpaCocoaWindow, "qt.qpa.cocoa.window");
 
 //
 // Conversion Functions
@@ -171,15 +202,9 @@ NSImage *qt_mac_create_nsimage(const QIcon &icon)
 HIMutableShapeRef qt_mac_QRegionToHIMutableShape(const QRegion &region)
 {
     HIMutableShapeRef shape = HIShapeCreateMutable();
-    QVector<QRect> rects = region.rects();
-    if (!rects.isEmpty()) {
-        int n = rects.count();
-        const QRect *qt_r = rects.constData();
-        while (n--) {
-            CGRect cgRect = CGRectMake(qt_r->x(), qt_r->y(), qt_r->width(), qt_r->height());
-            HIShapeUnionWithRect(shape, &cgRect);
-            ++qt_r;
-        }
+    for (const QRect &rect : region) {
+        CGRect cgRect = CGRectMake(rect.x(), rect.y(), rect.width(), rect.height());
+        HIShapeUnionWithRect(shape, &cgRect);
     }
     return shape;
 }
@@ -241,141 +266,123 @@ QColor qt_mac_toQColor(CGColorRef color)
     return qtColor;
 }
 
-// Use this method to keep all the information in the TextSegment. As long as it is ordered
-// we are in OK shape, and we can influence that ourselves.
-struct KeyPair
+QBrush qt_mac_toQBrush(CGColorRef color)
 {
-    QChar cocoaKey;
-    Qt::Key qtKey;
-};
-
-bool operator==(const KeyPair &entry, QChar qchar)
-{
-    return entry.cocoaKey == qchar;
-}
-
-bool operator<(const KeyPair &entry, QChar qchar)
-{
-    return entry.cocoaKey < qchar;
-}
-
-bool operator<(QChar qchar, const KeyPair &entry)
-{
-    return qchar < entry.cocoaKey;
-}
-
-bool operator<(const Qt::Key &key, const KeyPair &entry)
-{
-    return key < entry.qtKey;
-}
-
-bool operator<(const KeyPair &entry, const Qt::Key &key)
-{
-    return entry.qtKey < key;
-}
-
-struct qtKey2CocoaKeySortLessThan
-{
-    typedef bool result_type;
-    Q_DECL_CONSTEXPR result_type operator()(const KeyPair &entry1, const KeyPair &entry2) const Q_DECL_NOTHROW
-    {
-        return entry1.qtKey < entry2.qtKey;
+    QBrush qtBrush;
+    CGColorSpaceModel model = CGColorSpaceGetModel(CGColorGetColorSpace(color));
+    if (model == kCGColorSpaceModelPattern) {
+        // Colorspace we can't deal with; the color is drawn directly using a callback.
+        qWarning("Qt: qt_mac_toQBrush: cannot convert from colorspace model: %d", model);
+        Q_ASSERT(false);
+    } else {
+        qtBrush.setStyle(Qt::SolidPattern);
+        qtBrush.setColor(qt_mac_toQColor(color));
     }
-};
-
-static const int NumEntries = 59;
-static const KeyPair entries[NumEntries] = {
-    { NSEnterCharacter, Qt::Key_Enter },
-    { NSBackspaceCharacter, Qt::Key_Backspace },
-    { NSTabCharacter, Qt::Key_Tab },
-    { NSNewlineCharacter, Qt::Key_Return },
-    { NSCarriageReturnCharacter, Qt::Key_Return },
-    { NSBackTabCharacter, Qt::Key_Backtab },
-    { kEscapeCharCode, Qt::Key_Escape },
-    // Cocoa sends us delete when pressing backspace!
-    // (NB when we reverse this list in qtKey2CocoaKey, there
-    // will be two indices of Qt::Key_Backspace. But is seems to work
-    // ok for menu shortcuts (which uses that function):
-    { NSDeleteCharacter, Qt::Key_Backspace },
-    { NSUpArrowFunctionKey, Qt::Key_Up },
-    { NSDownArrowFunctionKey, Qt::Key_Down },
-    { NSLeftArrowFunctionKey, Qt::Key_Left },
-    { NSRightArrowFunctionKey, Qt::Key_Right },
-    { NSF1FunctionKey, Qt::Key_F1 },
-    { NSF2FunctionKey, Qt::Key_F2 },
-    { NSF3FunctionKey, Qt::Key_F3 },
-    { NSF4FunctionKey, Qt::Key_F4 },
-    { NSF5FunctionKey, Qt::Key_F5 },
-    { NSF6FunctionKey, Qt::Key_F6 },
-    { NSF7FunctionKey, Qt::Key_F7 },
-    { NSF8FunctionKey, Qt::Key_F8 },
-    { NSF9FunctionKey, Qt::Key_F9 },
-    { NSF10FunctionKey, Qt::Key_F10 },
-    { NSF11FunctionKey, Qt::Key_F11 },
-    { NSF12FunctionKey, Qt::Key_F12 },
-    { NSF13FunctionKey, Qt::Key_F13 },
-    { NSF14FunctionKey, Qt::Key_F14 },
-    { NSF15FunctionKey, Qt::Key_F15 },
-    { NSF16FunctionKey, Qt::Key_F16 },
-    { NSF17FunctionKey, Qt::Key_F17 },
-    { NSF18FunctionKey, Qt::Key_F18 },
-    { NSF19FunctionKey, Qt::Key_F19 },
-    { NSF20FunctionKey, Qt::Key_F20 },
-    { NSF21FunctionKey, Qt::Key_F21 },
-    { NSF22FunctionKey, Qt::Key_F22 },
-    { NSF23FunctionKey, Qt::Key_F23 },
-    { NSF24FunctionKey, Qt::Key_F24 },
-    { NSF25FunctionKey, Qt::Key_F25 },
-    { NSF26FunctionKey, Qt::Key_F26 },
-    { NSF27FunctionKey, Qt::Key_F27 },
-    { NSF28FunctionKey, Qt::Key_F28 },
-    { NSF29FunctionKey, Qt::Key_F29 },
-    { NSF30FunctionKey, Qt::Key_F30 },
-    { NSF31FunctionKey, Qt::Key_F31 },
-    { NSF32FunctionKey, Qt::Key_F32 },
-    { NSF33FunctionKey, Qt::Key_F33 },
-    { NSF34FunctionKey, Qt::Key_F34 },
-    { NSF35FunctionKey, Qt::Key_F35 },
-    { NSInsertFunctionKey, Qt::Key_Insert },
-    { NSDeleteFunctionKey, Qt::Key_Delete },
-    { NSHomeFunctionKey, Qt::Key_Home },
-    { NSEndFunctionKey, Qt::Key_End },
-    { NSPageUpFunctionKey, Qt::Key_PageUp },
-    { NSPageDownFunctionKey, Qt::Key_PageDown },
-    { NSPrintScreenFunctionKey, Qt::Key_Print },
-    { NSScrollLockFunctionKey, Qt::Key_ScrollLock },
-    { NSPauseFunctionKey, Qt::Key_Pause },
-    { NSSysReqFunctionKey, Qt::Key_SysReq },
-    { NSMenuFunctionKey, Qt::Key_Menu },
-    { NSHelpFunctionKey, Qt::Key_Help },
-};
-static const KeyPair * const end = entries + NumEntries;
-
-QChar qt_mac_qtKey2CocoaKey(Qt::Key key)
-{
-    // The first time this function is called, create a reverse
-    // lookup table sorted on Qt Key rather than Cocoa key:
-    static QVector<KeyPair> rev_entries(NumEntries);
-    static bool mustInit = true;
-    if (mustInit){
-        mustInit = false;
-        for (int i=0; i<NumEntries; ++i)
-            rev_entries[i] = entries[i];
-        std::sort(rev_entries.begin(), rev_entries.end(), qtKey2CocoaKeySortLessThan());
-    }
-    const QVector<KeyPair>::iterator i
-            = std::lower_bound(rev_entries.begin(), rev_entries.end(), key);
-    if ((i == rev_entries.end()) || (key < *i))
-        return QChar();
-    return i->cocoaKey;
+    return qtBrush;
 }
 
-Qt::Key qt_mac_cocoaKey2QtKey(QChar keyCode)
+static bool qt_mac_isSystemColorOrInstance(const NSColor *color, NSString *colorNameComponent, NSString *className)
 {
-    const KeyPair *i = std::lower_bound(entries, end, keyCode);
-    if ((i == end) || (keyCode < *i))
-        return Qt::Key(keyCode.toUpper().unicode());
-    return i->qtKey;
+    // We specifically do not want isKindOfClass: here
+    if ([color.className isEqualToString:className]) // NSPatternColorSpace
+        return true;
+    if ([color.catalogNameComponent isEqualToString:@"System"] &&
+        [color.colorNameComponent isEqualToString:colorNameComponent] &&
+        [color.colorSpaceName isEqualToString:NSNamedColorSpace])
+        return true;
+    return false;
+}
+
+QBrush qt_mac_toQBrush(const NSColor *color, QPalette::ColorGroup colorGroup)
+{
+    QBrush qtBrush;
+
+    // QTBUG-49773: This calls NSDrawMenuItemBackground to render a 1 by n gradient; could use HITheme
+    if ([color.className isEqualToString:@"NSMenuItemHighlightColor"]) {
+        qWarning("Qt: qt_mac_toQBrush: cannot convert from NSMenuItemHighlightColor");
+        return qtBrush;
+    }
+
+    // Not a catalog color or a manifestation of System.windowBackgroundColor;
+    // only retrieved from NSWindow.backgroundColor directly
+    if ([color.className isEqualToString:@"NSMetalPatternColor"]) {
+        // NSTexturedBackgroundWindowMask, could theoretically handle this without private API by
+        // creating a window with the appropriate properties and then calling NSWindow.backgroundColor.patternImage,
+        // which returns a texture sized 1 by (window height, including frame), backed by a CGPattern
+        // which follows the window key state... probably need to allow QBrush to store a function pointer
+        // like CGPattern does
+        qWarning("Qt: qt_mac_toQBrush: cannot convert from NSMetalPatternColor");
+        return qtBrush;
+    }
+
+    // No public API to get these colors/stops;
+    // both accurately obtained through runtime object inspection on OS X 10.11
+    // (the NSColor object has NSGradient i-vars for both color groups)
+    if (qt_mac_isSystemColorOrInstance(color, @"_sourceListBackgroundColor", @"NSSourceListBackgroundColor")) {
+        QLinearGradient gradient;
+        if (colorGroup == QPalette::Active) {
+            gradient.setColorAt(0, QColor(233, 237, 242));
+            gradient.setColorAt(0.5, QColor(225, 229, 235));
+            gradient.setColorAt(1, QColor(209, 216, 224));
+        } else {
+            gradient.setColorAt(0, QColor(248, 248, 248));
+            gradient.setColorAt(0.5, QColor(240, 240, 240));
+            gradient.setColorAt(1, QColor(235, 235, 235));
+        }
+        return QBrush(gradient);
+    }
+
+    // A couple colors are special... they are actually instances of NSGradientPatternColor, which
+    // override set/setFill/setStroke to instead initialize an internal color
+    // ([NSColor colorWithCalibratedWhite:0.909804 alpha:1.000000]) while still returning the
+    // ruled lines pattern image (from OS X 10.4) to the user from -[NSColor patternImage]
+    // (and providing no public API to get the underlying color without this insanity)
+    if (qt_mac_isSystemColorOrInstance(color, @"controlColor", @"NSGradientPatternColor") ||
+        qt_mac_isSystemColorOrInstance(color, @"windowBackgroundColor", @"NSGradientPatternColor")) {
+        static QColor newColor;
+        if (!newColor.isValid()) {
+#if QT_MAC_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_10_8, __IPHONE_NA)
+            if (QSysInfo::MacintoshVersion >= QSysInfo::MV_10_8) {
+                newColor = qt_mac_toQColor(color.CGColor);
+            } else
+#endif
+            {
+                NSBitmapImageRep *offscreenRep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nil
+                                                                                         pixelsWide:1
+                                                                                         pixelsHigh:1
+                                                                                      bitsPerSample:8
+                                                                                    samplesPerPixel:4
+                                                                                           hasAlpha:YES
+                                                                                           isPlanar:NO
+                                                                                     colorSpaceName:NSDeviceRGBColorSpace
+                                                                                        bytesPerRow:4
+                                                                                       bitsPerPixel:32];
+                [NSGraphicsContext saveGraphicsState];
+                [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:offscreenRep]];
+                NSEraseRect(NSMakeRect(0, 0, 1, 1));
+                [color drawSwatchInRect:NSMakeRect(0, 0, 1, 1)];
+                [NSGraphicsContext restoreGraphicsState];
+                NSUInteger pixel[4];
+                [offscreenRep getPixel:pixel atX:0 y:0];
+                [offscreenRep release];
+                newColor = QColor(pixel[0], pixel[1], pixel[2], pixel[3]);
+            }
+        }
+
+        qtBrush.setStyle(Qt::SolidPattern);
+        qtBrush.setColor(newColor);
+        return qtBrush;
+    }
+
+    if (NSColor *patternColor = [color colorUsingColorSpaceName:NSPatternColorSpace]) {
+        NSImage *patternImage = patternColor.patternImage;
+        const QSizeF sz(patternImage.size.width, patternImage.size.height);
+        qtBrush.setTexture(qt_mac_toQPixmap(patternImage, sz)); // QTBUG-49774
+    } else {
+        qtBrush.setStyle(Qt::SolidPattern);
+        qtBrush.setColor(qt_mac_toQColor(color));
+    }
+    return qtBrush;
 }
 
 struct dndenum_mapper
@@ -444,88 +451,49 @@ Qt::DropActions qt_mac_mapNSDragOperations(NSDragOperation nsActions)
 // Misc
 //
 
-// Changes the process type for this process to kProcessTransformToForegroundApplication,
+// Sets the activation policy for this process to NSApplicationActivationPolicyRegular,
 // unless either LSUIElement or LSBackgroundOnly is set in the Info.plist.
 void qt_mac_transformProccessToForegroundApplication()
 {
-    ProcessSerialNumber psn;
-    if (GetCurrentProcess(&psn) == noErr) {
-        bool forceTransform = true;
-        CFTypeRef value = CFBundleGetValueForInfoDictionaryKey(CFBundleGetMainBundle(),
-                                                               CFSTR("LSUIElement"));
+    bool forceTransform = true;
+    CFTypeRef value = CFBundleGetValueForInfoDictionaryKey(CFBundleGetMainBundle(),
+                                                           CFSTR("LSUIElement"));
+    if (value) {
+        CFTypeID valueType = CFGetTypeID(value);
+        // Officially it's supposed to be a string, a boolean makes sense, so we'll check.
+        // A number less so, but OK.
+        if (valueType == CFStringGetTypeID())
+            forceTransform = !(QCFString::toQString(static_cast<CFStringRef>(value)).toInt());
+        else if (valueType == CFBooleanGetTypeID())
+            forceTransform = !CFBooleanGetValue(static_cast<CFBooleanRef>(value));
+        else if (valueType == CFNumberGetTypeID()) {
+            int valueAsInt;
+            CFNumberGetValue(static_cast<CFNumberRef>(value), kCFNumberIntType, &valueAsInt);
+            forceTransform = !valueAsInt;
+        }
+    }
+
+    if (forceTransform) {
+        value = CFBundleGetValueForInfoDictionaryKey(CFBundleGetMainBundle(),
+                                                     CFSTR("LSBackgroundOnly"));
         if (value) {
             CFTypeID valueType = CFGetTypeID(value);
-            // Officially it's supposed to be a string, a boolean makes sense, so we'll check.
-            // A number less so, but OK.
-            if (valueType == CFStringGetTypeID())
-                forceTransform = !(QCFString::toQString(static_cast<CFStringRef>(value)).toInt());
-            else if (valueType == CFBooleanGetTypeID())
+            if (valueType == CFBooleanGetTypeID())
                 forceTransform = !CFBooleanGetValue(static_cast<CFBooleanRef>(value));
+            else if (valueType == CFStringGetTypeID())
+                forceTransform = !(QCFString::toQString(static_cast<CFStringRef>(value)).toInt());
             else if (valueType == CFNumberGetTypeID()) {
                 int valueAsInt;
                 CFNumberGetValue(static_cast<CFNumberRef>(value), kCFNumberIntType, &valueAsInt);
                 forceTransform = !valueAsInt;
             }
         }
+    }
 
-        if (forceTransform) {
-            value = CFBundleGetValueForInfoDictionaryKey(CFBundleGetMainBundle(),
-                                                         CFSTR("LSBackgroundOnly"));
-            if (value) {
-                CFTypeID valueType = CFGetTypeID(value);
-                if (valueType == CFBooleanGetTypeID())
-                    forceTransform = !CFBooleanGetValue(static_cast<CFBooleanRef>(value));
-                else if (valueType == CFStringGetTypeID())
-                    forceTransform = !(QCFString::toQString(static_cast<CFStringRef>(value)).toInt());
-                else if (valueType == CFNumberGetTypeID()) {
-                    int valueAsInt;
-                    CFNumberGetValue(static_cast<CFNumberRef>(value), kCFNumberIntType, &valueAsInt);
-                    forceTransform = !valueAsInt;
-                }
-            }
-        }
-
-        if (forceTransform) {
-            TransformProcessType(&psn, kProcessTransformToForegroundApplication);
-        }
+    if (forceTransform) {
+        [[NSApplication sharedApplication] setActivationPolicy:NSApplicationActivationPolicyRegular];
     }
 }
-
-QString qt_mac_removeMnemonics(const QString &original)
-{
-    QString returnText(original.size(), 0);
-    int finalDest = 0;
-    int currPos = 0;
-    int l = original.length();
-    while (l) {
-        if (original.at(currPos) == QLatin1Char('&')
-            && (l == 1 || original.at(currPos + 1) != QLatin1Char('&'))) {
-            ++currPos;
-            --l;
-            if (l == 0)
-                break;
-        } else if (original.at(currPos) == QLatin1Char('(') && l >= 4 &&
-                   original.at(currPos + 1) == QLatin1Char('&') &&
-                   original.at(currPos + 2) != QLatin1Char('&') &&
-                   original.at(currPos + 3) == QLatin1Char(')')) {
-            /* remove mnemonics its format is "\s*(&X)" */
-            int n = 0;
-            while (finalDest > n && returnText.at(finalDest - n - 1).isSpace())
-                ++n;
-            finalDest -= n;
-            currPos += 4;
-            l -= 4;
-            continue;
-        }
-        returnText[finalDest] = original.at(currPos);
-        ++currPos;
-        ++finalDest;
-        --l;
-    }
-    returnText.truncate(finalDest);
-    return returnText;
-}
-
 static CGColorSpaceRef m_genericColorSpace = 0;
 static QHash<CGDirectDisplayID, CGColorSpaceRef> m_displayColorSpaceHash;
 static bool m_postRoutineRegistered = false;
@@ -609,6 +577,7 @@ void qt_mac_cleanUpMacColorSpaces()
 CGColorSpaceRef qt_mac_colorSpaceForDeviceType(const QPaintDevice *paintDevice)
 {
 #ifdef QT_NO_WIDGETS
+    Q_UNUSED(paintDevice)
     return qt_mac_displayColorSpace(0);
 #else
     bool isWidget = (paintDevice->devType() == QInternal::Widget);
@@ -627,7 +596,7 @@ QString qt_mac_applicationName()
     if (appName.isEmpty()) {
         QString arg0 = QGuiApplicationPrivate::instance()->appName();
         if (arg0.contains("/")) {
-            QStringList parts = arg0.split("/");
+            QStringList parts = arg0.split(QLatin1Char('/'));
             appName = parts.at(parts.count() - 1);
         } else {
             appName = arg0;
@@ -639,10 +608,14 @@ QString qt_mac_applicationName()
 int qt_mac_mainScreenHeight()
 {
     QMacAutoReleasePool pool;
-    // The first screen in the screens array is documented
-    // to have the (0,0) origin.
-    NSRect screenFrame = [[[NSScreen screens] firstObject] frame];
-    return screenFrame.size.height;
+    NSArray *screens = [NSScreen screens];
+    if ([screens count] > 0) {
+        // The first screen in the screens array is documented
+        // to have the (0,0) origin.
+        NSRect screenFrame = [[screens objectAtIndex: 0] frame];
+        return screenFrame.size.height;
+    }
+    return 0;
 }
 
 int qt_mac_flipYCoordinate(int y)
@@ -781,7 +754,7 @@ bool qt_mac_execute_apple_script(const QString &script, AEDesc *ret)
 
 QString qt_mac_removeAmpersandEscapes(QString s)
 {
-    return qt_mac_removeMnemonics(s).trimmed();
+    return QPlatformTheme::removeMnemonics(s).trimmed();
 }
 
 /*! \internal
@@ -806,11 +779,11 @@ CGContextRef qt_mac_cg_context(QPaintDevice *pdev)
         if (data && data->classId() == QPlatformPixmap::RasterClass) {
             image = data->buffer();
         } else {
-            qDebug() << "qt_mac_cg_context: Unsupported pixmap class";
+            qDebug("qt_mac_cg_context: Unsupported pixmap class");
         }
     } else if (pdev->devType() == QInternal::Widget) {
         // TODO test: image = static_cast<QImage *>(static_cast<const QWidget *>(pdev)->backingStore()->paintDevice());
-        qDebug() << "qt_mac_cg_context: not implemented: Widget class";
+        qDebug("qt_mac_cg_context: not implemented: Widget class");
     }
 
     if (!image)
@@ -825,6 +798,26 @@ CGContextRef qt_mac_cg_context(QPaintDevice *pdev)
     CGContextTranslateCTM(ret, 0, image->height());
     CGContextScaleCTM(ret, 1, -1);
     return ret;
+}
+
+QPixmap qt_mac_toQPixmap(const NSImage *image, const QSizeF &size)
+{
+    const NSSize pixmapSize = NSMakeSize(size.width(), size.height());
+    QPixmap pixmap(pixmapSize.width, pixmapSize.height);
+    pixmap.fill(Qt::transparent);
+    [image setSize:pixmapSize];
+    const NSRect iconRect = NSMakeRect(0, 0, pixmapSize.width, pixmapSize.height);
+    QMacCGContext ctx(&pixmap);
+    if (!ctx)
+        return QPixmap();
+    NSGraphicsContext *gc = [NSGraphicsContext qt_graphicsContextWithCGContext:ctx flipped:YES];
+    if (!gc)
+        return QPixmap();
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:gc];
+    [image drawInRect:iconRect fromRect:iconRect operation:NSCompositeSourceOver fraction:1.0 respectFlipped:YES hints:nil];
+    [NSGraphicsContext restoreGraphicsState];
+    return pixmap;
 }
 
 QImage qt_mac_toQImage(CGImageRef image)

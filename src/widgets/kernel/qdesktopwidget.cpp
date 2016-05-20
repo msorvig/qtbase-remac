@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,6 +42,7 @@
 #include "qdesktopwidget_p.h"
 #include "qscreen.h"
 #include "qwidget_p.h"
+#include "qwindow.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -48,7 +55,7 @@ int QDesktopScreenWidget::screenNumber() const
 
 const QRect QDesktopWidget::screenGeometry(const QWidget *widget) const
 {
-    if (!widget) {
+    if (Q_UNLIKELY(!widget)) {
         qWarning("QDesktopWidget::screenGeometry(): Attempt "
                  "to get the screen geometry of a null widget");
         return QRect();
@@ -61,7 +68,7 @@ const QRect QDesktopWidget::screenGeometry(const QWidget *widget) const
 
 const QRect QDesktopWidget::availableGeometry(const QWidget *widget) const
 {
-    if (!widget) {
+    if (Q_UNLIKELY(!widget)) {
         qWarning("QDesktopWidget::availableGeometry(): Attempt "
                  "to get the available geometry of a null widget");
         return QRect();
@@ -99,13 +106,18 @@ void QDesktopWidgetPrivate::_q_updateScreens()
 
     QRegion virtualGeometry;
 
-    // update the geometry of each screen widget, determine virtual geometry
-    // and emit change signals afterwards.
+    // update the geometry of each screen widget, determine virtual geometry,
+    // set the new screen for window handle and emit change signals afterwards.
     QList<int> changedScreens;
     for (int i = 0; i < screens.length(); i++) {
-        const QRect screenGeometry = screenList.at(i)->geometry();
-        if (screenGeometry != screens.at(i)->geometry()) {
-            screens.at(i)->setGeometry(screenGeometry);
+        QDesktopScreenWidget *screenWidget = screens.at(i);
+        QScreen *qScreen = screenList.at(i);
+        QWindow *winHandle = screenWidget->windowHandle();
+        if (winHandle && winHandle->screen() != qScreen)
+            winHandle->setScreen(qScreen);
+        const QRect screenGeometry = qScreen->geometry();
+        if (screenGeometry != screenWidget->geometry()) {
+            screenWidget->setGeometry(screenGeometry);
             changedScreens.push_back(i);
         }
         virtualGeometry += screenGeometry;
@@ -189,23 +201,69 @@ const QRect QDesktopWidget::screenGeometry(int screenNo) const
 int QDesktopWidget::screenNumber(const QWidget *w) const
 {
     if (!w)
-        return 0;
+        return primaryScreen();
 
+    const QList<QScreen *> allScreens = QGuiApplication::screens();
+    QList<QScreen *> screens = allScreens;
+    if (screens.isEmpty()) // This should never happen
+        return primaryScreen();
+
+    // If there is more than one virtual desktop
+    if (screens.count() != screens.constFirst()->virtualSiblings().count()) {
+        // Find the root widget, get a QScreen from it and use the
+        // virtual siblings for checking the window position.
+        const QWidget *root = w;
+        const QWidget *tmp = w;
+        while ((tmp = tmp->parentWidget()))
+            root = tmp;
+        const QWindow *winHandle = root->windowHandle();
+        if (winHandle) {
+            const QScreen *winScreen = winHandle->screen();
+            if (winScreen)
+                screens = winScreen->virtualSiblings();
+        }
+    }
+
+    // Get the screen number from window position using screen geometry
+    // and proper screens.
     QRect frame = w->frameGeometry();
     if (!w->isWindow())
         frame.moveTopLeft(w->mapToGlobal(QPoint(0, 0)));
-    const QPoint midpoint = (frame.topLeft() + frame.bottomRight()) / 2;
-    return screenNumber(midpoint);
+
+    QScreen *widgetScreen = Q_NULLPTR;
+    int largestArea = 0;
+    foreach (QScreen *screen, screens) {
+        QRect intersected = screen->geometry().intersected(frame);
+        int area = intersected.width() * intersected.height();
+        if (largestArea < area) {
+            widgetScreen = screen;
+            largestArea = area;
+        }
+    }
+    return allScreens.indexOf(widgetScreen);
 }
 
 int QDesktopWidget::screenNumber(const QPoint &p) const
 {
-    QList<QScreen *> screens = QGuiApplication::screens();
-
-    for (int i = 0; i < screens.size(); ++i)
-        if (screens.at(i)->geometry().contains(p))
-            return i;
-
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    if (!screens.isEmpty()) {
+        const QList<QScreen *> primaryScreens = screens.first()->virtualSiblings();
+        // Find the screen index on the primary virtual desktop first
+        foreach (QScreen *screen, primaryScreens) {
+            if (screen->geometry().contains(p))
+                return screens.indexOf(screen);
+        }
+        // If the screen index is not found on primary virtual desktop, find
+        // the screen index on all screens except the first which was for
+        // sure in the previous loop. Some other screens may repeat. Find
+        // only when there is more than one virtual desktop.
+        if (screens.count() != primaryScreens.count()) {
+            for (int i = 1; i < screens.size(); ++i) {
+                if (screens[i]->geometry().contains(p))
+                    return i;
+            }
+        }
+    }
     return primaryScreen(); //even better would be closest screen
 }
 
@@ -216,3 +274,4 @@ void QDesktopWidget::resizeEvent(QResizeEvent *)
 QT_END_NAMESPACE
 
 #include "moc_qdesktopwidget.cpp"
+#include "moc_qdesktopwidget_p.cpp"

@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -11,8 +11,8 @@
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
@@ -20,7 +20,7 @@
 ** Foundation and appearing in the file included in the packaging of
 ** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
-** will be met: http://www.gnu.org/copyleft/fdl.html.
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
@@ -257,8 +257,8 @@
 */
 
 /*!
-    \fn QSet::iterator QSet::erase(iterator pos)
-    \since 4.2
+    \fn QSet::iterator QSet::erase(const_iterator pos)
+    \since 5.7
 
     Removes the item at the iterator position \a pos from the set, and
     returns an iterator positioned at the next item in the set.
@@ -268,6 +268,12 @@
     while iterating, and won't affect the order of items in the set.
 
     \sa remove(), find()
+*/
+
+/*!
+    \fn QSet::iterator QSet::erase(iterator pos)
+    \since 4.2
+    \overload
 */
 
 /*! \fn QSet::const_iterator QSet::find(const T &value) const
@@ -384,6 +390,52 @@
     \sa constBegin(), end()
 */
 
+/*! \fn QSet::reverse_iterator QSet::rbegin()
+    \since 5.6
+
+    Returns a \l{STL-style iterators}{STL-style} reverse iterator pointing to the first
+    item in the set, in reverse order.
+
+    \sa begin(), crbegin(), rend()
+*/
+
+/*! \fn QSet::const_reverse_iterator QSet::rbegin() const
+    \since 5.6
+    \overload
+*/
+
+/*! \fn QSet::const_reverse_iterator QSet::crbegin() const
+    \since 5.6
+
+    Returns a const \l{STL-style iterators}{STL-style} reverse iterator pointing to the first
+    item in the set, in reverse order.
+
+    \sa begin(), rbegin(), rend()
+*/
+
+/*! \fn QSet::reverse_iterator QSet::rend()
+    \since 5.6
+
+    Returns a \l{STL-style iterators}{STL-style} reverse iterator pointing to one past
+    the last item in the set, in reverse order.
+
+    \sa end(), crend(), rbegin()
+*/
+
+/*! \fn QSet::const_reverse_iterator QSet::rend() const
+    \since 5.6
+    \overload
+*/
+
+/*! \fn QSet::const_reverse_iterator QSet::crend() const
+    \since 5.6
+
+    Returns a const \l{STL-style iterators}{STL-style} reverse iterator pointing to one
+    past the last item in the set, in reverse order.
+
+    \sa end(), rend(), rbegin()
+*/
+
 /*!
     \typedef QSet::Iterator
     \since 4.2
@@ -443,6 +495,38 @@
     \typedef QSet::value_type
 
     Typedef for T. Provided for STL compatibility.
+*/
+
+/*! \typedef QSet::reverse_iterator
+    \since 5.6
+
+    The QSet::reverse_iterator typedef provides an STL-style non-const
+    reverse iterator for QSet.
+
+    It is simply a typedef for \c{std::reverse_iterator<QSet::iterator>}.
+
+    \warning Iterators on implicitly shared containers do not work
+    exactly like STL-iterators. You should avoid copying a container
+    while iterators are active on that container. For more information,
+    read \l{Implicit sharing iterator problem}.
+
+    \sa QSet::rbegin(), QSet::rend(), QSet::const_reverse_iterator, QSet::iterator
+*/
+
+/*! \typedef QSet::const_reverse_iterator
+    \since 5.6
+
+    The QSet::const_reverse_iterator typedef provides an STL-style const
+    reverse iterator for QSet.
+
+    It is simply a typedef for \c{std::reverse_iterator<QSet::const_iterator>}.
+
+    \warning Iterators on implicitly shared containers do not work
+    exactly like STL-iterators. You should avoid copying a container
+    while iterators are active on that container. For more information,
+    read \l{Implicit sharing iterator problem}.
+
+    \sa QSet::rbegin(), QSet::rend(), QSet::reverse_iterator, QSet::const_iterator
 */
 
 /*!

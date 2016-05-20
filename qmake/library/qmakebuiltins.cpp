@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the qmake application of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -150,6 +145,7 @@ void QMakeEvaluator::initFunctionStatics()
         { "shell_quote", E_SHELL_QUOTE },
         { "getenv", E_GETENV },
     };
+    statics.expands.reserve((int)(sizeof(expandInits)/sizeof(expandInits[0])));
     for (unsigned i = 0; i < sizeof(expandInits)/sizeof(expandInits[0]); ++i)
         statics.expands.insert(ProKey(expandInits[i].name), expandInits[i].func);
 
@@ -191,6 +187,7 @@ void QMakeEvaluator::initFunctionStatics()
         { "touch", T_TOUCH },
         { "cache", T_CACHE },
     };
+    statics.functions.reserve((int)(sizeof(testInits)/sizeof(testInits[0])));
     for (unsigned i = 0; i < sizeof(testInits)/sizeof(testInits[0]); ++i)
         statics.functions.insert(ProKey(testInits[i].name), testInits[i].func);
 }
@@ -298,19 +295,26 @@ static void insertJsonKeyValue(const QString &key, const QStringList &values, Pr
 static void addJsonArray(const QJsonArray &array, const QString &keyPrefix, ProValueMap *map)
 {
     QStringList keys;
-    for (int i = 0; i < array.count(); ++i) {
-        keys.append(QString::number(i));
-        addJsonValue(array.at(i), keyPrefix + QString::number(i), map);
+    const int size = array.count();
+    keys.reserve(size);
+    for (int i = 0; i < size; ++i) {
+        const QString number = QString::number(i);
+        keys.append(number);
+        addJsonValue(array.at(i), keyPrefix + number, map);
     }
     insertJsonKeyValue(keyPrefix + QLatin1String("_KEYS_"), keys, map);
 }
 
 static void addJsonObject(const QJsonObject &object, const QString &keyPrefix, ProValueMap *map)
 {
-    foreach (const QString &key, object.keys())
-        addJsonValue(object.value(key), keyPrefix + key, map);
-
-    insertJsonKeyValue(keyPrefix + QLatin1String("_KEYS_"), object.keys(), map);
+    QStringList keys;
+    keys.reserve(object.size());
+    for (auto it = object.begin(), end = object.end(); it != end; ++it) {
+        const QString key = it.key();
+        keys.append(key);
+        addJsonValue(it.value(), keyPrefix + key, map);
+    }
+    insertJsonKeyValue(keyPrefix + QLatin1String("_KEYS_"), keys, map);
 }
 
 static void addJsonValue(const QJsonValue &value, const QString &keyPrefix, ProValueMap *map)
@@ -358,10 +362,10 @@ static QMakeEvaluator::VisitReturn parseJsonInto(const QByteArray &json, const Q
 
 QMakeEvaluator::VisitReturn
 QMakeEvaluator::writeFile(const QString &ctx, const QString &fn, QIODevice::OpenMode mode,
-                          const QString &contents)
+                          bool exe, const QString &contents)
 {
     QString errStr;
-    if (!m_vfs->writeFile(fn, mode, contents, &errStr)) {
+    if (!m_vfs->writeFile(fn, mode, exe, contents, &errStr)) {
         evalError(fL1S("Cannot write %1file %2: %3")
                   .arg(ctx, QDir::toNativeSeparators(fn), errStr));
         return ReturnFalse;
@@ -433,16 +437,16 @@ void QMakeEvaluator::populateDeps(
         QHash<ProKey, QSet<ProKey> > &dependencies, ProValueMap &dependees,
         QMultiMap<int, ProString> &rootSet) const
 {
-    foreach (const ProString &item, deps)
+    for (const ProString &item : deps)
         if (!dependencies.contains(item.toKey())) {
             QSet<ProKey> &dset = dependencies[item.toKey()]; // Always create entry
             ProStringList depends;
-            foreach (const ProString &suffix, suffixes)
+            for (const ProString &suffix : suffixes)
                 depends += values(ProKey(prefix + item + suffix));
             if (depends.isEmpty()) {
                 rootSet.insert(first(ProKey(prefix + item + priosfx)).toInt(), item);
             } else {
-                foreach (const ProString &dep, depends) {
+                for (const ProString &dep : qAsConst(depends)) {
                     dset.insert(dep.toKey());
                     dependees[dep.toKey()] << item;
                 }
@@ -492,14 +496,15 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
             }
         }
         if (!var.isEmpty()) {
+            const auto strings = values(map(var));
             if (regexp) {
                 QRegExp sepRx(sep);
-                foreach (const ProString &str, values(map(var))) {
+                for (const ProString &str : strings) {
                     const QString &rstr = str.toQString(m_tmp1).section(sepRx, beg, end);
                     ret << (rstr.isSharedWith(m_tmp1) ? str : ProString(rstr).setSource(str));
                 }
             } else {
-                foreach (const ProString &str, values(map(var))) {
+                for (const ProString &str : strings) {
                     const QString &rstr = str.toQString(m_tmp1).section(sep, beg, end);
                     ret << (rstr.isSharedWith(m_tmp1) ? str : ProString(rstr).setSource(str));
                 }
@@ -514,7 +519,7 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
             QString tmp = args.at(0).toQString(m_tmp1);
             for (int i = 1; i < args.count(); ++i)
                 tmp = tmp.arg(args.at(i).toQString(m_tmp2));
-            ret << ProString(tmp);
+            ret << (tmp.isSharedWith(m_tmp1) ? args.at(0) : ProString(tmp).setSource(args.at(0)));
         }
         break;
     case E_FORMAT_NUMBER:
@@ -528,7 +533,8 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
             bool leftalign = false;
             enum { DefaultSign, PadSign, AlwaysSign } sign = DefaultSign;
             if (args.count() >= 2) {
-                foreach (const ProString &opt, split_value_list(args.at(1).toQString(m_tmp2))) {
+                const auto opts = split_value_list(args.at(1).toQString(m_tmp2));
+                for (const ProString &opt : opts) {
                     opt.toQString(m_tmp3);
                     if (m_tmp3.startsWith(QLatin1String("ibase="))) {
                         ibase = m_tmp3.mid(6).toInt();
@@ -602,7 +608,7 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
             const ProStringList &var = values(map(args.at(0)));
             if (!var.isEmpty()) {
                 const ProFile *src = currentProFile();
-                foreach (const ProString &v, var)
+                for (const ProString &v : var)
                     if (const ProFile *s = v.sourceFile()) {
                         src = s;
                         break;
@@ -617,9 +623,12 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
             evalError(fL1S("split(var, sep) requires one or two arguments."));
         } else {
             const QString &sep = (args.count() == 2) ? args.at(1).toQString(m_tmp1) : statics.field_sep;
-            foreach (const ProString &var, values(map(args.at(0))))
-                foreach (const QString &splt, var.toQString(m_tmp2).split(sep))
+            const auto vars = values(map(args.at(0)));
+            for (const ProString &var : vars) {
+                const auto splits = var.toQString(m_tmp2).split(sep);
+                for (const QString &splt : splits)
                     ret << (splt.isSharedWith(m_tmp2) ? var : ProString(splt).setSource(var));
+            }
         }
         break;
     case E_MEMBER:
@@ -750,7 +759,7 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
         tmp.sprintf(".QMAKE_INTERNAL_TMP_variableName_%d", m_listCount++);
         ret = ProStringList(ProString(tmp));
         ProStringList lst;
-        foreach (const ProString &arg, args)
+        for (const ProString &arg : args)
             lst += split_value_list(arg.toQString(m_tmp1), arg.sourceFile()); // Relies on deep copy
         m_valuemapStack.top()[ret.at(0).toKey()] = lst;
         break; }
@@ -760,7 +769,8 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
         } else {
             QRegExp regx(args.at(1).toQString());
             int t = 0;
-            foreach (const ProString &val, values(map(args.at(0)))) {
+            const auto vals = values(map(args.at(0)));
+            for (const ProString &val : vals) {
                 if (regx.indexIn(val.toQString(m_tmp[t])) != -1)
                     ret += val;
                 t ^= 1;
@@ -869,7 +879,7 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
         } else {
             const ProStringList &vals = values(args.at(0).toKey());
             ret.reserve(vals.size());
-            foreach (const ProString &str, vals)
+            for (const ProString &str : vals)
                 ret += ProString(quoteValue(str));
         }
         break;
@@ -957,7 +967,8 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
         } else {
             const QRegExp before(args.at(1).toQString());
             const QString &after(args.at(2).toQString(m_tmp2));
-            foreach (const ProString &val, values(map(args.at(0)))) {
+            const auto vals = values(map(args.at(0)));
+            for (const ProString &val : vals) {
                 QString rstr = val.toQString(m_tmp1);
                 QString copy = rstr; // Force a detach on modify
                 rstr.replace(before, after);
@@ -987,7 +998,7 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
                 rootSet.erase(it);
                 if ((func_t == E_RESOLVE_DEPENDS) || orgList.contains(item))
                     ret.prepend(item);
-                foreach (const ProString &dep, dependees[item.toKey()]) {
+                for (const ProString &dep : qAsConst(dependees[item.toKey()])) {
                     QSet<ProKey> &dset = dependencies[dep.toKey()];
                     dset.remove(item.toKey());
                     if (dset.isEmpty())
@@ -998,11 +1009,11 @@ ProStringList QMakeEvaluator::evaluateBuiltinExpand(
         break;
     case E_ENUMERATE_VARS: {
         QSet<ProString> keys;
-        foreach (const ProValueMap &vmap, m_valuemapStack)
+        for (const ProValueMap &vmap : qAsConst(m_valuemapStack))
             for (ProValueMap::ConstIterator it = vmap.constBegin(); it != vmap.constEnd(); ++it)
                 keys.insert(it.key());
         ret.reserve(keys.size());
-        foreach (const ProString &key, keys)
+        for (const ProString &key : qAsConst(keys))
             ret << key;
         break; }
     case E_SHADOWED:
@@ -1186,7 +1197,8 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
                 regx.setPattern(copy);
             }
             int t = 0;
-            foreach (const ProString &s, vars.value(map(args.at(1)))) {
+            const auto strings = vars.value(map(args.at(1)));
+            for (const ProString &s : strings) {
                 if ((!regx.isEmpty() && regx.exactMatch(s.toQString(m_tmp[t]))) || s == qry)
                     return ReturnTrue;
                 t ^= 1;
@@ -1387,6 +1399,8 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
         }
         QString parseInto;
         LoadFlags flags = 0;
+        if (m_cumulative)
+            flags = LoadSilent;
         if (args.count() >= 2) {
             parseInto = args.at(1).toQString(m_tmp2);
             if (args.count() >= 3 && isTrue(args.at(2), m_tmp3))
@@ -1468,8 +1482,12 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
                 fputs(msg.toLatin1().constData(), stderr);
 #endif
             } else {
-                m_handler->fileMessage(fL1S("Project %1: %2")
-                                       .arg(function.toQString(m_tmp1).toUpper(), msg));
+                m_handler->fileMessage(
+                        (func_t == T_ERROR   ? QMakeHandler::ErrorMessage :
+                         func_t == T_WARNING ? QMakeHandler::WarningMessage :
+                                               QMakeHandler::InfoMessage)
+                        | (m_cumulative ? QMakeHandler::CumulativeEvalMessage : 0),
+                        fL1S("Project %1: %2").arg(function.toQString(m_tmp1).toUpper(), msg));
             }
         }
         return (func_t == T_ERROR && !m_cumulative) ? ReturnError : ReturnTrue;
@@ -1541,20 +1559,34 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
     }
     case T_WRITE_FILE: {
         if (args.count() > 3) {
-            evalError(fL1S("write_file(name, [content var, [append]]) requires one to three arguments."));
+            evalError(fL1S("write_file(name, [content var, [append] [exe]]) requires one to three arguments."));
             return ReturnFalse;
         }
         QIODevice::OpenMode mode = QIODevice::Truncate;
+        bool exe = false;
         QString contents;
         if (args.count() >= 2) {
             const ProStringList &vals = values(args.at(1).toKey());
             if (!vals.isEmpty())
-                contents = vals.join(fL1S("\n")) + QLatin1Char('\n');
-            if (args.count() >= 3)
-                if (!args.at(2).toQString(m_tmp1).compare(fL1S("append"), Qt::CaseInsensitive))
-                    mode = QIODevice::Append;
+                contents = vals.join(QLatin1Char('\n')) + QLatin1Char('\n');
+            if (args.count() >= 3) {
+                const auto opts = split_value_list(args.at(2).toQString(m_tmp2));
+                for (const ProString &opt : opts) {
+                    opt.toQString(m_tmp3);
+                    if (m_tmp3 == QLatin1String("append")) {
+                        mode = QIODevice::Append;
+                    } else if (m_tmp3 == QLatin1String("exe")) {
+                        exe = true;
+                    } else {
+                        evalError(fL1S("write_file(): invalid flag %1.").arg(m_tmp3));
+                        return ReturnFalse;
+                    }
+                }
+            }
         }
-        return writeFile(QString(), resolvePath(args.at(0).toQString(m_tmp1)), mode, contents);
+        QString path = resolvePath(args.at(0).toQString(m_tmp1));
+        path.detach(); // make sure to not leak m_tmp1 into the map of written files.
+        return writeFile(QString(), path, mode, exe, contents);
     }
     case T_TOUCH: {
         if (args.count() != 2) {
@@ -1611,7 +1643,8 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
         enum { CacheSet, CacheAdd, CacheSub } mode = CacheSet;
         ProKey srcvar;
         if (args.count() >= 2) {
-            foreach (const ProString &opt, split_value_list(args.at(1).toQString(m_tmp2))) {
+            const auto opts = split_value_list(args.at(1).toQString(m_tmp2));
+            for (const ProString &opt : opts) {
                 opt.toQString(m_tmp3);
                 if (m_tmp3 == QLatin1String("transient")) {
                     persist = false;
@@ -1729,7 +1762,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
                 varstr += QLatin1Char(' ');
                 varstr += quoteValue(diffval.at(0));
             } else if (!diffval.isEmpty()) {
-                foreach (const ProString &vval, diffval) {
+                for (const ProString &vval : diffval) {
                     varstr += QLatin1String(" \\\n    ");
                     varstr += quoteValue(vval);
                 }
@@ -1765,7 +1798,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
                 valuesRef(ProKey("_QMAKE_STASH_")) << ProString(fn);
             }
         }
-        return writeFile(fL1S("cache "), fn, QIODevice::Append, varstr);
+        return writeFile(fL1S("cache "), fn, QIODevice::Append, false, varstr);
     }
     default:
         evalError(fL1S("Function '%1' is not implemented.").arg(function.toQString(m_tmp1)));

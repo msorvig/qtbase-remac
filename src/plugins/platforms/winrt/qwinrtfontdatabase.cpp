@@ -1,34 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,6 +49,20 @@
 using namespace Microsoft::WRL;
 
 QT_BEGIN_NAMESPACE
+
+Q_LOGGING_CATEGORY(lcQpaFonts, "qt.qpa.fonts")
+
+QDebug operator<<(QDebug d, const QFontDef &def)
+{
+    QDebugStateSaver saver(d);
+    d.nospace();
+    d << "Family=" << def.family << " Stylename=" << def.styleName
+        << " pointsize=" << def.pointSize << " pixelsize=" << def.pixelSize
+        << " styleHint=" << def.styleHint << " weight=" << def.weight
+        << " stretch=" << def.stretch << " hintingPreference="
+        << def.hintingPreference;
+    return d;
+}
 
 // Based on unicode range tables at http://www.microsoft.com/typography/otspec/os2.htm#ur
 static QFontDatabase::WritingSystem writingSystemFromUnicodeRange(const DWRITE_UNICODE_RANGE &range)
@@ -114,6 +131,7 @@ static QFontDatabase::WritingSystem writingSystemFromUnicodeRange(const DWRITE_U
 
 QString QWinRTFontDatabase::fontDir() const
 {
+    qCDebug(lcQpaFonts) << __FUNCTION__;
     QString fontDirectory = QBasicFontDatabase::fontDir();
     if (!QFile::exists(fontDirectory)) {
         // Fall back to app directory + fonts, and just app directory after that
@@ -130,6 +148,8 @@ QString QWinRTFontDatabase::fontDir() const
 
 QWinRTFontDatabase::~QWinRTFontDatabase()
 {
+    qCDebug(lcQpaFonts) << __FUNCTION__;
+
     foreach (IDWriteFontFile *fontFile, m_fonts.keys())
         fontFile->Release();
 
@@ -149,6 +169,8 @@ bool QWinRTFontDatabase::fontsAlwaysScalable() const
 
 void QWinRTFontDatabase::populateFontDatabase()
 {
+    qCDebug(lcQpaFonts) << __FUNCTION__;
+
     ComPtr<IDWriteFactory1> factory;
     HRESULT hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_ISOLATED, __uuidof(IDWriteFactory1), &factory);
     if (FAILED(hr)) {
@@ -204,6 +226,8 @@ void QWinRTFontDatabase::populateFontDatabase()
 
 void QWinRTFontDatabase::populateFamily(const QString &familyName)
 {
+    qCDebug(lcQpaFonts) << __FUNCTION__ << familyName;
+
     IDWriteFontFamily *fontFamily = m_fontFamilies.value(familyName);
     if (!fontFamily) {
         qWarning("The font family %s was not found.", qPrintable(familyName));
@@ -367,6 +391,8 @@ void QWinRTFontDatabase::populateFamily(const QString &familyName)
 
 QFontEngine *QWinRTFontDatabase::fontEngine(const QFontDef &fontDef, void *handle)
 {
+    qCDebug(lcQpaFonts) << __FUNCTION__ << "FONTDEF" << fontDef << handle;
+
     if (!handle) // Happens if a font family population failed
         return 0;
 
@@ -428,8 +454,27 @@ QFontEngine *QWinRTFontDatabase::fontEngine(const QFontDef &fontDef, void *handl
     return engine;
 }
 
+QStringList QWinRTFontDatabase::fallbacksForFamily(const QString &family, QFont::Style style,
+                                                   QFont::StyleHint styleHint,
+                                                   QChar::Script script) const
+{
+    Q_UNUSED(style)
+    Q_UNUSED(styleHint)
+    Q_UNUSED(script)
+
+    qCDebug(lcQpaFonts) << __FUNCTION__ << family;
+
+    QStringList result;
+    if (family == QLatin1String("Helvetica"))
+        result.append(QStringLiteral("Arial"));
+    result.append(QBasicFontDatabase::fallbacksForFamily(family, style, styleHint, script));
+    return result;
+}
+
 void QWinRTFontDatabase::releaseHandle(void *handle)
 {
+    qCDebug(lcQpaFonts) << __FUNCTION__ << handle;
+
     if (!handle)
         return;
 

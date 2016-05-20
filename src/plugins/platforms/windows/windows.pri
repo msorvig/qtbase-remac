@@ -1,19 +1,18 @@
 # Note: OpenGL32 must precede Gdi32 as it overwrites some functions.
-LIBS *= -lole32
-!wince: LIBS *= -luser32 -lwinspool -limm32 -lwinmm -loleaut32
+LIBS += -lole32 -luser32 -lwinspool -limm32 -lwinmm -loleaut32
 
 contains(QT_CONFIG, opengl):!contains(QT_CONFIG, opengles2):!contains(QT_CONFIG, dynamicgl): LIBS *= -lopengl32
 
 mingw: LIBS *= -luuid
 # For the dialog helpers:
-!wince: LIBS *= -lshlwapi -lshell32
-!wince: LIBS *= -ladvapi32
-wince: DEFINES *= QT_LIBINFIX=L"\"\\\"$${QT_LIBINFIX}\\\"\""
+LIBS += -lshlwapi -lshell32 -ladvapi32
 
 DEFINES *= QT_NO_CAST_FROM_ASCII
 
 contains(QT_CONFIG, directwrite) {
-    LIBS *= -ldwrite
+    contains(QT_CONFIG, directwrite2): \
+        DEFINES *= QT_USE_DIRECTWRITE2
+
     SOURCES += $$PWD/qwindowsfontenginedirectwrite.cpp
     HEADERS += $$PWD/qwindowsfontenginedirectwrite.h
 } else {
@@ -29,7 +28,6 @@ SOURCES += \
     $$PWD/qwindowsfontengine.cpp \
     $$PWD/qwindowsfontdatabase.cpp \
     $$PWD/qwindowsmousehandler.cpp \
-    $$PWD/qwindowsguieventdispatcher.cpp \
     $$PWD/qwindowsole.cpp \
     $$PWD/qwindowsmime.cpp \
     $$PWD/qwindowsinternalmimedata.cpp \
@@ -51,22 +49,19 @@ HEADERS += \
     $$PWD/qwindowsfontengine.h \
     $$PWD/qwindowsfontdatabase.h \
     $$PWD/qwindowsmousehandler.h \
-    $$PWD/qwindowsguieventdispatcher.h \
     $$PWD/qtwindowsglobal.h \
-    $$PWD/qtwindows_additional.h \
     $$PWD/qwindowsole.h \
     $$PWD/qwindowsmime.h \
     $$PWD/qwindowsinternalmimedata.h \
     $$PWD/qwindowscursor.h \
-    $$PWD/array.h \
     $$PWD/qwindowsinputcontext.h \
     $$PWD/qwindowstheme.h \
     $$PWD/qwindowsdialoghelpers.h \
     $$PWD/qwindowsservices.h \
-    $$PWD/qplatformfunctions_wince.h \
     $$PWD/qwindowsnativeimage.h \
     $$PWD/qwindowsnativeinterface.h \
-    $$PWD/qwindowsopengltester.h
+    $$PWD/qwindowsopengltester.h \
+    $$PWD/qwindowsthreadpoolrunner.h
 
 INCLUDEPATH += $$PWD
 
@@ -101,36 +96,33 @@ contains(QT_CONFIG,dynamicgl) {
     }
 }
 
-!wince:!contains( DEFINES, QT_NO_TABLETEVENT ) {
+!contains( DEFINES, QT_NO_TABLETEVENT ) {
     INCLUDEPATH += $$QT_SOURCE_TREE/src/3rdparty/wintab
     HEADERS += $$PWD/qwindowstabletsupport.h
     SOURCES += $$PWD/qwindowstabletsupport.cpp
 }
 
-!wince:!contains( DEFINES, QT_NO_SESSIONMANAGER ) {
+!contains( DEFINES, QT_NO_SESSIONMANAGER ) {
     SOURCES += $$PWD/qwindowssessionmanager.cpp
     HEADERS += $$PWD/qwindowssessionmanager.h
 }
 
-!wince:!contains( DEFINES, QT_NO_IMAGEFORMAT_PNG ) {
-    RESOURCES += $$PWD/cursors.qrc
-}
+!contains( DEFINES, QT_NO_IMAGEFORMAT_PNG ):RESOURCES += $$PWD/cursors.qrc
 
-!wince: RESOURCES += $$PWD/openglblacklists.qrc
+RESOURCES += $$PWD/openglblacklists.qrc
 
 contains(QT_CONFIG, freetype) {
-    DEFINES *= QT_NO_FONTCONFIG
-    include($$QT_SOURCE_TREE/src/3rdparty/freetype_dependency.pri)
-    HEADERS += \
-               $$PWD/qwindowsfontdatabase_ft.h
-    SOURCES += \
-               $$PWD/qwindowsfontdatabase_ft.cpp
-} else:contains(QT_CONFIG, system-freetype) {
-    include($$QT_SOURCE_TREE/src/platformsupport/fontdatabases/basic/basic.pri)
-    HEADERS += \
-               $$PWD/qwindowsfontdatabase_ft.h
-    SOURCES += \
-               $$PWD/qwindowsfontdatabase_ft.cpp
+    HEADERS += $$PWD/qwindowsfontdatabase_ft.h
+    SOURCES += $$PWD/qwindowsfontdatabase_ft.cpp
+    contains(QT_CONFIG, system-freetype) {
+        include($$QT_SOURCE_TREE/src/platformsupport/fontdatabases/basic/basic.pri)
+    } else {
+        DEFINES *= QT_NO_FONTCONFIG
+        include($$QT_SOURCE_TREE/src/3rdparty/freetype_dependency.pri)
+    }
 }
 
 contains(QT_CONFIG, accessibility):include($$PWD/accessible/accessible.pri)
+
+DEFINES *= LIBEGL_NAME=$${LIBEGL_NAME}
+DEFINES *= LIBGLESV2_NAME=$${LIBGLESV2_NAME}

@@ -1,5 +1,7 @@
-CONFIG += simd installed
+CONFIG += simd installed no_batch
 include(../common/common.pri)
+DEF_FILE_TARGET=$${TARGET}
+TARGET=$$qtLibraryTarget($${LIBGLESV2_NAME})
 
 INCLUDEPATH += $$OUT_PWD/.. $$ANGLE_DIR/src/libANGLE
 
@@ -24,6 +26,7 @@ DEFINES += LIBANGLE_IMPLEMENTATION LIBGLESV2_IMPLEMENTATION GL_APICALL= GL_GLEXT
 !winrt: DEFINES += ANGLE_ENABLE_D3D9 ANGLE_SKIP_DXGI_1_2_CHECK
 
 HEADERS += \
+    $$ANGLE_DIR/src/common/mathutil.h \
     $$ANGLE_DIR/src/common/blocklayout.h \
     $$ANGLE_DIR/src/common/NativeWindow.h \
     $$ANGLE_DIR/src/common/shadervars.h \
@@ -42,6 +45,7 @@ HEADERS += \
     $$ANGLE_DIR/src/libANGLE/Constants.h \
     $$ANGLE_DIR/src/libANGLE/Context.h \
     $$ANGLE_DIR/src/libANGLE/Data.h \
+    $$ANGLE_DIR/src/libANGLE/Device.h \
     $$ANGLE_DIR/src/libANGLE/Display.h \
     $$ANGLE_DIR/src/libANGLE/Error.h \
     $$ANGLE_DIR/src/libANGLE/features.h \
@@ -51,6 +55,7 @@ HEADERS += \
     $$ANGLE_DIR/src/libANGLE/FramebufferAttachment.h \
     $$ANGLE_DIR/src/libANGLE/HandleAllocator.h \
     $$ANGLE_DIR/src/libANGLE/ImageIndex.h \
+    $$ANGLE_DIR/src/libANGLE/IndexRangeCache.h \
     $$ANGLE_DIR/src/libANGLE/Program.h \
     $$ANGLE_DIR/src/libANGLE/Query.h \
     $$ANGLE_DIR/src/libANGLE/queryconversions.h \
@@ -73,8 +78,10 @@ HEADERS += \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/BufferD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/CompilerD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/copyimage.h \
+    $$ANGLE_DIR/src/libANGLE/renderer/d3d/DeviceD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/DisplayD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/DynamicHLSL.h \
+    $$ANGLE_DIR/src/libANGLE/renderer/d3d/EGLImageD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/formatutilsD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/FramebufferD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/generatemip.h \
@@ -84,6 +91,7 @@ HEADERS += \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/IndexBuffer.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/IndexDataManager.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/loadimage.h \
+    $$ANGLE_DIR/src/libANGLE/renderer/d3d/loadimage_etc.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/ProgramD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/RenderbufferD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/RendererD3D.h \
@@ -95,17 +103,18 @@ HEADERS += \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/TextureD3D.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/TextureStorage.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/TransformFeedbackD3D.h \
+    $$ANGLE_DIR/src/libANGLE/renderer/d3d/VaryingPacking.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/VertexBuffer.h \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/VertexDataManager.h \
     $$ANGLE_DIR/src/libANGLE/renderer/BufferImpl.h \
     $$ANGLE_DIR/src/libANGLE/renderer/CompilerImpl.h \
+    $$ANGLE_DIR/src/libANGLE/renderer/DeviceImpl.h \
     $$ANGLE_DIR/src/libANGLE/renderer/DisplayImpl.h \
     $$ANGLE_DIR/src/libANGLE/renderer/FenceNVImpl.h \
     $$ANGLE_DIR/src/libANGLE/renderer/FenceSyncImpl.h \
     $$ANGLE_DIR/src/libANGLE/renderer/FramebufferImpl.h \
     $$ANGLE_DIR/src/libANGLE/renderer/Image.h \
     $$ANGLE_DIR/src/libANGLE/renderer/ImplFactory.h \
-    $$ANGLE_DIR/src/libANGLE/renderer/IndexRangeCache.h \
     $$ANGLE_DIR/src/libANGLE/renderer/ProgramImpl.h \
     $$ANGLE_DIR/src/libANGLE/renderer/QueryImpl.h \
     $$ANGLE_DIR/src/libANGLE/renderer/RenderbufferImpl.h \
@@ -147,6 +156,7 @@ SOURCES += \
     $$ANGLE_DIR/src/common/angleutils.cpp \
     $$ANGLE_DIR/src/common/debug.cpp \
     $$ANGLE_DIR/src/common/event_tracer.cpp \
+    $$ANGLE_DIR/src/common/Float16ToFloat32.cpp \
     $$ANGLE_DIR/src/third_party/murmurhash/MurmurHash3.cpp \
     $$ANGLE_DIR/src/libANGLE/angletypes.cpp \
     $$ANGLE_DIR/src/libANGLE/AttributeMap.cpp \
@@ -156,20 +166,21 @@ SOURCES += \
     $$ANGLE_DIR/src/libANGLE/Config.cpp \
     $$ANGLE_DIR/src/libANGLE/Context.cpp \
     $$ANGLE_DIR/src/libANGLE/Data.cpp \
+    $$ANGLE_DIR/src/libANGLE/Device.cpp \
     $$ANGLE_DIR/src/libANGLE/Display.cpp \
     $$ANGLE_DIR/src/libANGLE/Error.cpp \
     $$ANGLE_DIR/src/libANGLE/Fence.cpp \
-    $$ANGLE_DIR/src/libANGLE/Float16ToFloat32.cpp \
     $$ANGLE_DIR/src/libANGLE/formatutils.cpp \
     $$ANGLE_DIR/src/libANGLE/Framebuffer.cpp \
     $$ANGLE_DIR/src/libANGLE/FramebufferAttachment.cpp \
     $$ANGLE_DIR/src/libANGLE/HandleAllocator.cpp \
+    $$ANGLE_DIR/src/libANGLE/Image.cpp \
     $$ANGLE_DIR/src/libANGLE/ImageIndex.cpp \
+    $$ANGLE_DIR/src/libANGLE/IndexRangeCache.cpp \
     $$ANGLE_DIR/src/libANGLE/Platform.cpp \
     $$ANGLE_DIR/src/libANGLE/Program.cpp \
     $$ANGLE_DIR/src/libANGLE/Query.cpp \
     $$ANGLE_DIR/src/libANGLE/queryconversions.cpp \
-    $$ANGLE_DIR/src/libANGLE/RefCountObject.cpp \
     $$ANGLE_DIR/src/libANGLE/Renderbuffer.cpp \
     $$ANGLE_DIR/src/libANGLE/ResourceManager.cpp \
     $$ANGLE_DIR/src/libANGLE/Sampler.cpp \
@@ -185,17 +196,17 @@ SOURCES += \
     $$ANGLE_DIR/src/libANGLE/validationES3.cpp \
     $$ANGLE_DIR/src/libANGLE/VertexArray.cpp \
     $$ANGLE_DIR/src/libANGLE/VertexAttribute.cpp \
+    $$ANGLE_DIR/src/libANGLE/renderer/DeviceImpl.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/DisplayImpl.cpp \
-    $$ANGLE_DIR/src/libANGLE/renderer/IndexRangeCache.cpp \
-    $$ANGLE_DIR/src/libANGLE/renderer/ProgramImpl.cpp \
-    $$ANGLE_DIR/src/libANGLE/renderer/RenderbufferImpl.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/Renderer.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/SurfaceImpl.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/BufferD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/CompilerD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/copyimage.cpp \
+    $$ANGLE_DIR/src/libANGLE/renderer/d3d/DeviceD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/DisplayD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/DynamicHLSL.cpp \
+    $$ANGLE_DIR/src/libANGLE/renderer/d3d/EGLImageD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/formatutilsD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/FramebufferD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/HLSLCompiler.cpp \
@@ -203,7 +214,7 @@ SOURCES += \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/IndexBuffer.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/IndexDataManager.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/loadimage.cpp \
-    $$ANGLE_DIR/src/libANGLE/renderer/d3d/loadimageSSE2.cpp \
+    $$ANGLE_DIR/src/libANGLE/renderer/d3d/loadimage_etc.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/ProgramD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/RenderbufferD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/RendererD3D.cpp \
@@ -212,8 +223,8 @@ SOURCES += \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/ShaderExecutableD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/SurfaceD3D.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/TextureD3D.cpp \
-    $$ANGLE_DIR/src/libANGLE/renderer/d3d/TextureStorage.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/TransformFeedbackD3D.cpp \
+    $$ANGLE_DIR/src/libANGLE/renderer/d3d/VaryingPacking.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/VertexBuffer.cpp \
     $$ANGLE_DIR/src/libANGLE/renderer/d3d/VertexDataManager.cpp \
     $$ANGLE_DIR/src/libGLESv2/entry_points_egl.cpp \
@@ -225,6 +236,15 @@ SOURCES += \
     $$ANGLE_DIR/src/libGLESv2/global_state.cpp \
     $$ANGLE_DIR/src/libGLESv2/libGLESv2.cpp
 
+SSE2_SOURCES += $$ANGLE_DIR/src/libANGLE/renderer/d3d/loadimageSSE2.cpp
+
+DEBUG_SOURCE = $$ANGLE_DIR/src/libANGLE/Debug.cpp
+debug_copy.input = DEBUG_SOURCE
+debug_copy.output = $$ANGLE_DIR/src/libANGLE/Debug2.cpp
+debug_copy.commands = $$QMAKE_COPY \"${QMAKE_FILE_IN}\" \"${QMAKE_FILE_OUT}\"
+debug_copy.variable_out = GENERATED_SOURCES
+debug_copy.CONFIG = target_predeps
+QMAKE_EXTRA_COMPILERS += debug_copy
 
 angle_d3d11 {
     HEADERS += \
@@ -232,12 +252,15 @@ angle_d3d11 {
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Buffer11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Clear11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/DebugAnnotator11.h \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/dxgi_support_table.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Fence11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Framebuffer11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/formatutils11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Image11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/IndexBuffer11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/InputLayoutCache.h \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/internal_format_initializer_table.h \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/load_functions_table.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/PixelTransfer11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Query11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Renderer11.h \
@@ -245,9 +268,12 @@ angle_d3d11 {
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/RenderTarget11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/RenderStateCache.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/ShaderExecutable11.h \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/StateManager11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/SwapChain11.h \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/swizzle_format_info.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/TextureStorage11.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Trim11.h \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/texture_format_table.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/VertexBuffer11.h
 
     SOURCES += \
@@ -255,12 +281,15 @@ angle_d3d11 {
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Buffer11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Clear11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/DebugAnnotator11.cpp \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/dxgi_support_table.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Fence11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Framebuffer11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/formatutils11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Image11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/IndexBuffer11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/InputLayoutCache.cpp \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/internal_format_initializer_table.cpp \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/load_functions_table_autogen.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/PixelTransfer11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Query11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Renderer11.cpp \
@@ -268,9 +297,12 @@ angle_d3d11 {
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/RenderTarget11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/RenderStateCache.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/ShaderExecutable11.cpp \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/StateManager11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/SwapChain11.cpp \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/swizzle_format_info_autogen.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/TextureStorage11.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/Trim11.cpp \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/texture_format_table_autogen.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/VertexBuffer11.cpp
 }
 
@@ -289,6 +321,7 @@ angle_d3d11 {
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/renderer9_utils.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/RenderTarget9.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/ShaderExecutable9.h \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/StateManager9.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/SwapChain9.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/TextureStorage9.h \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/VertexBuffer9.h \
@@ -308,6 +341,7 @@ angle_d3d11 {
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/renderer9_utils.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/RenderTarget9.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/ShaderExecutable9.cpp \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/StateManager9.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/SwapChain9.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/TextureStorage9.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/VertexBuffer9.cpp \
@@ -327,16 +361,16 @@ angle_d3d11 {
 }
 
 !static {
-    DEF_FILE = $$ANGLE_DIR/src/libGLESv2/$${TARGET}.def
-    mingw:equals(QT_ARCH, i386): DEF_FILE = $$ANGLE_DIR/src/libGLESv2/$${TARGET}_mingw32.def
+    DEF_FILE = $$ANGLE_DIR/src/libGLESv2/$${DEF_FILE_TARGET}.def
+    mingw:equals(QT_ARCH, i386): DEF_FILE = $$ANGLE_DIR/src/libGLESv2/$${DEF_FILE_TARGET}_mingw32.def
 } else {
     DEFINES += DllMain=DllMain_ANGLE # prevent symbol from conflicting with the user's DllMain
 }
 
-float_converter.target = float_converter
-float_converter.commands = python $$ANGLE_DIR/src/libANGLE/Float16ToFloat32.py \
-                > $$ANGLE_DIR/src/libANGLE/Float16ToFloat32.cpp
-QMAKE_EXTRA_TARGETS += float_converter
+#load_functions.target = load_functions
+#load_functions.commands = python $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/gen_load_functions_table.py \
+#                > $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/gen_load_functions_table.cpp
+#QMAKE_EXTRA_TARGETS += load_functions
 
 # HLSL shaders
 BLITVS = $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/shaders/Blit.vs

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -62,6 +68,7 @@ public:
     void init();
 #ifndef QT_NO_MENU
     void _q_buttonPressed();
+    void _q_buttonReleased();
     void popupTimerDone();
     void _q_updateButtonDown();
     void _q_menuTriggered(QAction *);
@@ -120,7 +127,7 @@ bool QToolButtonPrivate::hasMenu() const
 
     One classic use of a tool button is to select tools; for example,
     the "pen" tool in a drawing program. This would be implemented
-    by using a QToolButton as a toggle button (see setToggleButton()).
+    by using a QToolButton as a toggle button (see setCheckable()).
 
     QToolButton supports auto-raising. In auto-raise mode, the button
     draws a 3D frame only when the mouse points at it. The feature is
@@ -147,8 +154,8 @@ bool QToolButtonPrivate::hasMenu() const
     menu set. The default mode is DelayedPopupMode which is sometimes
     used with the "Back" button in a web browser.  After pressing and
     holding the button down for a while, a menu pops up showing a list
-    of possible pages to jump to. The default delay is 600 ms; you can
-    adjust it with setPopupDelay().
+    of possible pages to jump to. The timeout is style dependent,
+    see QStyle::SH_ToolButton_PopupDelay.
 
     \table 100%
     \row \li \inlineimage assistant-toolbar.png Qt Assistant's toolbar with tool buttons
@@ -211,6 +218,7 @@ void QToolButtonPrivate::init()
 
 #ifndef QT_NO_MENU
     QObject::connect(q, SIGNAL(pressed()), q, SLOT(_q_buttonPressed()));
+    QObject::connect(q, SIGNAL(released()), q, SLOT(_q_buttonReleased()));
 #endif
 
     setLayoutItemMargins(QStyle::SE_ToolButtonLayoutItem);
@@ -698,10 +706,15 @@ void QToolButtonPrivate::_q_buttonPressed()
         return; // no menu to show
     if (popupMode == QToolButton::MenuButtonPopup)
         return;
-    else if (delay > 0 && !popupTimer.isActive() && popupMode == QToolButton::DelayedPopup)
+    else if (delay > 0 && popupMode == QToolButton::DelayedPopup)
         popupTimer.start(delay, q);
     else if (delay == 0 || popupMode == QToolButton::InstantPopup)
         q->showMenu();
+}
+
+void QToolButtonPrivate::_q_buttonReleased()
+{
+    popupTimer.stop();
 }
 
 void QToolButtonPrivate::popupTimerDone()
@@ -820,7 +833,7 @@ void QToolButtonPrivate::_q_menuTriggered(QAction *action)
     a menu set or contains a list of actions.
 
     \value DelayedPopup After pressing and holding the tool button
-    down for a certain amount of time (the timeout is style dependant,
+    down for a certain amount of time (the timeout is style dependent,
     see QStyle::SH_ToolButton_PopupDelay), the menu is displayed.  A
     typical application example is the "back" button in some web
     browsers's tool bars. If the user clicks it, the browser simply
@@ -961,8 +974,8 @@ bool QToolButton::event(QEvent *event)
     case QEvent::HoverEnter:
     case QEvent::HoverLeave:
     case QEvent::HoverMove:
-    if (const QHoverEvent *he = static_cast<const QHoverEvent *>(event))
-        d_func()->updateHoverControl(he->pos());
+        if (const QHoverEvent *he = static_cast<const QHoverEvent *>(event))
+            d_func()->updateHoverControl(he->pos());
         break;
     default:
         break;

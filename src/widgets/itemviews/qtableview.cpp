@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,6 +52,7 @@
 #include <qabstractbutton.h>
 #include <private/qtableview_p.h>
 #include <private/qheaderview_p.h>
+#include <private/qscrollbar_p.h>
 #ifndef QT_NO_ACCESSIBILITY
 #include <qaccessible.h>
 #endif
@@ -190,7 +197,7 @@ QList<QSpanCollection::Span *> QSpanCollection::spansInRect(int x, int y, int w,
 #ifdef DEBUG_SPAN_UPDATE
 QDebug operator<<(QDebug str, const QSpanCollection::Span &span)
 {
-    str << "(" << span.top() << "," << span.left() << "," << span.bottom() << "," << span.right() << ")";
+    str << '(' << span.top() << ',' << span.left() << ',' << span.bottom() << ',' << span.right() << ')';
     return str;
 }
 #endif
@@ -201,9 +208,7 @@ QDebug operator<<(QDebug str, const QSpanCollection::Span &span)
 void QSpanCollection::updateInsertedRows(int start, int end)
 {
 #ifdef DEBUG_SPAN_UPDATE
-    qDebug() << Q_FUNC_INFO;
-    qDebug() << start << end;
-    qDebug() << index;
+    qDebug() << start << end << endl << index;
 #endif
     if (spans.isEmpty())
         return;
@@ -251,9 +256,7 @@ void QSpanCollection::updateInsertedRows(int start, int end)
 void QSpanCollection::updateInsertedColumns(int start, int end)
 {
 #ifdef DEBUG_SPAN_UPDATE
-    qDebug() << Q_FUNC_INFO;
-    qDebug() << start << end;
-    qDebug() << index;
+    qDebug() << start << end << endl << index;
 #endif
     if (spans.isEmpty())
         return;
@@ -334,9 +337,7 @@ bool QSpanCollection::cleanSpanSubIndex(QSpanCollection::SubIndex &subindex, int
 void QSpanCollection::updateRemovedRows(int start, int end)
 {
 #ifdef DEBUG_SPAN_UPDATE
-    qDebug() << Q_FUNC_INFO;
-    qDebug() << start << end;
-    qDebug() << index;
+    qDebug() << start << end << endl << index;
 #endif
     if (spans.isEmpty())
         return;
@@ -463,9 +464,7 @@ void QSpanCollection::updateRemovedRows(int start, int end)
 void QSpanCollection::updateRemovedColumns(int start, int end)
 {
 #ifdef DEBUG_SPAN_UPDATE
-    qDebug() << Q_FUNC_INFO;
-    qDebug() << start << end;
-    qDebug() << index;
+    qDebug() << start << end << endl << index;
 #endif
     if (spans.isEmpty())
         return;
@@ -669,14 +668,15 @@ void QTableViewPrivate::trimHiddenSelections(QItemSelectionRange *range) const
 */
 void QTableViewPrivate::setSpan(int row, int column, int rowSpan, int columnSpan)
 {
-    if (row < 0 || column < 0 || rowSpan <= 0 || columnSpan <= 0) {
-        qWarning() << "QTableView::setSpan: invalid span given: (" << row << ',' << column << ',' << rowSpan << ',' << columnSpan << ')';
+    if (Q_UNLIKELY(row < 0 || column < 0 || rowSpan <= 0 || columnSpan <= 0)) {
+        qWarning("QTableView::setSpan: invalid span given: (%d, %d, %d, %d)",
+                 row, column, rowSpan, columnSpan);
         return;
     }
     QSpanCollection::Span *sp = spans.spanAt(column, row);
     if (sp) {
         if (sp->top() != row || sp->left() != column) {
-            qWarning() << "QTableView::setSpan: span cannot overlap";
+            qWarning("QTableView::setSpan: span cannot overlap");
             return;
         }
         if (rowSpan == 1 && columnSpan == 1) {
@@ -687,8 +687,8 @@ void QTableViewPrivate::setSpan(int row, int column, int rowSpan, int columnSpan
         sp->m_right = column + columnSpan - 1;
         spans.updateSpan(sp, old_height);
         return;
-    } else if (rowSpan == 1 && columnSpan == 1) {
-        qWarning() << "QTableView::setSpan: single cell span won't be added";
+    } else if (Q_UNLIKELY(rowSpan == 1 && columnSpan == 1)) {
+        qWarning("QTableView::setSpan: single cell span won't be added");
         return;
     }
     sp = new QSpanCollection::Span(row, column, rowSpan, columnSpan);
@@ -824,10 +824,7 @@ void QTableViewPrivate::drawAndClipSpans(const QRegion &area, QPainter *painter,
         QStyleOptionViewItem opt = option;
         opt.rect = rect;
         alternateBase = alternatingColors && (span->top() & 1);
-        if (alternateBase)
-            opt.features |= QStyleOptionViewItem::Alternate;
-        else
-            opt.features &= ~QStyleOptionViewItem::Alternate;
+        opt.features.setFlag(QStyleOptionViewItem::Alternate, alternateBase);
         drawCell(painter, opt, index);
         region -= rect;
         for (int r = span->top(); r <= span->bottom(); ++r) {
@@ -1376,9 +1373,6 @@ void QTableView::paintEvent(QPaintEvent *event)
     uint x = horizontalHeader->length() - horizontalHeader->offset() - (rightToLeft ? 0 : 1);
     uint y = verticalHeader->length() - verticalHeader->offset() - 1;
 
-    const QRegion region = event->region().translated(offset);
-    const QVector<QRect> rects = region.rects();
-
     //firstVisualRow is the visual index of the first visible row.  lastVisualRow is the visual index of the last visible Row.
     //same goes for ...VisualColumn
     int firstVisualRow = qMax(verticalHeader->visualIndexAt(0),0);
@@ -1397,13 +1391,14 @@ void QTableView::paintEvent(QPaintEvent *event)
 
     QBitArray drawn((lastVisualRow - firstVisualRow + 1) * (lastVisualColumn - firstVisualColumn + 1));
 
+    const QRegion region = event->region().translated(offset);
+
     if (d->hasSpans()) {
         d->drawAndClipSpans(region, &painter, option, &drawn,
                              firstVisualRow, lastVisualRow, firstVisualColumn, lastVisualColumn);
     }
 
-    for (int i = 0; i < rects.size(); ++i) {
-        QRect dirtyArea = rects.at(i);
+    for (QRect dirtyArea : region) {
         dirtyArea.setBottom(qMin(dirtyArea.bottom(), int(y)));
         if (rightToLeft) {
             dirtyArea.setLeft(qMax(dirtyArea.left(), d->viewport->width() - int(x)));
@@ -1958,8 +1953,7 @@ QRegion QTableView::visualRegionForSelection(const QItemSelection &selection) co
     bool horizontalMoved = horizontalHeader()->sectionsMoved();
 
     if ((verticalMoved && horizontalMoved) || (d->hasSpans() && (verticalMoved || horizontalMoved))) {
-        for (int i = 0; i < selection.count(); ++i) {
-            QItemSelectionRange range = selection.at(i);
+        for (const auto &range : selection) {
             if (range.parent() != d->root || !range.isValid())
                 continue;
             for (int r = range.top(); r <= range.bottom(); ++r)
@@ -1970,8 +1964,7 @@ QRegion QTableView::visualRegionForSelection(const QItemSelection &selection) co
                 }
         }
     } else if (horizontalMoved) {
-        for (int i = 0; i < selection.count(); ++i) {
-            QItemSelectionRange range = selection.at(i);
+        for (const auto &range : selection) {
             if (range.parent() != d->root || !range.isValid())
                 continue;
             int top = rowViewportPosition(range.top());
@@ -1986,8 +1979,7 @@ QRegion QTableView::visualRegionForSelection(const QItemSelection &selection) co
             }
         }
     } else if (verticalMoved) {
-        for (int i = 0; i < selection.count(); ++i) {
-            QItemSelectionRange range = selection.at(i);
+        for (const auto &range : selection) {
             if (range.parent() != d->root || !range.isValid())
                 continue;
             int left = columnViewportPosition(range.left());
@@ -2003,8 +1995,7 @@ QRegion QTableView::visualRegionForSelection(const QItemSelection &selection) co
         }
     } else { // nothing moved
         const int gridAdjust = showGrid() ? 1 : 0;
-        for (int i = 0; i < selection.count(); ++i) {
-            QItemSelectionRange range = selection.at(i);
+        for (auto range : selection) {
             if (range.parent() != d->root || !range.isValid())
                 continue;
             d->trimHiddenSelections(&range);
@@ -2024,8 +2015,8 @@ QRegion QTableView::visualRegionForSelection(const QItemSelection &selection) co
             if (viewportRect.intersects(rangeRect))
                 selectionRegion += rangeRect;
             if (d->hasSpans()) {
-                foreach (QSpanCollection::Span *s,
-                         d->spans.spansInRect(range.left(), range.top(), range.width(), range.height())) {
+                const auto spansInRect = d->spans.spansInRect(range.left(), range.top(), range.width(), range.height());
+                for (QSpanCollection::Span *s : spansInRect) {
                     if (range.contains(s->top(), s->left(), range.parent())) {
                         const QRect &visualSpanRect = d->visualSpanRect(*s);
                         if (viewportRect.intersects(visualSpanRect))
@@ -2173,7 +2164,7 @@ void QTableView::updateGeometries()
     } else { // ScrollPerPixel
         horizontalScrollBar()->setPageStep(vsize.width());
         horizontalScrollBar()->setRange(0, horizontalLength - vsize.width());
-        horizontalScrollBar()->setSingleStep(qMax(vsize.width() / (columnsInViewport + 1), 2));
+        horizontalScrollBar()->d_func()->itemviewChangeSingleStep(qMax(vsize.width() / (columnsInViewport + 1), 2));
     }
 
     // vertical scroll bar
@@ -2201,7 +2192,7 @@ void QTableView::updateGeometries()
     } else { // ScrollPerPixel
         verticalScrollBar()->setPageStep(vsize.height());
         verticalScrollBar()->setRange(0, verticalLength - vsize.height());
-        verticalScrollBar()->setSingleStep(qMax(vsize.height() / (rowsInViewport + 1), 2));
+        verticalScrollBar()->d_func()->itemviewChangeSingleStep(qMax(vsize.height() / (rowsInViewport + 1), 2));
     }
 
     d->geometryRecursionBlock = false;

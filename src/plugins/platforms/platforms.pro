@@ -1,6 +1,6 @@
 TEMPLATE = subdirs
 
-android:!android-no-sdk: SUBDIRS += android
+android: SUBDIRS += android
 
 SUBDIRS += minimal
 
@@ -10,10 +10,8 @@ contains(QT_CONFIG, xcb) {
     SUBDIRS += xcb
 }
 
-mac {
-    ios: SUBDIRS += ios
-    else: SUBDIRS += cocoa
-}
+uikit: SUBDIRS += ios
+osx: SUBDIRS += cocoa
 
 win32:!winrt: SUBDIRS += windows
 winrt: SUBDIRS += winrt
@@ -42,3 +40,5 @@ haiku {
 }
 
 contains(QT_CONFIG, mirclient): SUBDIRS += mirclient
+
+contains(QT_CONFIG, integrityfb): SUBDIRS += integrity

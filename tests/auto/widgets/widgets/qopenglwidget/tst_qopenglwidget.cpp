@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -57,6 +52,8 @@ private slots:
     void asViewport();
     void requestUpdate();
     void fboRedirect();
+    void showHide();
+    void nativeWindow();
 };
 
 void tst_QOpenGLWidget::create()
@@ -81,7 +78,8 @@ public:
         : QOpenGLWidget(parent),
           m_initCalled(false), m_paintCalled(false), m_resizeCalled(false),
           m_resizeOk(false),
-          m_w(expectedWidth), m_h(expectedHeight) { }
+          m_w(expectedWidth), m_h(expectedHeight),
+          r(1.0f), g(0.0f), b(0.0f) { }
 
     void initializeGL() Q_DECL_OVERRIDE {
         m_initCalled = true;
@@ -89,12 +87,15 @@ public:
     }
     void paintGL() Q_DECL_OVERRIDE {
         m_paintCalled = true;
-        glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+        glClearColor(r, g, b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
     }
     void resizeGL(int w, int h) Q_DECL_OVERRIDE {
         m_resizeCalled = true;
         m_resizeOk = w == m_w && h == m_h;
+    }
+    void setClearColor(float r, float g, float b) {
+        this->r = r; this->g = g; this->b = b;
     }
 
     bool m_initCalled;
@@ -103,6 +104,7 @@ public:
     bool m_resizeOk;
     int m_w;
     int m_h;
+    float r, g, b;
 };
 
 void tst_QOpenGLWidget::clearAndGrab()
@@ -353,6 +355,69 @@ void tst_QOpenGLWidget::fboRedirect()
     GLuint reportedDefaultFbo = QOpenGLContext::currentContext()->defaultFramebufferObject();
     GLuint widgetFbo = w.defaultFramebufferObject();
     QVERIFY(reportedDefaultFbo != widgetFbo);
+}
+
+void tst_QOpenGLWidget::showHide()
+{
+    QScopedPointer<ClearWidget> w(new ClearWidget(0, 800, 600));
+    w->resize(800, 600);
+    w->show();
+    QTest::qWaitForWindowExposed(w.data());
+
+    w->hide();
+
+    QImage image = w->grabFramebuffer();
+    QVERIFY(!image.isNull());
+    QCOMPARE(image.width(), w->width());
+    QCOMPARE(image.height(), w->height());
+    QVERIFY(image.pixel(30, 40) == qRgb(255, 0, 0));
+
+    w->setClearColor(0, 0, 1);
+    w->show();
+    QTest::qWaitForWindowExposed(w.data());
+
+    image = w->grabFramebuffer();
+    QVERIFY(!image.isNull());
+    QCOMPARE(image.width(), w->width());
+    QCOMPARE(image.height(), w->height());
+    QVERIFY(image.pixel(30, 40) == qRgb(0, 0, 255));
+}
+
+void tst_QOpenGLWidget::nativeWindow()
+{
+    QScopedPointer<ClearWidget> w(new ClearWidget(0, 800, 600));
+    w->resize(800, 600);
+    w->show();
+    w->winId();
+    QTest::qWaitForWindowExposed(w.data());
+
+    QImage image = w->grabFramebuffer();
+    QVERIFY(!image.isNull());
+    QCOMPARE(image.width(), w->width());
+    QCOMPARE(image.height(), w->height());
+    QVERIFY(image.pixel(30, 40) == qRgb(255, 0, 0));
+    QVERIFY(w->internalWinId());
+
+    // Now as a native child.
+    QWidget nativeParent;
+    nativeParent.resize(800, 600);
+    nativeParent.setAttribute(Qt::WA_NativeWindow);
+    ClearWidget *child = new ClearWidget(0, 800, 600);
+    child->setClearColor(0, 1, 0);
+    child->setParent(&nativeParent);
+    child->resize(400, 400);
+    child->move(23, 34);
+    nativeParent.show();
+    QTest::qWaitForWindowExposed(&nativeParent);
+
+    QVERIFY(nativeParent.internalWinId());
+    QVERIFY(!child->internalWinId());
+
+    image = child->grabFramebuffer();
+    QVERIFY(!image.isNull());
+    QCOMPARE(image.width(), child->width());
+    QCOMPARE(image.height(), child->height());
+    QVERIFY(image.pixel(30, 40) == qRgb(0, 255, 0));
 }
 
 QTEST_MAIN(tst_QOpenGLWidget)

@@ -1,35 +1,43 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author James Turner <james.turner@kdab.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
+
+#include <qpa/qplatformtheme.h>
 
 #include "qcocoamenuitem.h"
 
@@ -105,8 +113,8 @@ QCocoaMenuItem::~QCocoaMenuItem()
 {
     QMacAutoReleasePool pool;
 
-    if (m_menu && COCOA_MENU_ANCESTOR(m_menu) == this)
-        SET_COCOA_MENU_ANCESTOR(m_menu, 0);
+    if (m_menu && m_menu->menuParent() == this)
+        m_menu->setMenuParent(0);
     if (m_merged) {
         [m_native setHidden:YES];
     } else {
@@ -132,29 +140,20 @@ void QCocoaMenuItem::setMenu(QPlatformMenu *menu)
         return;
 
     if (m_menu) {
-        if (COCOA_MENU_ANCESTOR(m_menu) == this)
-            SET_COCOA_MENU_ANCESTOR(m_menu, 0);
-        if (m_menu->containingMenuItem() == this)
-            m_menu->setContainingMenuItem(0);
+        if (m_menu->menuParent() == this)
+            m_menu->setMenuParent(0);
     }
 
     QMacAutoReleasePool pool;
     m_menu = static_cast<QCocoaMenu *>(menu);
     if (m_menu) {
-        SET_COCOA_MENU_ANCESTOR(m_menu, this);
-        m_menu->setContainingMenuItem(this);
+        m_menu->setMenuParent(this);
     } else {
         // we previously had a menu, but no longer
         // clear out our item so the nexy sync() call builds a new one
         [m_native release];
         m_native = nil;
     }
-}
-
-void QCocoaMenuItem::clearMenu(QCocoaMenu *menu)
-{
-    if (menu == m_menu)
-        m_menu = 0;
 }
 
 void QCocoaMenuItem::setVisible(bool isVisible)
@@ -197,6 +196,8 @@ void QCocoaMenuItem::setEnabled(bool enabled)
 void QCocoaMenuItem::setNativeContents(WId item)
 {
     NSView *itemView = (NSView *)item;
+    if (m_itemView == itemView)
+        return;
     [m_itemView release];
     m_itemView = [itemView retain];
     [m_itemView setAutoresizesSubviews:YES];
@@ -214,14 +215,6 @@ NSMenuItem *QCocoaMenuItem::sync()
             [m_native setTag:reinterpret_cast<NSInteger>(this)];
         } else
             m_native = nil;
-    }
-
-    if (m_menu) {
-        if (m_native != m_menu->nsMenuItem()) {
-            [m_native release];
-            m_native = [m_menu->nsMenuItem() retain];
-            [m_native setTag:reinterpret_cast<NSInteger>(this)];
-        }
     }
 
     if ((m_role != NoRole && !m_textSynced) || m_merged) {
@@ -244,12 +237,14 @@ NSMenuItem *QCocoaMenuItem::sync()
             mergeItem = [loader preferencesMenuItem];
             break;
         case TextHeuristicRole: {
-            QObject *p = COCOA_MENU_ANCESTOR(this);
+            QObject *p = menuParent();
             int depth = 1;
             QCocoaMenuBar *menubar = 0;
             while (depth < 3 && p && !(menubar = qobject_cast<QCocoaMenuBar *>(p))) {
                 ++depth;
-                p = COCOA_MENU_ANCESTOR(p);
+                QCocoaMenuObject *menuObject = dynamic_cast<QCocoaMenuObject *>(p);
+                Q_ASSERT(menuObject);
+                p = menuObject->menuParent();
             }
             if (depth == 3 || !menubar)
                 break; // Menu item too deep in the hierarchy, or not connected to any menubar
@@ -279,7 +274,7 @@ NSMenuItem *QCocoaMenuItem::sync()
         }
 
         default:
-            qWarning() << Q_FUNC_INFO << "menu item" << m_text << "has unsupported role" << (int)m_role;
+            qWarning() << "menu item" << m_text << "has unsupported role" << (int)m_role;
         }
 
         if (mergeItem) {
@@ -301,8 +296,8 @@ NSMenuItem *QCocoaMenuItem::sync()
 
     if (!m_native) {
         m_native = [[NSMenuItem alloc] initWithTitle:QCFString::toNSString(m_text)
-            action:nil
-                keyEquivalent:@""];
+                                       action:nil
+                                       keyEquivalent:@""];
         [m_native setTag:reinterpret_cast<NSInteger>(this)];
     }
 
@@ -316,7 +311,7 @@ NSMenuItem *QCocoaMenuItem::sync()
     if (accel.count() > 1)
         text += QLatin1String(" (") + accel.toString(QKeySequence::NativeText) + QLatin1String(")");
 
-    QString finalString = qt_mac_removeMnemonics(text);
+    QString finalString = QPlatformTheme::removeMnemonics(text);
     bool useAttributedTitle = false;
     // Cocoa Font and title
     if (m_font.resolve()) {
@@ -396,7 +391,7 @@ QKeySequence QCocoaMenuItem::mergeAccel()
 void QCocoaMenuItem::syncMerged()
 {
     if (!m_merged) {
-        qWarning() << Q_FUNC_INFO << "Trying to sync a non-merged item";
+        qWarning("Trying to sync a non-merged item");
         return;
     }
     [m_native setTag:reinterpret_cast<NSInteger>(this)];

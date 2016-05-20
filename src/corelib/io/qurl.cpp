@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2012 Intel Corporation.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -407,9 +413,6 @@
 #include "qtldurl_p.h"
 #include "private/qipaddress_p.h"
 #include "qurlquery.h"
-#if defined(Q_OS_WINCE_WM)
-#pragma optimize("g", off)
-#endif
 
 QT_BEGIN_NAMESPACE
 extern QString qt_normalizePathSegments(const QString &name, bool allowUncPaths); // qdir.cpp
@@ -556,6 +559,7 @@ public:
     inline bool hasFragment() const { return sectionIsPresent & Fragment; }
 
     inline bool isLocalFile() const { return flags & IsLocalFile; }
+    QString toLocalFile(QUrl::FormattingOptions options) const;
 
     QString mergePaths(const QString &relativePath) const;
 
@@ -1045,7 +1049,7 @@ inline void QUrlPrivate::setAuthority(const QString &auth, int from, int end, QU
 
         if (colonIndex == end - 1) {
             // found a colon but no digits after it
-            setError(PortEmptyError, auth, colonIndex + 1);
+            port = -1;
         } else if (uint(colonIndex) < uint(end)) {
             unsigned long x = 0;
             for (int i = colonIndex + 1; i < end; ++i) {
@@ -1175,7 +1179,7 @@ inline void QUrlPrivate::appendHost(QString &appendTo, QUrl::FormattingOptions o
     } else {
         // this is either an IPv4Address or a reg-name
         // if it is a reg-name, it is already stored in Unicode form
-        if (options == QUrl::EncodeUnicode)
+        if (options & QUrl::EncodeUnicode && !(options & 0x4000000))
             appendTo += qt_ACE_do(host, ToAceOnly, AllowLeadingDot);
         else
             appendTo += host;
@@ -1458,6 +1462,33 @@ inline void QUrlPrivate::parse(const QString &url, QUrl::ParsingMode parsingMode
         return;
     if (hash != -1)
         validateComponent(Fragment, url, hash + 1, len);
+}
+
+QString QUrlPrivate::toLocalFile(QUrl::FormattingOptions options) const
+{
+    QString tmp;
+    QString ourPath;
+    appendPath(ourPath, options, QUrlPrivate::Path);
+
+    // magic for shared drive on windows
+    if (!host.isEmpty()) {
+        tmp = QStringLiteral("//") + host;
+#ifdef Q_OS_WIN // QTBUG-42346, WebDAV is visible as local file on Windows only.
+        if (scheme == webDavScheme())
+            tmp += webDavSslTag();
+#endif
+        if (!ourPath.isEmpty() && !ourPath.startsWith(QLatin1Char('/')))
+            tmp += QLatin1Char('/');
+        tmp += ourPath;
+    } else {
+        tmp = ourPath;
+#ifdef Q_OS_WIN
+        // magic for drives on windows
+        if (ourPath.length() > 2 && ourPath.at(0) == QLatin1Char('/') && ourPath.at(2) == QLatin1Char(':'))
+            tmp.remove(0, 1);
+#endif
+    }
+    return tmp;
 }
 
 /*
@@ -2012,14 +2043,15 @@ void QUrl::setAuthority(const QString &authority, ParsingMode mode)
 */
 QString QUrl::authority(ComponentFormattingOptions options) const
 {
-    if (!d) return QString();
+    QString result;
+    if (!d)
+        return result;
 
     if (options == QUrl::FullyDecoded) {
         qWarning("QUrl::authority(): QUrl::FullyDecoded is not permitted in this function");
-        return QString();
+        return result;
     }
 
-    QString result;
     d->appendAuthority(result, options, QUrlPrivate::Authority);
     return result;
 }
@@ -2085,14 +2117,15 @@ void QUrl::setUserInfo(const QString &userInfo, ParsingMode mode)
 */
 QString QUrl::userInfo(ComponentFormattingOptions options) const
 {
-    if (!d) return QString();
+    QString result;
+    if (!d)
+        return result;
 
     if (options == QUrl::FullyDecoded) {
         qWarning("QUrl::userInfo(): QUrl::FullyDecoded is not permitted in this function");
-        return QString();
+        return result;
     }
 
-    QString result;
     d->appendUserInfo(result, options, QUrlPrivate::UserInfo);
     return result;
 }
@@ -2154,10 +2187,9 @@ void QUrl::setUserName(const QString &userName, ParsingMode mode)
 */
 QString QUrl::userName(ComponentFormattingOptions options) const
 {
-    if (!d) return QString();
-
     QString result;
-    d->appendUserName(result, options);
+    if (d)
+        d->appendUserName(result, options);
     return result;
 }
 
@@ -2247,10 +2279,9 @@ void QUrl::setPassword(const QString &password, ParsingMode mode)
 */
 QString QUrl::password(ComponentFormattingOptions options) const
 {
-    if (!d) return QString();
-
     QString result;
-    d->appendPassword(result, options);
+    if (d)
+        d->appendPassword(result, options);
     return result;
 }
 
@@ -2355,12 +2386,12 @@ void QUrl::setHost(const QString &host, ParsingMode mode)
 */
 QString QUrl::host(ComponentFormattingOptions options) const
 {
-    if (!d) return QString();
-
     QString result;
-    d->appendHost(result, options);
-    if (result.startsWith(QLatin1Char('[')))
-        return result.mid(1, result.length() - 2);
+    if (d) {
+        d->appendHost(result, options);
+        if (result.startsWith(QLatin1Char('[')))
+            result = result.mid(1, result.length() - 2);
+    }
     return result;
 }
 
@@ -2411,8 +2442,8 @@ void QUrl::setPort(int port)
     d->clearError();
 
     if (port < -1 || port > 65535) {
-        port = -1;
         d->setError(QUrlPrivate::InvalidPortError, QString::number(port), 0);
+        port = -1;
     }
 
     d->port = port;
@@ -2470,8 +2501,10 @@ void QUrl::setPath(const QString &path, ParsingMode mode)
         mode = TolerantMode;
     }
 
-    data = qt_normalizePathSegments(data, false);
-    d->setPath(data, 0, data.length());
+    int from = 0;
+    while (from < data.length() - 2 && data.midRef(from, 2) == QLatin1String("//"))
+        ++from;
+    d->setPath(data, from, data.length());
 
     // optimized out, since there is no path delimiter
 //    if (path.isNull())
@@ -2498,10 +2531,9 @@ void QUrl::setPath(const QString &path, ParsingMode mode)
 */
 QString QUrl::path(ComponentFormattingOptions options) const
 {
-    if (!d) return QString();
-
     QString result;
-    d->appendPath(result, options, QUrlPrivate::Path);
+    if (d)
+        d->appendPath(result, options, QUrlPrivate::Path);
     return result;
 }
 
@@ -2941,12 +2973,12 @@ void QUrl::setQuery(const QUrlQuery &query)
 */
 QString QUrl::query(ComponentFormattingOptions options) const
 {
-    if (!d) return QString();
-
     QString result;
-    d->appendQuery(result, options, QUrlPrivate::Query);
-    if (d->hasQuery() && result.isNull())
-        result.detach();
+    if (d) {
+        d->appendQuery(result, options, QUrlPrivate::Query);
+        if (d->hasQuery() && result.isNull())
+            result.detach();
+    }
     return result;
 }
 
@@ -3014,12 +3046,12 @@ void QUrl::setFragment(const QString &fragment, ParsingMode mode)
 */
 QString QUrl::fragment(ComponentFormattingOptions options) const
 {
-    if (!d) return QString();
-
     QString result;
-    d->appendFragment(result, options, QUrlPrivate::Fragment);
-    if (d->hasFragment() && result.isNull())
-        result.detach();
+    if (d) {
+        d->appendFragment(result, options, QUrlPrivate::Fragment);
+        if (d->hasFragment() && result.isNull())
+            result.detach();
+    }
     return result;
 }
 
@@ -3236,9 +3268,10 @@ QString QUrl::url(FormattingOptions options) const
 */
 QString QUrl::toString(FormattingOptions options) const
 {
+    QString url;
     if (!isValid()) {
         // also catches isEmpty()
-        return QString();
+        return url;
     }
     if (options == QUrl::FullyDecoded) {
         qWarning("QUrl: QUrl::FullyDecoded is not permitted when reconstructing the full URL");
@@ -3255,10 +3288,9 @@ QString QUrl::toString(FormattingOptions options) const
             && (!d->hasQuery() || options.testFlag(QUrl::RemoveQuery))
             && (!d->hasFragment() || options.testFlag(QUrl::RemoveFragment))
             && isLocalFile()) {
-        return path(options);
+        url = d->toLocalFile(options);
+        return url;
     }
-
-    QString url;
 
     // for the full URL, we consider that the reserved characters are prettier if encoded
     if (options & DecodeReserved)
@@ -3418,33 +3450,6 @@ QByteArray QUrl::toPercentEncoding(const QString &input, const QByteArray &exclu
 {
     return input.toUtf8().toPercentEncoding(exclude, include);
 }
-
-/*! \fn QUrl QUrl::fromCFURL(CFURLRef url)
-    \since 5.2
-
-    Constructs a QUrl containing a copy of the CFURL \a url.
-*/
-
-/*! \fn CFURLRef QUrl::toCFURL() const
-    \since 5.2
-
-    Creates a CFURL from a QUrl. The caller owns the CFURL and is
-    responsible for releasing it.
-*/
-
-/*!
-    \fn QUrl QUrl::fromNSURL(const NSURL *url)
-    \since 5.2
-
-    Constructs a QUrl containing a copy of the NSURL \a url.
-*/
-
-/*!
-    \fn NSURL* QUrl::toNSURL() const
-    \since 5.2
-
-    Creates a NSURL from a QUrl. The NSURL is autoreleased.
-*/
 
 /*!
     \internal
@@ -3818,28 +3823,7 @@ QString QUrl::toLocalFile() const
     if (!isLocalFile())
         return QString();
 
-    QString tmp;
-    QString ourPath = path(QUrl::FullyDecoded);
-
-    // magic for shared drive on windows
-    if (!d->host.isEmpty()) {
-        tmp = QStringLiteral("//") + host();
-#ifdef Q_OS_WIN // QTBUG-42346, WebDAV is visible as local file on Windows only.
-        if (scheme() == webDavScheme())
-            tmp += webDavSslTag();
-#endif
-        if (!ourPath.isEmpty() && !ourPath.startsWith(QLatin1Char('/')))
-            tmp += QLatin1Char('/');
-        tmp += ourPath;
-    } else {
-        tmp = ourPath;
-#ifdef Q_OS_WIN
-        // magic for drives on windows
-        if (ourPath.length() > 2 && ourPath.at(0) == QLatin1Char('/') && ourPath.at(2) == QLatin1Char(':'))
-            tmp.remove(0, 1);
-#endif
-    }
-    return tmp;
+    return d->toLocalFile(QUrl::FullyDecoded);
 }
 
 /*!
@@ -4021,16 +4005,17 @@ static inline void appendComponentIfPresent(QString &msg, bool present, const ch
 */
 QString QUrl::errorString() const
 {
+    QString msg;
     if (!d)
-        return QString();
+        return msg;
 
     QString errorSource;
     int errorPosition = 0;
     QUrlPrivate::ErrorCode errorCode = d->validityError(&errorSource, &errorPosition);
     if (errorCode == QUrlPrivate::NoError)
-        return QString();
+        return msg;
 
-    QString msg = errorMessage(errorCode, errorSource, errorPosition);
+    msg += errorMessage(errorCode, errorSource, errorPosition);
     msg += QLatin1String("; source was \"");
     msg += errorSource;
     msg += QLatin1String("\";");
@@ -4062,7 +4047,7 @@ QStringList QUrl::toStringList(const QList<QUrl> &urls, FormattingOptions option
 {
     QStringList lst;
     lst.reserve(urls.size());
-    foreach (const QUrl &url, urls)
+    for (const QUrl &url : urls)
         lst.append(url.toString(options));
     return lst;
 
@@ -4078,9 +4063,8 @@ QList<QUrl> QUrl::fromStringList(const QStringList &urls, ParsingMode mode)
 {
     QList<QUrl> lst;
     lst.reserve(urls.size());
-    foreach (const QString &str, urls) {
+    for (const QString &str : urls)
         lst.append(QUrl(str, mode));
-    }
     return lst;
 }
 
@@ -4257,7 +4241,7 @@ QUrl QUrl::fromUserInput(const QString &userInput)
         return QUrl::fromLocalFile(trimmedString);
 
     QUrl url = QUrl(trimmedString, QUrl::TolerantMode);
-    QUrl urlPrepended = QUrl(QStringLiteral("http://") + trimmedString, QUrl::TolerantMode);
+    QUrl urlPrepended = QUrl(QLatin1String("http://") + trimmedString, QUrl::TolerantMode);
 
     // Check the most common case of a valid url with a scheme
     // We check if the port would be valid by adding the scheme to handle the case host:port

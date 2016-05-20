@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -68,7 +63,7 @@
 #include <unistd.h> // for pathconf() on OS X
 #ifdef QT_BUILD_INTERNAL
 QT_BEGIN_NAMESPACE
-extern Q_GUI_EXPORT QString qt_tildeExpansion(const QString &path, bool *expanded = 0);
+extern Q_GUI_EXPORT QString qt_tildeExpansion(const QString &path);
 QT_END_NAMESPACE
 #endif
 #endif
@@ -101,16 +96,10 @@ class tst_QFiledialog : public QObject
 {
 Q_OBJECT
 
-public:
-    tst_QFiledialog();
-    virtual ~tst_QFiledialog();
-
-public slots:
+private slots:
     void initTestCase();
     void init();
     void cleanup();
-
-private slots:
     void currentChangedSignal();
 #ifdef QT_BUILD_INTERNAL
     void directoryEnteredSignal();
@@ -165,18 +154,11 @@ private slots:
 #endif // QT_BUILD_INTERNAL
 #endif
     void rejectModalDialogs();
+    void QTBUG49600_nativeIconProviderCrash();
 
 private:
     void cleanupSettingsFile();
 };
-
-tst_QFiledialog::tst_QFiledialog()
-{
-}
-
-tst_QFiledialog::~tst_QFiledialog()
-{
-}
 
 void tst_QFiledialog::cleanupSettingsFile()
 {
@@ -201,9 +183,6 @@ void tst_QFiledialog::init()
     QFileDialogPrivate::setLastVisitedDirectory(QUrl());
     // populate the sidebar with some default settings
     QNonNativeFileDialog fd;
-#if defined(Q_OS_WINCE)
-    QTest::qWait(1000);
-#endif
 }
 
 void tst_QFiledialog::cleanup()
@@ -483,11 +462,11 @@ void tst_QFiledialog::completer()
 
     if (startPath.isEmpty()) {
         tempDir.reset(new QTemporaryDir);
-        QVERIFY(tempDir->isValid());
+        QVERIFY2(tempDir->isValid(), qPrintable(tempDir->errorString()));
         startPath = tempDir->path();
         for (int i = 0; i < 10; ++i) {
             TemporaryFilePtr file(new QTemporaryFile(startPath + QStringLiteral("/rXXXXXX")));
-            QVERIFY(file->open());
+            QVERIFY2(file->open(), qPrintable(file->errorString()));
             files.append(file);
         }
     }
@@ -889,7 +868,7 @@ void tst_QFiledialog::selectFile()
     QScopedPointer<QTemporaryFile> tempFile;
     if (file == QLatin1String("temp")) {
         tempFile.reset(new QTemporaryFile(QDir::tempPath() + QStringLiteral("/aXXXXXX")));
-        QVERIFY(tempFile->open());
+        QVERIFY2(tempFile->open(), qPrintable(tempFile->errorString()));
         file = tempFile->fileName();
     }
 
@@ -927,7 +906,7 @@ void tst_QFiledialog::selectFileWrongCaseSaveAs()
 void tst_QFiledialog::selectFiles()
 {
     QTemporaryDir tempDir;
-    QVERIFY(tempDir.isValid());
+    QVERIFY2(tempDir.isValid(), qPrintable(tempDir.errorString()));
     const QString tempPath = tempDir.path();
     {
     QNonNativeFileDialog fd;
@@ -942,7 +921,7 @@ void tst_QFiledialog::selectFiles()
 
     QString filesPath = fd.directory().absolutePath();
     for (int i=0; i < 5; ++i) {
-        QFile file(filesPath + QString::fromLatin1("/qfiledialog_auto_test_not_pres_%1").arg(i));
+        QFile file(filesPath + QLatin1String("/qfiledialog_auto_test_not_pres_") + QString::number(i));
         file.open(QIODevice::WriteOnly);
         file.resize(1024);
         file.flush();
@@ -956,7 +935,7 @@ void tst_QFiledialog::selectFiles()
     QListView* listView = fd.findChild<QListView*>("listView");
     QVERIFY(listView);
     for (int i = 0; i < list.count(); ++i) {
-        fd.selectFile(fd.directory().path() + "/" + list.at(i));
+        fd.selectFile(fd.directory().path() + QLatin1Char('/') + list.at(i));
         QTRY_VERIFY(!listView->selectionModel()->selectedRows().isEmpty());
         toSelect.append(listView->selectionModel()->selectedRows().last());
     }
@@ -1408,15 +1387,18 @@ void tst_QFiledialog::tildeExpansion_data()
     QTest::addColumn<QString>("tildePath");
     QTest::addColumn<QString>("expandedPath");
 
+    const QString tilde = QStringLiteral("~");
+    const QString tildeUser = tilde + QString(qgetenv("USER"));
+    const QLatin1String someSubDir("/some/sub/dir");
+    const QString homePath = QDir::homePath();
+    const QString invalid = QStringLiteral("~thisIsNotAValidUserName");
+
     QTest::newRow("empty path") << QString() << QString();
-    QTest::newRow("~") << QString::fromLatin1("~") << QDir::homePath();
-    QTest::newRow("~/some/sub/dir/") << QString::fromLatin1("~/some/sub/dir") << QDir::homePath()
-                                        + QString::fromLatin1("/some/sub/dir");
-    QString userHome = QString(qgetenv("USER"));
-    userHome.prepend('~');
-    QTest::newRow("current user (~<user> syntax)") << userHome << QDir::homePath();
-    QString invalid = QString::fromLatin1("~thisIsNotAValidUserName");
-    QTest::newRow("invalid user name") << invalid << invalid;
+    QTest::newRow("~")                    << tilde                  << homePath;
+    QTest::newRow("~/some/sub/dir/")      << tilde     + someSubDir << homePath + someSubDir;
+    QTest::newRow("~<user>")              << tildeUser              << homePath;
+    QTest::newRow("~<user>/some/sub/dir") << tildeUser + someSubDir << homePath + someSubDir;
+    QTest::newRow("invalid user name")    << invalid                << invalid;
 }
 #endif // QT_BUILD_INTERNAL
 
@@ -1485,6 +1467,14 @@ void tst_QFiledialog::rejectModalDialogs()
     file = QFileDialog::getSaveFileName(0, QStringLiteral("getSaveFileName"),
                                              QString(), QString(), Q_NULLPTR, options);
     QVERIFY(file.isEmpty());
+}
+
+void tst_QFiledialog::QTBUG49600_nativeIconProviderCrash()
+{
+    if (!QGuiApplicationPrivate::platformTheme()->usePlatformNativeDialog(QPlatformTheme::FileDialog))
+        QSKIP("This platform always uses widgets to realize its QFileDialog, instead of the native file dialog.");
+    QFileDialog fd;
+    fd.iconProvider();
 }
 
 QTEST_MAIN(tst_QFiledialog)

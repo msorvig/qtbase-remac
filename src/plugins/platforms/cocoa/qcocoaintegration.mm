@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -331,10 +337,20 @@ QCocoaIntegration::QCocoaIntegration(const QStringList &paramList)
         [newDelegate setMenuLoader:qtMenuLoader];
     }
 
+    // The presentation options such as whether or not the dock and/or menu bar is
+    // hidden (automatically by the system) affects the main screen's available
+    // geometry. Since we're initializing the screens synchronously at application
+    // startup we need to ensure that the presentation options have been propagated
+    // to the screen before we read out its properties. Normally OS X does this in
+    // an asynchronous callback, but that's too late for us. We force the propagation
+    // by explicitly setting the presentation option to the magic 'default value',
+    // which will resolve to an actual value and result in screen invalidation.
+    cocoaApplication.presentationOptions = NSApplicationPresentationDefault;
     updateScreens();
 
     QMacInternalPasteboardMime::initializeMimeTypes();
     QCocoaMimeTypes::initializeMimeTypes();
+    QWindowSystemInterfacePrivate::TabletEvent::setPlatformSynthesizesMouse(false);
 }
 
 QCocoaIntegration::~QCocoaIntegration()
@@ -422,14 +438,18 @@ void QCocoaIntegration::updateScreens()
         }
         siblings << screen;
     }
+
+    // Set virtual siblings list. All screens in mScreens are siblings, because we ignored the
+    // mirrors. Note that some of the screens we update the siblings list for here may be deleted
+    // below, but update anyway to keep the to-be-deleted screens out of the siblings list.
+    foreach (QCocoaScreen* screen, mScreens)
+        screen->setVirtualSiblings(siblings);
+
     // Now the leftovers in remainingScreens are no longer current, so we can delete them.
     foreach (QCocoaScreen* screen, remainingScreens) {
         mScreens.removeOne(screen);
         destroyScreen(screen);
     }
-    // All screens in mScreens are siblings, because we ignored the mirrors.
-    foreach (QCocoaScreen* screen, mScreens)
-        screen->setVirtualSiblings(siblings);
 }
 
 QCocoaScreen *QCocoaIntegration::screenAtIndex(int index)
@@ -629,6 +649,11 @@ void QCocoaIntegration::setApplicationIcon(const QIcon &icon) const
     }
     [[NSApplication sharedApplication] setApplicationIconImage:image];
     [image release];
+}
+
+void QCocoaIntegration::beep() const
+{
+    NSBeep();
 }
 
 QT_END_NAMESPACE

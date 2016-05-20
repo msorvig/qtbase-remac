@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,9 +28,6 @@
 
 
 #include <QtTest/QtTest>
-#if defined(Q_OS_WINCE)
-#include <ceconfig.h>
-#endif
 
 #include <QtGui>
 #include <QtWidgets>
@@ -46,7 +38,7 @@
 #include "../../../shared/platforminputcontext.h"
 #include <private/qinputmethod_p.h>
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 #include <windows.h>
 #define Q_CHECK_PAINTEVENTS \
     if (::SwitchDesktop(::GetThreadDesktop(::GetCurrentThreadId())) == 0) \
@@ -175,7 +167,6 @@ class tst_QGraphicsScene : public QObject
 {
     Q_OBJECT
 public slots:
-    void initTestCase();
     void cleanup();
 
 private slots:
@@ -277,13 +268,6 @@ private slots:
     void taskQTBUG_15977_renderWithDeviceCoordinateCache();
     void taskQTBUG_16401_focusItem();
 };
-
-void tst_QGraphicsScene::initTestCase()
-{
-#ifdef Q_OS_WINCE //disable magic for WindowsCE
-    qApp->setAutoMaximizeThreshold(-1);
-#endif
-}
 
 void tst_QGraphicsScene::cleanup()
 {
@@ -1255,7 +1239,7 @@ void tst_QGraphicsScene::addText()
 
 void tst_QGraphicsScene::removeItem()
 {
-#if defined(Q_OS_WINCE) && !defined(GWES_ICONCURS)
+#if defined(Q_OS_ANDROID)
     QSKIP("No mouse cursor support");
 #endif
     QGraphicsScene scene;
@@ -1592,11 +1576,7 @@ void tst_QGraphicsScene::hoverEvents_siblings()
 
     QGraphicsView view(&scene);
     view.setRenderHint(QPainter::Antialiasing, true);
-#if defined(Q_OS_WINCE)
-    view.setMinimumSize(230, 200);
-#else
     view.setMinimumSize(400, 300);
-#endif
     view.rotate(10);
     view.scale(1.7, 1.7);
     view.show();
@@ -1665,11 +1645,7 @@ void tst_QGraphicsScene::hoverEvents_parentChild()
 
     QGraphicsView view(&scene);
     view.setRenderHint(QPainter::Antialiasing, true);
-#if defined(Q_OS_WINCE)
-    view.setMinimumSize(230, 200);
-#else
     view.setMinimumSize(400, 300);
-#endif
     view.rotate(10);
     view.scale(1.7, 1.7);
     view.show();
@@ -2629,8 +2605,7 @@ void tst_QGraphicsScene::render()
     scene.render(&painter, targetRect, sourceRect, aspectRatioMode);
     painter.end();
 
-    const QString renderPath = QLatin1String(SRCDIR) + "/testData/render";
-    QString fileName = renderPath + QString("/%1.png").arg(QTest::currentDataTag());
+    QString fileName = QFINDTESTDATA(QString("/testData/render/%1.png").arg(QTest::currentDataTag()));
     QImage original(fileName);
     QVERIFY(!original.isNull());
 
@@ -2681,6 +2656,10 @@ void tst_QGraphicsScene::render()
 
 void tst_QGraphicsScene::renderItemsWithNegativeWidthOrHeight()
 {
+#if defined(Q_OS_ANDROID)
+    QSKIP("Test only works on platforms with resizable windows");
+#endif
+
     QGraphicsScene scene(0, 0, 150, 150);
 
     // Add item with negative width.
@@ -2756,6 +2735,10 @@ protected:
 
 void tst_QGraphicsScene::contextMenuEvent_ItemIgnoresTransformations()
 {
+#if defined(Q_OS_ANDROID)
+    QSKIP("Test fails on some Android devices (QTBUG-44430)");
+#endif
+
     QGraphicsScene scene(0, 0, 200, 200);
     ContextMenuItem *item = new ContextMenuItem;
     item->setFlag(QGraphicsItem::ItemIgnoresTransformations);
@@ -4025,6 +4008,10 @@ void tst_QGraphicsScene::polishItems2()
 
 void tst_QGraphicsScene::isActive()
 {
+#if defined(Q_OS_ANDROID)
+    QSKIP("Fails on Android (QTBUG-44430)");
+#endif
+
     QGraphicsScene scene1;
     QVERIFY(!scene1.isActive());
     QGraphicsScene scene2;

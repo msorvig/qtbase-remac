@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -240,8 +246,8 @@ Q_AUTOTEST_EXPORT QList<QFontEngine *> QFontEngine_stopCollectingEngines()
 
 QFontEngine::QFontEngine(Type type)
     : m_type(type), ref(0),
-      font_(0), font_destroy_func(0),
-      face_(0), face_destroy_func(0),
+      font_(),
+      face_(),
       m_minLeftBearing(kBearingNotInitialized),
       m_minRightBearing(kBearingNotInitialized)
 {
@@ -263,17 +269,6 @@ QFontEngine::QFontEngine(Type type)
 
 QFontEngine::~QFontEngine()
 {
-    m_glyphCaches.clear();
-
-    if (font_ && font_destroy_func) {
-        font_destroy_func(font_);
-        font_ = 0;
-    }
-    if (face_ && face_destroy_func) {
-        face_destroy_func(face_);
-        face_ = 0;
-    }
-
 #ifdef QT_BUILD_INTERNAL
     if (enginesCollector)
         enginesCollector->removeOne(this);
@@ -328,10 +323,9 @@ void *QFontEngine::harfbuzzFont() const
         hbFont->x_scale = (((qint64)hbFont->x_ppem << 6) * 0x10000L + (emSquare >> 1)) / emSquare;
         hbFont->y_scale = (((qint64)hbFont->y_ppem << 6) * 0x10000L + (emSquare >> 1)) / emSquare;
 
-        font_ = (void *)hbFont;
-        font_destroy_func = free;
+        font_ = Holder(hbFont, free);
     }
-    return font_;
+    return font_.get();
 }
 
 void *QFontEngine::harfbuzzFace() const
@@ -351,10 +345,9 @@ void *QFontEngine::harfbuzzFace() const
         Q_CHECK_PTR(hbFace);
         hbFace->isSymbolFont = symbol;
 
-        face_ = (void *)hbFace;
-        face_destroy_func = hb_freeFace;
+        face_ = Holder(hbFace, hb_freeFace);
     }
-    return face_;
+    return face_.get();
 }
 
 bool QFontEngine::supportsScript(QChar::Script script) const
@@ -370,17 +363,15 @@ bool QFontEngine::supportsScript(QChar::Script script) const
         return true;
     }
 
-#ifdef Q_OS_MAC
-    {
+#ifdef QT_ENABLE_HARFBUZZ_NG
+    if (qt_useHarfbuzzNG()) {
+#if defined(Q_OS_DARWIN)
         // in AAT fonts, 'gsub' table is effectively replaced by 'mort'/'morx' table
         uint len;
         if (getSfntTableData(MAKE_TAG('m','o','r','t'), 0, &len) || getSfntTableData(MAKE_TAG('m','o','r','x'), 0, &len))
             return true;
-    }
 #endif
 
-#ifdef QT_ENABLE_HARFBUZZ_NG
-    if (qt_useHarfbuzzNG()) {
         bool ret = false;
         if (hb_face_t *face = hb_qt_face_get_for_engine(const_cast<QFontEngine *>(this))) {
             hb_tag_t script_tag_1, script_tag_2;
@@ -825,7 +816,7 @@ void QFontEngine::addBitmapFontToPath(qreal x, qreal y, const QGlyphLayout &glyp
                 }
             }
         }
-        const uchar *bitmap_data = bitmap.bits();
+        const uchar *bitmap_data = bitmap.constBits();
         QFixedPoint offset = glyphs.offsets[i];
         advanceX += offset.x;
         advanceY += offset.y;
@@ -882,12 +873,12 @@ QImage QFontEngine::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, con
 
 QImage QFontEngine::alphaRGBMapForGlyph(glyph_t glyph, QFixed /*subPixelPosition*/, const QTransform &t)
 {
-    QImage alphaMask = alphaMapForGlyph(glyph, t);
+    const QImage alphaMask = alphaMapForGlyph(glyph, t);
     QImage rgbMask(alphaMask.width(), alphaMask.height(), QImage::Format_RGB32);
 
     for (int y=0; y<alphaMask.height(); ++y) {
         uint *dst = (uint *) rgbMask.scanLine(y);
-        uchar *src = (uchar *) alphaMask.scanLine(y);
+        const uchar *src = alphaMask.constScanLine(y);
         for (int x=0; x<alphaMask.width(); ++x) {
             int val = src[x];
             dst[x] = qRgb(val, val, val);
@@ -960,7 +951,8 @@ QImage QFontEngine::alphaMapForGlyph(glyph_t glyph)
     pt.x = -glyph_x;
     pt.y = -glyph_y; // the baseline
     QPainterPath path;
-    QImage im(glyph_width + 4, glyph_height, QImage::Format_ARGB32_Premultiplied);
+    path.setFillRule(Qt::WindingFill);
+    QImage im(glyph_width, glyph_height, QImage::Format_ARGB32_Premultiplied);
     im.fill(Qt::transparent);
     QPainter p(&im);
     p.setRenderHint(QPainter::Antialiasing);
@@ -974,7 +966,7 @@ QImage QFontEngine::alphaMapForGlyph(glyph_t glyph)
 
     for (int y=0; y<im.height(); ++y) {
         uchar *dst = (uchar *) alphaMap.scanLine(y);
-        uint *src = (uint *) im.scanLine(y);
+        const uint *src = reinterpret_cast<const uint *>(im.constScanLine(y));
         for (int x=0; x<im.width(); ++x)
             dst[x] = qAlpha(src[x]);
     }
@@ -1228,6 +1220,11 @@ int QFontEngine::glyphCount() const
     quint16 count = 0;
     qSafeFromBigEndian(source, end, &count);
     return count;
+}
+
+Qt::HANDLE QFontEngine::handle() const
+{
+    return Q_NULLPTR;
 }
 
 const uchar *QFontEngine::getCMap(const uchar *table, uint tableSize, bool *isSymbolFont, int *cmapSize)
@@ -1836,7 +1833,10 @@ QFontEngine *QFontEngineMulti::loadEngine(int at)
     request.family = fallbackFamilyAt(at - 1);
 
     if (QFontEngine *engine = QFontDatabase::findFont(request, m_script)) {
-        engine->fontDef = request;
+        if (request.weight > QFont::Normal)
+            engine->fontDef.weight = request.weight;
+        if (request.style > QFont::StyleNormal)
+            engine->fontDef.style = request.style;
         return engine;
     }
 
@@ -2288,7 +2288,7 @@ QFontEngine *QFontEngineMulti::createMultiFontEngine(QFontEngine *fe, int script
     }
     if (!engine) {
         engine = QGuiApplicationPrivate::instance()->platformIntegration()->fontDatabase()->fontEngineMulti(fe, QChar::Script(script));
-        QFontCache::instance()->insertEngine(key, engine, /* insertMulti */ !faceIsLocal);
+        fc->insertEngine(key, engine, /* insertMulti */ !faceIsLocal);
     }
     Q_ASSERT(engine);
     return engine;

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -45,6 +51,7 @@
 #include <qpen.h>
 #include <qdebug.h>
 #include <QMetaMethod>
+#include <private/qscrollbar_p.h>
 #ifndef QT_NO_ACCESSIBILITY
 #include <qaccessible.h>
 #endif
@@ -1017,7 +1024,11 @@ void QTreeView::keyboardSearch(const QString &search)
 
     bool skipRow = false;
     bool keyboardTimeWasValid = d->keyboardInputTime.isValid();
-    qint64 keyboardInputTimeElapsed = d->keyboardInputTime.restart();
+    qint64 keyboardInputTimeElapsed;
+    if (keyboardTimeWasValid)
+        keyboardInputTimeElapsed = d->keyboardInputTime.restart();
+    else
+        d->keyboardInputTime.start();
     if (search.isEmpty() || !keyboardTimeWasValid
         || keyboardInputTimeElapsed > QApplication::keyboardInputInterval()) {
         d->keyboardInput = search;
@@ -1352,11 +1363,7 @@ void QTreeViewPrivate::paintAlternatingRowColors(QPainter *painter, QStyleOption
     }
     while (y <= bottom) {
         option->rect.setRect(0, y, viewport->width(), rowHeight);
-        if (current & 1) {
-            option->features |= QStyleOptionViewItem::Alternate;
-        } else {
-            option->features &= ~QStyleOptionViewItem::Alternate;
-        }
+        option->features.setFlag(QStyleOptionViewItem::Alternate, current & 1);
         ++current;
         q->style()->drawPrimitive(QStyle::PE_PanelItemViewRow, option, painter, q);
         y += rowHeight;
@@ -1470,13 +1477,12 @@ void QTreeView::drawTree(QPainter *painter, const QRegion &region) const
     QPoint hoverPos = d->viewport->mapFromGlobal(QCursor::pos());
     d->hoverBranch = d->itemDecorationAt(hoverPos);
 
-    QVector<QRect> rects = region.rects();
     QVector<int> drawn;
-    bool multipleRects = (rects.size() > 1);
-    for (int a = 0; a < rects.size(); ++a) {
+    bool multipleRects = (region.rectCount() > 1);
+    for (const QRect &a : region) {
         const QRect area = (multipleRects
-                            ? QRect(0, rects.at(a).y(), viewportWidth, rects.at(a).height())
-                            : rects.at(a));
+                            ? QRect(0, a.y(), viewportWidth, a.height())
+                            : a);
         d->leftAndRight = d->startAndEndColumns(area);
 
         int i = firstVisibleItem; // the first item at the top of the viewport
@@ -1702,11 +1708,9 @@ void QTreeView::drawRow(QPainter *painter, const QStyleOptionViewItem &option,
             else
                 opt.state |= QStyle::State_HasFocus;
         }
-        if ((hoverRow || modelIndex == hover)
-            && (option.showDecorationSelected || (d->hoverBranch == -1)))
-            opt.state |= QStyle::State_MouseOver;
-        else
-            opt.state &= ~QStyle::State_MouseOver;
+        opt.state.setFlag(QStyle::State_MouseOver,
+                          (hoverRow || modelIndex == hover)
+                          && (option.showDecorationSelected || d->hoverBranch == -1));
 
         if (enabled) {
             QPalette::ColorGroup cg;
@@ -1722,11 +1726,7 @@ void QTreeView::drawRow(QPainter *painter, const QStyleOptionViewItem &option,
         }
 
         if (alternate) {
-            if (d->current & 1) {
-                opt.features |= QStyleOptionViewItem::Alternate;
-            } else {
-                opt.features &= ~QStyleOptionViewItem::Alternate;
-            }
+            opt.features.setFlag(QStyleOptionViewItem::Alternate, d->current & 1);
         }
 
         /* Prior to Qt 4.3, the background of the branch (in selected state and
@@ -1825,11 +1825,7 @@ void QTreeView::drawBranches(QPainter *painter, const QRect &rect,
         painter->setBrushOrigin(QPoint(0, verticalOffset()));
 
     if (d->alternatingColors) {
-        if (d->current & 1) {
-            opt.features |= QStyleOptionViewItem::Alternate;
-        } else {
-            opt.features &= ~QStyleOptionViewItem::Alternate;
-        }
+        opt.features.setFlag(QStyleOptionViewItem::Alternate, d->current & 1);
     }
 
     // When hovering over a row, pass State_Hover for painting the branch
@@ -1855,10 +1851,8 @@ void QTreeView::drawBranches(QPainter *painter, const QRect &rect,
                     | (moreSiblings ? QStyle::State_Sibling : QStyle::State_None)
                     | (children ? QStyle::State_Children : QStyle::State_None)
                     | (expanded ? QStyle::State_Open : QStyle::State_None);
-        if (hoverRow || item == d->hoverBranch)
-            opt.state |= QStyle::State_MouseOver;
-        else
-            opt.state &= ~QStyle::State_MouseOver;
+        opt.state.setFlag(QStyle::State_MouseOver, hoverRow || item == d->hoverBranch);
+
         style()->drawPrimitive(QStyle::PE_IndicatorBranch, &opt, painter, this);
     }
     // then go out level by level
@@ -1883,10 +1877,8 @@ void QTreeView::drawBranches(QPainter *painter, const QRect &rect,
         }
         if (moreSiblings)
             opt.state |= QStyle::State_Sibling;
-        if (hoverRow || item == d->hoverBranch)
-            opt.state |= QStyle::State_MouseOver;
-        else
-            opt.state &= ~QStyle::State_MouseOver;
+        opt.state.setFlag(QStyle::State_MouseOver, hoverRow || item == d->hoverBranch);
+
         style()->drawPrimitive(QStyle::PE_IndicatorBranch, &opt, painter, this);
         current = ancestor;
         ancestor = current.parent();
@@ -2392,8 +2384,7 @@ QRegion QTreeView::visualRegionForSelection(const QItemSelection &selection) con
 
     QRegion selectionRegion;
     const QRect &viewportRect = d->viewport->rect();
-    for (int i = 0; i < selection.count(); ++i) {
-        QItemSelectionRange range = selection.at(i);
+    for (const auto &range : selection) {
         if (!range.isValid())
             continue;
         QModelIndex parent = range.parent();
@@ -2564,7 +2555,7 @@ void QTreeView::rowsInserted(const QModelIndex &parent, int start, int end)
     if (((parentItem != -1) && d->viewItems.at(parentItem).expanded)
         || (parent == d->root)) {
         d->doDelayedItemsLayout();
-    } else if (parentItem != -1 && (d->model->rowCount(parent) == end - start + 1)) {
+    } else if (parentItem != -1 && parentRowCount == delta) {
         // the parent just went from 0 children to more. update to re-paint the decoration
         d->viewItems[parentItem].hasChildren = true;
         viewport()->update();
@@ -2830,10 +2821,14 @@ void QTreeView::updateGeometries()
         if (d->geometryRecursionBlock)
             return;
         d->geometryRecursionBlock = true;
-        QSize hint = d->header->isHidden() ? QSize(0, 0) : d->header->sizeHint();
-        setViewportMargins(0, hint.height(), 0, 0);
+        int height = 0;
+        if (!d->header->isHidden()) {
+            height = qMax(d->header->minimumHeight(), d->header->sizeHint().height());
+            height = qMin(height, d->header->maximumHeight());
+        }
+        setViewportMargins(0, height, 0, 0);
         QRect vg = d->viewport->geometry();
-        QRect geometryRect(vg.left(), vg.top() - hint.height(), vg.width(), hint.height());
+        QRect geometryRect(vg.left(), vg.top() - height, vg.width(), height);
         d->header->setGeometry(geometryRect);
         QMetaObject::invokeMethod(d->header, "updateGeometries");
         d->updateScrollBars();
@@ -3698,7 +3693,7 @@ void QTreeViewPrivate::updateScrollBars()
         }
         vbar->setRange(0, contentsHeight - viewportSize.height());
         vbar->setPageStep(viewportSize.height());
-        vbar->setSingleStep(qMax(viewportSize.height() / (itemsInViewport + 1), 2));
+        vbar->d_func()->itemviewChangeSingleStep(qMax(viewportSize.height() / (itemsInViewport + 1), 2));
     }
 
     const int columnCount = header->count();
@@ -3724,7 +3719,7 @@ void QTreeViewPrivate::updateScrollBars()
             viewportSize = maxSize;
         hbar->setPageStep(viewportSize.width());
         hbar->setRange(0, qMax(horizontalLength - viewportSize.width(), 0));
-        hbar->setSingleStep(qMax(viewportSize.width() / (columnsInViewport + 1), 2));
+        hbar->d_func()->itemviewChangeSingleStep(qMax(viewportSize.width() / (columnsInViewport + 1), 2));
     }
 }
 
@@ -3771,8 +3766,8 @@ QRect QTreeViewPrivate::itemDecorationRect(const QModelIndex &index) const
     return q->style()->subElementRect(QStyle::SE_TreeViewDisclosureItem, &opt, q);
 }
 
-QList<QPair<int, int> > QTreeViewPrivate::columnRanges(const QModelIndex &topIndex,
-                                                          const QModelIndex &bottomIndex) const
+QVector<QPair<int, int> > QTreeViewPrivate::columnRanges(const QModelIndex &topIndex,
+                                                         const QModelIndex &bottomIndex) const
 {
     const int topVisual = header->visualIndex(topIndex.column()),
         bottomVisual = header->visualIndex(bottomIndex.column());
@@ -3792,7 +3787,7 @@ QList<QPair<int, int> > QTreeViewPrivate::columnRanges(const QModelIndex &topInd
     //let's sort the list
     std::sort(logicalIndexes.begin(), logicalIndexes.end());
 
-    QList<QPair<int, int> > ret;
+    QVector<QPair<int, int> > ret;
     QPair<int, int> current;
     current.first = -2; // -1 is not enough because -1+1 = 0
     current.second = -2;
@@ -3826,8 +3821,8 @@ void QTreeViewPrivate::select(const QModelIndex &topIndex, const QModelIndex &bo
     const int top = viewIndex(topIndex),
         bottom = viewIndex(bottomIndex);
 
-    const QList< QPair<int, int> > colRanges = columnRanges(topIndex, bottomIndex);
-    QList< QPair<int, int> >::const_iterator it;
+    const QVector<QPair<int, int> > colRanges = columnRanges(topIndex, bottomIndex);
+    QVector<QPair<int, int> >::const_iterator it;
     for (it = colRanges.begin(); it != colRanges.end(); ++it) {
         const int left = (*it).first,
             right = (*it).second;

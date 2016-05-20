@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the qmake application of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -185,23 +180,23 @@ protected:
     virtual bool doDepends() const { return Option::mkfile::do_deps; }
 
     void filterIncludedFiles(const char *);
-    virtual void processSources() {
+    void processSources() {
         filterIncludedFiles("SOURCES");
         filterIncludedFiles("GENERATED_SOURCES");
     }
 
     //for installs
     virtual QString defaultInstall(const QString &);
+    virtual QString installRoot() const;
 
     //for prl
     QString prlFileName(bool fixify=true);
     void writePrlFile();
     bool processPrlFile(QString &);
-    virtual void processPrlFiles();
     virtual void writePrlFile(QTextStream &);
 
     //make sure libraries are found
-    virtual bool findLibraries();
+    virtual bool findLibraries(bool linkPrl, bool mergeLflags);
 
     //for retrieving values and lists of values
     virtual QString var(const ProKey &var) const;
@@ -221,6 +216,8 @@ protected:
 
     QString filePrefixRoot(const QString &, const QString &);
 
+    enum LibFlagType { LibFlagLib, LibFlagPath, LibFlagFile, LibFlagOther };
+    virtual LibFlagType parseLibFlag(const ProString &flag, ProString *arg);
     ProStringList fixLibFlags(const ProKey &var);
     virtual ProString fixLibFlag(const ProString &lib);
 
@@ -276,7 +273,10 @@ inline bool MakefileGenerator::noIO() const
 inline QString MakefileGenerator::defaultInstall(const QString &)
 { return QString(""); }
 
-inline bool MakefileGenerator::findLibraries()
+inline QString MakefileGenerator::installRoot() const
+{ return QStringLiteral("$(INSTALL_ROOT)"); }
+
+inline bool MakefileGenerator::findLibraries(bool, bool)
 { return true; }
 
 inline MakefileGenerator::~MakefileGenerator()

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -212,7 +218,7 @@ void QWindowPrivate::init()
 
     // If your application aborts here, you are probably creating a QWindow
     // before the screen list is populated.
-    if (!parentWindow && !topLevelScreen) {
+    if (Q_UNLIKELY(!parentWindow && !topLevelScreen)) {
         qFatal("Cannot create window: no screens available");
         exit(1);
     }
@@ -359,7 +365,7 @@ void QWindowPrivate::emitScreenChangedRecursion(QScreen *newScreen)
 {
     Q_Q(QWindow);
     emit q->screenChanged(newScreen);
-    foreach (QObject *child, q->children()) {
+    for (QObject *child : q->children()) {
         if (child->isWindowType())
             static_cast<QWindow *>(child)->d_func()->emitScreenChangedRecursion(newScreen);
     }
@@ -369,7 +375,7 @@ void QWindowPrivate::setTopLevelScreen(QScreen *newScreen, bool recreate)
 {
     Q_Q(QWindow);
     if (parentWindow) {
-        qWarning() << this << Q_FUNC_INFO << '(' << newScreen << "): Attempt to set a screen on a child window.";
+        qWarning() << q << '(' << newScreen << "): Attempt to set a screen on a child window.";
         return;
     }
     if (newScreen != topLevelScreen) {
@@ -389,25 +395,42 @@ void QWindowPrivate::setTopLevelScreen(QScreen *newScreen, bool recreate)
 void QWindowPrivate::create(bool recursive)
 {
     Q_Q(QWindow);
-    if (!platformWindow) {
-        platformWindow = QGuiApplicationPrivate::platformIntegration()->createPlatformWindow(q);
-        QObjectList childObjects = q->children();
-        for (int i = 0; i < childObjects.size(); i ++) {
-            QObject *object = childObjects.at(i);
-            if (object->isWindowType()) {
-                QWindow *window = static_cast<QWindow *>(object);
-                if (recursive)
-                    window->d_func()->create(true);
-                if (window->d_func()->platformWindow)
-                    window->d_func()->platformWindow->setParent(platformWindow);
-            }
-        }
+    if (platformWindow)
+        return;
 
-        if (platformWindow) {
-            QPlatformSurfaceEvent e(QPlatformSurfaceEvent::SurfaceCreated);
-            QGuiApplication::sendEvent(q, &e);
-        }
+    if (q->parent())
+        q->parent()->create();
+
+    platformWindow = QGuiApplicationPrivate::platformIntegration()->createPlatformWindow(q);
+    Q_ASSERT(platformWindow);
+
+    if (!platformWindow) {
+        qWarning() << "Failed to create platform window for" << q << "with flags" << q->flags();
+        return;
     }
+
+    QObjectList childObjects = q->children();
+    for (int i = 0; i < childObjects.size(); i ++) {
+        QObject *object = childObjects.at(i);
+        if (!object->isWindowType())
+            continue;
+
+        QWindow *childWindow = static_cast<QWindow *>(object);
+        if (recursive)
+            childWindow->d_func()->create(recursive);
+
+        // The child may have had deferred creation due to this window not being created
+        // at the time setVisible was called, so we re-apply the visible state, which
+        // may result in creating the child, and emitting the appropriate signals.
+        if (childWindow->isVisible())
+            childWindow->setVisible(true);
+
+        if (QPlatformWindow *childPlatformWindow = childWindow->d_func()->platformWindow)
+            childPlatformWindow->setParent(this->platformWindow);
+    }
+
+    QPlatformSurfaceEvent e(QPlatformSurfaceEvent::SurfaceCreated);
+    QGuiApplication::sendEvent(q, &e);
 }
 
 void QWindowPrivate::clearFocusObject()
@@ -468,14 +491,23 @@ void QWindow::setVisible(bool visible)
 {
     Q_D(QWindow);
 
-    if (d->visible == visible)
+    if (d->visible != visible) {
+        d->visible = visible;
+        emit visibleChanged(visible);
+        d->updateVisibility();
+    } else if (d->platformWindow) {
+        // Visibility hasn't changed, and the platform window is in sync
         return;
-    d->visible = visible;
-    emit visibleChanged(visible);
-    d->updateVisibility();
+    }
 
-    if (!d->platformWindow)
-        create();
+    if (!d->platformWindow) {
+        // If we have a parent window, but the parent hasn't been created yet, we
+        // can defer creation until the parent is created or we're re-parented.
+        if (parent() && !parent()->handle())
+            return;
+        else
+            create();
+    }
 
     if (visible) {
         // remove posted quit events when showing a new window
@@ -514,6 +546,7 @@ void QWindow::setVisible(bool visible)
     if (visible && (d->hasCursor || QGuiApplication::overrideCursor()))
         d->applyCursor();
 #endif
+
     d->platformWindow->setVisible(visible);
 
     if (!visible) {
@@ -588,8 +621,7 @@ QWindow *QWindow::parent() const
     Setting \a parent to be 0 will make the window become a top level window.
 
     If \a parent is a window created by fromWinId(), then the current window
-    will be embedded inside \a parent, if the platform supports it. Window
-    embedding is currently supported only by the X11 platform plugin.
+    will be embedded inside \a parent, if the platform supports it.
 */
 void QWindow::setParent(QWindow *parent)
 {
@@ -599,25 +631,30 @@ void QWindow::setParent(QWindow *parent)
 
     QScreen *newScreen = parent ? parent->screen() : screen();
     if (d->windowRecreationRequired(newScreen)) {
-        qWarning() << this << Q_FUNC_INFO << '(' << parent << "): Cannot change screens (" << screen() << newScreen << ')';
+        qWarning() << this << '(' << parent << "): Cannot change screens (" << screen() << newScreen << ')';
         return;
     }
 
     QObject::setParent(parent);
+    d->parentWindow = parent;
+
     if (parent)
         d->disconnectFromScreen();
     else
         d->connectToScreen(newScreen);
 
-    if (d->platformWindow) {
-        if (parent && parent->d_func()->platformWindow) {
-            d->platformWindow->setParent(parent->d_func()->platformWindow);
-        } else {
-            d->platformWindow->setParent(0);
-        }
-    }
+    // If we were set visible, but not created because we were a child, and we're now
+    // re-parented into a created parent, or to being a top level, we need re-apply the
+    // visibility state, which will also create.
+    if (isVisible() && (!parent || parent->handle()))
+        setVisible(true);
 
-    d->parentWindow = parent;
+    if (d->platformWindow) {
+        if (parent)
+            parent->create();
+
+        d->platformWindow->setParent(parent ? parent->d_func()->platformWindow : 0);
+    }
 
     QGuiApplicationPrivate::updateBlockedStatus(this);
 }
@@ -946,7 +983,7 @@ void QWindow::setMask(const QRegion &region)
     Q_D(QWindow);
     if (!d->platformWindow)
         return;
-    d->platformWindow->setMask(region);
+    d->platformWindow->setMask(QHighDpi::toNativeLocalRegion(region, this));
     d->mask = region;
 }
 
@@ -965,7 +1002,7 @@ QRegion QWindow::mask() const
 /*!
     Requests the window to be activated, i.e. receive keyboard focus.
 
-    \sa isActive(), QGuiApplication::focusWindow()
+    \sa isActive(), QGuiApplication::focusWindow(), QWindowsWindowFunctions::setWindowActivationBehavior()
 */
 void QWindow::requestActivate()
 {
@@ -1108,7 +1145,7 @@ qreal QWindow::devicePixelRatio() const
 void QWindow::setWindowState(Qt::WindowState state)
 {
     if (state == Qt::WindowActive) {
-        qWarning() << "QWindow::setWindowState does not accept Qt::WindowActive";
+        qWarning("QWindow::setWindowState does not accept Qt::WindowActive");
         return;
     }
 
@@ -1155,7 +1192,7 @@ void QWindow::setTransientParent(QWindow *parent)
 {
     Q_D(QWindow);
     if (parent && !parent->isTopLevel()) {
-        qWarning() << Q_FUNC_INFO << parent << "must be a top level window.";
+        qWarning() << parent << "must be a top level window.";
         return;
     }
 
@@ -1271,8 +1308,11 @@ void QWindow::setMinimumSize(const QSize &size)
 */
 void QWindow::setX(int arg)
 {
+    Q_D(QWindow);
     if (x() != arg)
         setGeometry(QRect(arg, y(), width(), height()));
+    else
+        d->positionAutomatic = false;
 }
 
 /*!
@@ -1281,8 +1321,11 @@ void QWindow::setX(int arg)
 */
 void QWindow::setY(int arg)
 {
+    Q_D(QWindow);
     if (y() != arg)
         setGeometry(QRect(x(), arg, width(), height()));
+    else
+        d->positionAutomatic = false;
 }
 
 /*!
@@ -1426,9 +1469,9 @@ void QWindow::setGeometry(const QRect &rect)
 {
     Q_D(QWindow);
     d->positionAutomatic = false;
-    if (rect == geometry())
+    const QRect oldRect = geometry();
+    if (rect == oldRect)
         return;
-    QRect oldRect = geometry();
 
     d->positionPolicy = QWindowPrivate::WindowFrameExclusive;
     if (d->platformWindow) {
@@ -1466,7 +1509,8 @@ QScreen *QWindowPrivate::screenForGeometry(const QRect &newGeometry)
     QScreen *fallback = currentScreen;
     QPoint center = newGeometry.center();
     if (!q->parent() && currentScreen && !currentScreen->geometry().contains(center)) {
-        Q_FOREACH (QScreen* screen, currentScreen->virtualSiblings()) {
+        const auto screens = currentScreen->virtualSiblings();
+        for (QScreen* screen : screens) {
             if (screen->geometry().contains(center))
                 return screen;
             if (screen->geometry().intersects(newGeometry))
@@ -1643,8 +1687,12 @@ void QWindow::destroy()
         QGuiApplicationPrivate::currentMouseWindow = parent();
     if (QGuiApplicationPrivate::currentMousePressWindow == this)
         QGuiApplicationPrivate::currentMousePressWindow = parent();
-    if (QGuiApplicationPrivate::tabletPressTarget == this)
-        QGuiApplicationPrivate::tabletPressTarget = parent();
+
+    for (int i = 0; i < QGuiApplicationPrivate::tabletDevicePoints.size(); ++i) {
+        QGuiApplicationPrivate::TabletPointData &pointData = QGuiApplicationPrivate::tabletDevicePoints[i];
+        if (pointData.target == this)
+            pointData.target = parent();
+    }
 
     bool wasVisible = isVisible();
     d->visibilityOnDestroy = wasVisible && d->platformWindow;
@@ -2098,6 +2146,17 @@ bool QWindow::event(QEvent *ev)
         break;
     }
 
+    case QEvent::PlatformSurface: {
+        if ((static_cast<QPlatformSurfaceEvent *>(ev))->surfaceEventType() == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed) {
+#ifndef QT_NO_OPENGL
+            QOpenGLContext *context = QOpenGLContext::currentContext();
+            if (context && context->surface() == static_cast<QSurface *>(this))
+                context->doneCurrent();
+#endif
+        }
+        break;
+    }
+
     default:
         return QObject::event(ev);
     }
@@ -2303,10 +2362,10 @@ QPoint QWindow::mapToGlobal(const QPoint &pos) const
     Q_D(const QWindow);
     // QTBUG-43252, prefer platform implementation for foreign windows.
     if (d->platformWindow
-        && (type() == Qt::ForeignWindow || d->platformWindow->isEmbedded(0))) {
-        return d->platformWindow->mapToGlobal(pos);
+        && (type() == Qt::ForeignWindow || d->platformWindow->isEmbedded())) {
+        return QHighDpi::fromNativeLocalPosition(d->platformWindow->mapToGlobal(QHighDpi::toNativeLocalPosition(pos, this)), this);
     }
-    return pos + d_func()->globalPosition();
+    return pos + d->globalPosition();
 }
 
 
@@ -2323,10 +2382,10 @@ QPoint QWindow::mapFromGlobal(const QPoint &pos) const
     Q_D(const QWindow);
     // QTBUG-43252, prefer platform implementation for foreign windows.
     if (d->platformWindow
-        && (type() == Qt::ForeignWindow || d->platformWindow->isEmbedded(0))) {
-        return d->platformWindow->mapFromGlobal(pos);
+        && (type() == Qt::ForeignWindow || d->platformWindow->isEmbedded())) {
+        return QHighDpi::fromNativeLocalPosition(d->platformWindow->mapFromGlobal(QHighDpi::toNativeLocalPosition(pos, this)), this);
     }
-    return pos - d_func()->globalPosition();
+    return pos - d->globalPosition();
 }
 
 
@@ -2388,9 +2447,16 @@ QWindow *QWindowPrivate::topLevelWindow() const
     Given the handle \a id to a native window, this method creates a QWindow
     object which can be used to represent the window when invoking methods like
     setParent() and setTransientParent().
-    This can be used, on platforms which support it, to embed a window inside a
-    container or to make a window stick on top of a window created by another
-    process.
+
+    This can be used, on platforms which support it, to embed a QWindow inside a
+    native window, or to embed a native window inside a QWindow.
+
+    If foreign windows are not supported, this function returns 0.
+
+    \note The resulting QWindow should not be used to manipulate the underlying
+    native window (besides re-parenting), or to observe state changes of the
+    native window. Any support for these kind of operations is incidental, highly
+    platform dependent and untested.
 
     \sa setParent()
     \sa setTransientParent()
@@ -2398,7 +2464,7 @@ QWindow *QWindowPrivate::topLevelWindow() const
 QWindow *QWindow::fromWinId(WId id)
 {
     if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ForeignWindows)) {
-        qWarning() << "QWindow::fromWinId(): platform plugin does not support foreign windows.";
+        qWarning("QWindow::fromWinId(): platform plugin does not support foreign windows.");
         return 0;
     }
 

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the qmake application of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -52,7 +47,7 @@ QT_BEGIN_NAMESPACE
 
 ProFileCache::~ProFileCache()
 {
-    foreach (const Entry &ent, parsed_files)
+    for (const Entry &ent : qAsConst(parsed_files))
         if (ent.pro)
             ent.pro->deref();
 }
@@ -64,6 +59,18 @@ void ProFileCache::discardFile(const QString &fileName)
 #endif
     QHash<QString, Entry>::Iterator it = parsed_files.find(fileName);
     if (it != parsed_files.end()) {
+#ifdef PROPARSER_THREAD_SAFE
+        if (it->locker) {
+            if (!it->locker->done) {
+                ++it->locker->waiters;
+                it->locker->cond.wait(&mutex);
+                if (!--it->locker->waiters) {
+                    delete it->locker;
+                    it->locker = 0;
+                }
+            }
+        }
+#endif
         if (it->pro)
             it->pro->deref();
         parsed_files.erase(it);
@@ -80,6 +87,18 @@ void ProFileCache::discardFiles(const QString &prefix)
             end = parsed_files.end();
     while (it != end)
         if (it.key().startsWith(prefix)) {
+#ifdef PROPARSER_THREAD_SAFE
+            if (it->locker) {
+                if (!it->locker->done) {
+                    ++it->locker->waiters;
+                    it->locker->cond.wait(&mutex);
+                    if (!--it->locker->waiters) {
+                        delete it->locker;
+                        it->locker = 0;
+                    }
+                }
+            }
+#endif
             if (it->pro)
                 it->pro->deref();
             it = parsed_files.erase(it);
@@ -87,7 +106,6 @@ void ProFileCache::discardFiles(const QString &prefix)
             ++it;
         }
 }
-
 
 ////////// Parser ///////////
 
@@ -257,7 +275,8 @@ void QMakeParser::putHashStr(ushort *&pTokPtr, const ushort *buf, uint len)
     *tokPtr++ = (ushort)hash;
     *tokPtr++ = (ushort)(hash >> 16);
     *tokPtr++ = (ushort)len;
-    memcpy(tokPtr, buf, len * 2);
+    if (len) // buf may be nullptr; don't pass that to memcpy (-> undefined behavior)
+        memcpy(tokPtr, buf, len * 2);
     pTokPtr = tokPtr + len;
 }
 

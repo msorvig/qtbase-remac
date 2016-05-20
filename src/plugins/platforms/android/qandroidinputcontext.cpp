@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2012 BogDan Vatra <bogdan@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,6 +45,7 @@
 #include "androidjniinput.h"
 #include "qandroideventdispatcher.h"
 #include "androiddeadlockprotector.h"
+#include "qandroidplatformintegration.h"
 #include <QDebug>
 #include <qevent.h>
 #include <qguiapplication.h>
@@ -47,6 +54,7 @@
 #include <qinputmethod.h>
 #include <qwindow.h>
 #include <QtCore/private/qjni_p.h>
+#include <private/qhighdpiscaling_p.h>
 
 #include <QTextCharFormat>
 
@@ -72,7 +80,7 @@ static jboolean beginBatchEdit(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug() << "@@@ BEGINBATCH";
+    qDebug("@@@ BEGINBATCH");
 #endif
 
     return m_androidInputContext->beginBatchEdit();
@@ -86,7 +94,7 @@ static jboolean endBatchEdit(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug() << "@@@ ENDBATCH";
+    qDebug("@@@ ENDBATCH");
 #endif
 
     return m_androidInputContext->endBatchEdit();
@@ -128,7 +136,7 @@ static jboolean finishComposingText(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug() << "@@@ FINISH";
+    qDebug("@@@ FINISH");
 #endif
     return m_androidInputContext->finishComposingText();
 }
@@ -250,7 +258,7 @@ static jboolean selectAll(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug() << "@@@ SELALL";
+    qDebug("@@@ SELALL");
 #endif
     return m_androidInputContext->selectAll();
 }
@@ -261,7 +269,7 @@ static jboolean cut(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug() << "@@@";
+    qDebug("@@@");
 #endif
     return m_androidInputContext->cut();
 }
@@ -272,7 +280,7 @@ static jboolean copy(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug() << "@@@";
+    qDebug("@@@");
 #endif
     return m_androidInputContext->copy();
 }
@@ -283,7 +291,7 @@ static jboolean copyURL(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug() << "@@@";
+    qDebug("@@@");
 #endif
     return m_androidInputContext->copyURL();
 }
@@ -294,7 +302,7 @@ static jboolean paste(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug() << "@@@";
+    qDebug("@@@");
 #endif
     return m_androidInputContext->paste();
 }
@@ -305,7 +313,7 @@ static jboolean updateCursorPosition(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug() << "@@@ UPDATECURSORPOS";
+    qDebug("@@@ UPDATECURSORPOS");
 #endif
     m_androidInputContext->updateCursorPosition();
     return true;
@@ -339,69 +347,69 @@ QAndroidInputContext::QAndroidInputContext()
     : QPlatformInputContext(), m_composingTextStart(-1), m_blockUpdateSelection(false),  m_batchEditNestingLevel(0), m_focusObject(0)
 {
     jclass clazz = QJNIEnvironmentPrivate::findClass(QtNativeInputConnectionClassName);
-    if (clazz == NULL) {
+    if (Q_UNLIKELY(!clazz)) {
         qCritical() << "Native registration unable to find class '"
                     << QtNativeInputConnectionClassName
-                    << "'";
+                    << '\'';
         return;
     }
 
     QJNIEnvironmentPrivate env;
-    if (env->RegisterNatives(clazz, methods, sizeof(methods) / sizeof(methods[0])) < 0) {
+    if (Q_UNLIKELY(env->RegisterNatives(clazz, methods, sizeof(methods) / sizeof(methods[0])) < 0)) {
         qCritical() << "RegisterNatives failed for '"
                     << QtNativeInputConnectionClassName
-                    << "'";
+                    << '\'';
         return;
     }
 
     clazz = QJNIEnvironmentPrivate::findClass(QtExtractedTextClassName);
-    if (clazz == NULL) {
+    if (Q_UNLIKELY(!clazz)) {
         qCritical() << "Native registration unable to find class '"
                     << QtExtractedTextClassName
-                    << "'";
+                    << '\'';
         return;
     }
 
     m_extractedTextClass = static_cast<jclass>(env->NewGlobalRef(clazz));
     m_classConstructorMethodID = env->GetMethodID(m_extractedTextClass, "<init>", "()V");
-    if (m_classConstructorMethodID == NULL) {
-        qCritical() << "GetMethodID failed";
+    if (Q_UNLIKELY(!m_classConstructorMethodID)) {
+        qCritical("GetMethodID failed");
         return;
     }
 
     m_partialEndOffsetFieldID = env->GetFieldID(m_extractedTextClass, "partialEndOffset", "I");
-    if (m_partialEndOffsetFieldID == NULL) {
-        qCritical() << "Can't find field partialEndOffset";
+    if (Q_UNLIKELY(!m_partialEndOffsetFieldID)) {
+        qCritical("Can't find field partialEndOffset");
         return;
     }
 
     m_partialStartOffsetFieldID = env->GetFieldID(m_extractedTextClass, "partialStartOffset", "I");
-    if (m_partialStartOffsetFieldID == NULL) {
-        qCritical() << "Can't find field partialStartOffset";
+    if (Q_UNLIKELY(!m_partialStartOffsetFieldID)) {
+        qCritical("Can't find field partialStartOffset");
         return;
     }
 
     m_selectionEndFieldID = env->GetFieldID(m_extractedTextClass, "selectionEnd", "I");
-    if (m_selectionEndFieldID == NULL) {
-        qCritical() << "Can't find field selectionEnd";
+    if (Q_UNLIKELY(!m_selectionEndFieldID)) {
+        qCritical("Can't find field selectionEnd");
         return;
     }
 
     m_selectionStartFieldID = env->GetFieldID(m_extractedTextClass, "selectionStart", "I");
-    if (m_selectionStartFieldID == NULL) {
-        qCritical() << "Can't find field selectionStart";
+    if (Q_UNLIKELY(!m_selectionStartFieldID)) {
+        qCritical("Can't find field selectionStart");
         return;
     }
 
     m_startOffsetFieldID = env->GetFieldID(m_extractedTextClass, "startOffset", "I");
-    if (m_startOffsetFieldID == NULL) {
-        qCritical() << "Can't find field startOffset";
+    if (Q_UNLIKELY(!m_startOffsetFieldID)) {
+        qCritical("Can't find field startOffset");
         return;
     }
 
     m_textFieldID = env->GetFieldID(m_extractedTextClass, "text", "Ljava/lang/String;");
-    if (m_textFieldID == NULL) {
-        qCritical() << "Can't find field text";
+    if (Q_UNLIKELY(!m_textFieldID)) {
+        qCritical("Can't find field text");
         return;
     }
     qRegisterMetaType<QInputMethodEvent *>("QInputMethodEvent*");
@@ -512,7 +520,7 @@ void QAndroidInputContext::invokeAction(QInputMethod::Action action, int cursorP
 
 QRectF QAndroidInputContext::keyboardRect() const
 {
-    return QPlatformInputContext::keyboardRect();
+    return QtAndroidInput::softwareKeyboardRect();
 }
 
 bool QAndroidInputContext::isAnimating() const
@@ -541,10 +549,13 @@ void QAndroidInputContext::showInputPanel()
     if (window)
         rect = QRect(window->mapToGlobal(rect.topLeft()), rect.size());
 
-    QtAndroidInput::showSoftwareKeyboard(rect.left(),
-                                         rect.top(),
-                                         rect.width(),
-                                         rect.height(),
+    double pixelDensity = window ? QHighDpiScaling::factor(window)
+                                 : QHighDpiScaling::factor(QtAndroid::androidPlatformIntegration()->screen());
+
+    QtAndroidInput::showSoftwareKeyboard(rect.left() * pixelDensity,
+                                         rect.top() * pixelDensity,
+                                         rect.width() * pixelDensity,
+                                         rect.height() * pixelDensity,
                                          query->value(Qt::ImHints).toUInt(),
                                          query->value(Qt::ImEnterKeyType).toUInt()
                                         );
@@ -634,7 +645,7 @@ jboolean QAndroidInputContext::commitText(const QString &text, jint newCursorPos
                                     : localPos - text.length() + newCursorPosition;
             //move the cursor
             attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::Selection,
-                                                           newLocalPos, 0, QVariant()));
+                                                           newLocalPos, 0));
         }
     }
     m_blockUpdateSelection = updateSelectionWasBlocked;
@@ -680,7 +691,7 @@ jboolean QAndroidInputContext::finishComposingText()
 
     // Moving Qt's cursor to where the preedit cursor used to be
     QList<QInputMethodEvent::Attribute> attributes;
-    attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::Selection, localCursorPos, 0, QVariant()));
+    attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::Selection, localCursorPos, 0));
 
     QInputMethodEvent event(QString(), attributes);
     event.setCommitString(m_composingText);
@@ -837,8 +848,7 @@ jboolean QAndroidInputContext::setComposingText(const QString &text, jint newCur
     QList<QInputMethodEvent::Attribute> attributes;
     attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::Cursor,
                                                    newCursorPosition,
-                                                   1,
-                                                   QVariant()));
+                                                   1));
     // Show compose text underlined
     QTextCharFormat underlined;
     underlined.setFontUnderline(true);
@@ -910,7 +920,7 @@ jboolean QAndroidInputContext::setComposingRegion(jint start, jint end)
                                                    QVariant(underlined)));
 
     // Keep the cursor position unchanged (don't move to end of preedit)
-    attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::Cursor, currentCursor - start, 1, QVariant()));
+    attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::Cursor, currentCursor - start, 1));
 
     QInputMethodEvent event(m_composingText, attributes);
     event.setCommitString(QString(), relativeStart, length);
@@ -944,7 +954,7 @@ jboolean QAndroidInputContext::setSelection(jint start, jint end)
         // preedit cursor
         int localOldPos = query->value(Qt::ImCursorPosition).toInt();
         int pos = localCursorPos - localOldPos;
-        attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::Cursor, pos, 1, QVariant()));
+        attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::Cursor, pos, 1));
 
         //but we have to tell Qt about the compose text all over again
 
@@ -959,8 +969,7 @@ jboolean QAndroidInputContext::setSelection(jint start, jint end)
         // actually changing the selection
         attributes.append(QInputMethodEvent::Attribute(QInputMethodEvent::Selection,
                                                        localCursorPos,
-                                                       end - start,
-                                                       QVariant()));
+                                                       end - start));
     }
     QInputMethodEvent event(m_composingText, attributes);
     sendInputMethodEventThreadSafe(&event);

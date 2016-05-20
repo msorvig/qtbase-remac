@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -43,10 +53,10 @@
 
 #include <QDialog>
 #include <QTcpSocket>
+#include <QDataStream>
 
 QT_BEGIN_NAMESPACE
 class QComboBox;
-class QDialogButtonBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -60,7 +70,7 @@ class Client : public QDialog
     Q_OBJECT
 
 public:
-    Client(QWidget *parent = 0);
+    explicit Client(QWidget *parent = Q_NULLPTR);
 
 private slots:
     void requestNewFortune();
@@ -70,18 +80,14 @@ private slots:
     void sessionOpened();
 
 private:
-    QLabel *hostLabel;
-    QLabel *portLabel;
     QComboBox *hostCombo;
     QLineEdit *portLineEdit;
     QLabel *statusLabel;
     QPushButton *getFortuneButton;
-    QPushButton *quitButton;
-    QDialogButtonBox *buttonBox;
 
     QTcpSocket *tcpSocket;
+    QDataStream in;
     QString currentFortune;
-    quint16 blockSize;
 
     QNetworkSession *networkSession;
 };

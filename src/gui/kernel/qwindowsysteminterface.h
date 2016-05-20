@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -78,22 +84,8 @@ public:
                                            Qt::KeyboardModifiers mods = Qt::NoModifier,
                                            Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
 
-    static bool tryHandleShortcutOverrideEvent(QWindow *w, QKeyEvent *ev);
-
-    static bool tryHandleShortcutEvent(QWindow *w, int k, Qt::KeyboardModifiers mods,
-                                                  const QString & text = QString(), bool autorep = false, ushort count = 1);
-    static bool tryHandleShortcutEvent(QWindow *w, ulong timestamp, int k, Qt::KeyboardModifiers mods,
-                                                  const QString & text = QString(), bool autorep = false, ushort count = 1);
-
-    static bool tryHandleShortcutEventToObject(QObject *o, ulong timestamp, int k, Qt::KeyboardModifiers mods,
-                                       const QString & text = QString(), bool autorep = false, ushort count = 1);
-
-    static bool tryHandleExtendedShortcutEvent(QWindow *w, int k, Qt::KeyboardModifiers mods,
-                                                          quint32 nativeScanCode, quint32 nativeVirtualKey, quint32 nativeModifiers,
-                                                          const QString & text = QString(), bool autorep = false, ushort count = 1);
-    static bool tryHandleExtendedShortcutEvent(QWindow *w, ulong timestamp, int k, Qt::KeyboardModifiers mods,
-                                                          quint32 nativeScanCode, quint32 nativeVirtualKey, quint32 nativeModifiers,
-                                                          const QString & text = QString(), bool autorep = false, ushort count = 1);
+    static bool handleShortcutEvent(QWindow *w, ulong timestamp, int k, Qt::KeyboardModifiers mods, quint32 nativeScanCode,
+                                      quint32 nativeVirtualKey, quint32 nativeModifiers, const QString & text = QString(), bool autorep = false, ushort count = 1);
 
     static bool handleKeyEvent(QWindow *w, QEvent::Type t, int k, Qt::KeyboardModifiers mods, const QString & text = QString(), bool autorep = false, ushort count = 1);
     static bool handleKeyEvent(QWindow *w, ulong timestamp, QEvent::Type t, int k, Qt::KeyboardModifiers mods, const QString & text = QString(), bool autorep = false, ushort count = 1);
@@ -102,25 +94,37 @@ public:
                                        quint32 nativeScanCode, quint32 nativeVirtualKey,
                                        quint32 nativeModifiers,
                                        const QString& text = QString(), bool autorep = false,
-                                       ushort count = 1);
+                                       ushort count = 1, bool tryShortcutOverride = true);
     static bool handleExtendedKeyEvent(QWindow *w, ulong timestamp, QEvent::Type type, int key, Qt::KeyboardModifiers modifiers,
                                        quint32 nativeScanCode, quint32 nativeVirtualKey,
                                        quint32 nativeModifiers,
                                        const QString& text = QString(), bool autorep = false,
                                        ushort count = 1, bool tryShortcutOverride = true);
-    static void handleWheelEvent(QWindow *w, const QPointF & local, const QPointF & global, QPoint pixelDelta, QPoint angleDelta, Qt::KeyboardModifiers mods = Qt::NoModifier, Qt::ScrollPhase phase = Qt::ScrollUpdate, Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
-    static void handleWheelEvent(QWindow *w, ulong timestamp, const QPointF & local, const QPointF & global, QPoint pixelDelta, QPoint angleDelta, Qt::KeyboardModifiers mods = Qt::NoModifier, Qt::ScrollPhase phase = Qt::ScrollUpdate, Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
+    static void handleWheelEvent(QWindow *w, const QPointF & local, const QPointF & global,
+                                 QPoint pixelDelta, QPoint angleDelta,
+                                 Qt::KeyboardModifiers mods = Qt::NoModifier,
+                                 Qt::ScrollPhase phase = Qt::NoScrollPhase,
+                                 Qt::MouseEventSource source = Qt::MouseEventNotSynthesized);
+    static void handleWheelEvent(QWindow *w, ulong timestamp, const QPointF & local, const QPointF & global,
+                                 QPoint pixelDelta, QPoint angleDelta,
+                                 Qt::KeyboardModifiers mods = Qt::NoModifier,
+                                 Qt::ScrollPhase phase = Qt::NoScrollPhase,
+                                 Qt::MouseEventSource source = Qt::MouseEventNotSynthesized,
+                                 bool inverted = false);
 
     // Wheel event compatibility functions. Will be removed: do not use.
     static void handleWheelEvent(QWindow *w, const QPointF & local, const QPointF & global, int d, Qt::Orientation o, Qt::KeyboardModifiers mods = Qt::NoModifier);
     static void handleWheelEvent(QWindow *w, ulong timestamp, const QPointF & local, const QPointF & global, int d, Qt::Orientation o, Qt::KeyboardModifiers mods = Qt::NoModifier);
 
     struct TouchPoint {
-        TouchPoint() : id(0), pressure(0), state(Qt::TouchPointStationary), flags(0) { }
+        TouchPoint() : id(0), uniqueId(-1), pressure(0), rotation(0), state(Qt::TouchPointStationary), flags(0) { }
         int id;                 // for application use
+        qint64 uniqueId;        // for TUIO: object/token ID; otherwise empty
+                                // TODO for TUIO 2.0: add registerPointerUniqueID(QPointerUniqueId)
         QPointF normalPosition; // touch device coordinates, (0 to 1, 0 to 1)
         QRectF area;            // the touched area, centered at position in screen coordinates
         qreal pressure;         // 0 to 1
+        qreal rotation;         // 0 means pointing straight up; 0 if unknown (like QTabletEvent::rotation)
         Qt::TouchPointState state; //Qt::TouchPoint{Pressed|Moved|Stationary|Released}
         QVector2D velocity;     // in screen coordinate system, pixels / seconds
         QTouchEvent::TouchPoint::InfoFlags flags;

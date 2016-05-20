@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -72,15 +67,13 @@
 #include <QtGui/qwindow.h>
 #include <qtimer.h>
 
-#include "../../../qtest-config.h"
-
-#if defined(Q_OS_MAC)
+#if defined(Q_OS_OSX)
 #include "tst_qwidget_mac_helpers.h"  // Abstract the ObjC stuff out so not everyone must run an ObjC++ compile.
 #endif
 
 #include <QtTest/QTest>
 
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 #  include <QtCore/qt_windows.h>
 #  include <QtGui/private/qguiapplication_p.h>
 #include <qpa/qplatformnativeinterface.h>
@@ -96,52 +89,15 @@ static HWND winHandleOf(const QWidget *w)
     return 0;
 }
 
-#  ifdef Q_OS_WINCE
-#    define Q_CHECK_PAINTEVENTS
-#    ifdef Q_OS_WINCE_WM
-#      include <qguifunctions_wince.h>
-// taken from qguifunctions_wce.cpp
-#      define SPI_GETPLATFORMTYPE 257
-static bool qt_wince_is_platform(const QString &platformString) {
-    wchar_t tszPlatform[64];
-    if (SystemParametersInfo(SPI_GETPLATFORMTYPE,
-                             sizeof(tszPlatform)/sizeof(*tszPlatform),tszPlatform,0))
-      if (0 == _tcsicmp(reinterpret_cast<const wchar_t *> (platformString.utf16()), tszPlatform))
-            return true;
-    return false;
-}
-static inline bool qt_wince_is_smartphone() { return qt_wince_is_platform(QString::fromLatin1("Smartphone")); }
-#    endif // Q_OS_WINCE_WM
-#  elif !defined(Q_OS_WINRT) //  Q_OS_WINCE
-#    define Q_CHECK_PAINTEVENTS \
+#  define Q_CHECK_PAINTEVENTS \
     if (::SwitchDesktop(::GetThreadDesktop(::GetCurrentThreadId())) == 0) \
         QSKIP("desktop is not visible, this test would fail");
-#  else //  !Q_OS_WINCE && !Q_OS_WINRT
-#    define Q_CHECK_PAINTEVENTS
-#  endif // Q_OS_WINRT
-#else // Q_OS_WIN
+
+#else // Q_OS_WIN && !Q_OS_WINRT
 #  define Q_CHECK_PAINTEVENTS
-#endif // else Q_OS_WIN
-
-
-#if defined(Q_OS_WINCE_WM)
-#include <qguifunctions_wince.h>
-// taken from qguifunctions_wce.cpp
-#define SPI_GETPLATFORMTYPE 257
-bool qt_wince_is_platform(const QString &platformString) {
-    wchar_t tszPlatform[64];
-    if (SystemParametersInfo(SPI_GETPLATFORMTYPE,
-                             sizeof(tszPlatform)/sizeof(*tszPlatform),tszPlatform,0))
-      if (0 == _tcsicmp(reinterpret_cast<const wchar_t *> (platformString.utf16()), tszPlatform))
-            return true;
-    return false;
-}
-bool qt_wince_is_smartphone() {
-       return qt_wince_is_platform(QString::fromLatin1("Smartphone"));
-}
 #endif
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
 #include <Security/AuthSession.h>
 bool macHasAccessToWindowsServer()
 {
@@ -168,7 +124,7 @@ static inline void centerOnScreen(QWidget *w)
     w->move(QGuiApplication::primaryScreen()->availableGeometry().center() - offset);
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 static inline void setWindowsAnimationsEnabled(bool enabled)
 {
     ANIMATIONINFO animation = { sizeof(ANIMATIONINFO), enabled };
@@ -181,10 +137,10 @@ static inline bool windowsAnimationsEnabled()
     SystemParametersInfo(SPI_GETANIMATION, 0, &animation, 0);
     return animation.iMinAnimate;
 }
-#else // Q_OS_WIN && !Q_OS_WINCE && !Q_OS_WINRT
+#else // Q_OS_WIN  && !Q_OS_WINRT
 inline void setWindowsAnimationsEnabled(bool) {}
 static inline bool windowsAnimationsEnabled() { return false; }
-#endif // !Q_OS_WIN || Q_OS_WINCE || Q_OS_WINRT
+#endif // !Q_OS_WIN || Q_OS_WINRT
 
 template <class T>
 static QByteArray msgComparisonFailed(T v1, const char *op, T v2)
@@ -217,8 +173,6 @@ public:
 
 public slots:
     void initTestCase();
-    void cleanupTestCase();
-    void init();
     void cleanup();
 private slots:
     void getSetCheck();
@@ -256,21 +210,17 @@ private slots:
     void hideWhenFocusWidgetIsChild();
     void normalGeometry();
     void setGeometry();
-#ifndef Q_OS_WINCE
     void windowOpacity();
-#endif
     void raise();
     void lower();
-#ifndef QT_MAC_USE_COCOA
     void stackUnder();
-#endif
     void testContentsPropagation();
     void saveRestoreGeometry();
     void restoreVersion1Geometry_data();
     void restoreVersion1Geometry();
 
     void widgetAt();
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     void sheetOpacity();
     void setMask();
 #endif
@@ -303,7 +253,7 @@ private slots:
     void update();
     void isOpaque();
 
-#ifndef Q_OS_MAC
+#ifndef Q_OS_OSX
     void scroll();
     void scrollNativeChildren();
 #endif
@@ -320,11 +270,9 @@ private slots:
     void moveChild();
     void showAndMoveChild();
 
-#ifndef QT_MAC_USE_COCOA
     void subtractOpaqueSiblings();
-#endif
 
-#if defined (Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
     void setGeometry_win();
 #endif
 
@@ -332,7 +280,7 @@ private slots:
     void deleteStyle();
     void multipleToplevelFocusCheck();
     void setFocus();
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     void setCursor();
 #endif
     void setToolTip();
@@ -349,9 +297,7 @@ private slots:
     void render_task188133();
     void render_task211796();
     void render_task217815();
-#ifndef Q_OS_WINCE
     void render_windowOpacity();
-#endif
     void render_systemClip();
     void render_systemClip2_data();
     void render_systemClip2();
@@ -367,9 +313,7 @@ private slots:
 
     void repaintWhenChildDeleted();
     void hideOpaqueChildWhileHidden();
-#if !defined(Q_OS_WINCE)
     void updateWhileMinimized();
-#endif
     void alienWidgets();
     void adjustSize();
     void adjustSize_data();
@@ -405,7 +349,7 @@ private slots:
 
     void setClearAndResizeMask();
     void maskedUpdate();
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     void syntheticEnterLeave();
     void taskQTBUG_4055_sendSyntheticEnterLeave();
     void underMouse();
@@ -417,9 +361,7 @@ private slots:
     void toplevelLineEditFocus();
 
     void focusWidget_task254563();
-#ifndef Q_OS_WINCE_WM
     void rectOutsideCoordinatesLimit_task144779();
-#endif
     void setGraphicsEffect();
 
 #ifdef QT_BUILD_INTERNAL
@@ -438,7 +380,7 @@ private slots:
     void taskQTBUG_7532_tabOrderWithFocusProxy();
     void movedAndResizedAttributes();
     void childAt();
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     void childAt_unifiedToolBar();
     void taskQTBUG_11373();
 #endif
@@ -451,6 +393,7 @@ private slots:
 
     void touchEventSynthesizedMouseEvent();
     void touchUpdateOnNewTouch();
+    void touchEventsForGesturePendingWidgets();
 
     void styleSheetPropagation();
 
@@ -464,13 +407,15 @@ private slots:
 
     void qmlSetParentHelper();
 
+    void testForOutsideWSRangeFlag();
+
 private:
     bool ensureScreenSize(int width, int height);
-    QWidget *testWidget;
 
     const QString m_platform;
     QSize m_testWidgetSize;
     QPoint m_availableTopLeft;
+    QPoint m_safeCursorPos;
     const bool m_windowsAnimationsEnabled;
 };
 
@@ -619,7 +564,7 @@ void tst_QWidget::getSetCheck()
     QCOMPARE(true, obj1.autoFillBackground());
 
     var1.reset();
-#if defined (Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
     obj1.setWindowFlags(Qt::FramelessWindowHint | Qt::WindowSystemMenuHint);
     const HWND handle = reinterpret_cast<HWND>(obj1.winId());   // explicitly create window handle
     QVERIFY(GetWindowLong(handle, GWL_STYLE) & WS_POPUP);
@@ -628,6 +573,7 @@ void tst_QWidget::getSetCheck()
 
 tst_QWidget::tst_QWidget()
     : m_platform(QGuiApplication::platformName().toLower())
+    , m_safeCursorPos(0, 0)
     , m_windowsAnimationsEnabled(windowsAnimationsEnabled())
 {
     if (m_windowsAnimationsEnabled) // Disable animations which can interfere with screen grabbing in moveChild(), showAndMoveChild()
@@ -641,8 +587,6 @@ tst_QWidget::tst_QWidget()
     palette.setColor(QPalette::ToolTipBase, QColor(12, 13, 14));
     palette.setColor(QPalette::Text, QColor(21, 22, 23));
     qApp->setPalette(palette, "QPropagationTestWidget");
-
-    testWidget = 0;
 }
 
 tst_QWidget::~tst_QWidget()
@@ -663,134 +607,38 @@ private:
 
 void tst_QWidget::initTestCase()
 {
-#ifdef Q_OS_WINCE //disable magic for WindowsCE
-    qApp->setAutoMaximizeThreshold(-1);
-#endif
     // Size of reference widget, 200 for < 2000, scale up for larger screens
     // to avoid Windows warnings about minimum size for decorated windows.
     int width = 200;
     const QScreen *screen = QGuiApplication::primaryScreen();
-    m_availableTopLeft = screen->availableGeometry().topLeft();
+    const QRect availableGeometry = screen->availableGeometry();
+    m_availableTopLeft = availableGeometry.topLeft();
+    // XCB: Determine "safe" cursor position at bottom/right corner of screen.
+    // Pushing the mouse rapidly to the top left corner can trigger KDE / KWin's
+    // "Present all Windows" (Ctrl+F9) feature also programmatically.
+    if (m_platform == QLatin1String("xcb"))
+        m_safeCursorPos = availableGeometry.bottomRight() - QPoint(40, 40);
     const int screenWidth = screen->geometry().width();
     if (screenWidth > 2000)
         width = 100 * ((screenWidth + 500) / 1000);
     m_testWidgetSize = QSize(width, width);
-  // Create the test class
-    testWidget = new BezierViewer;
-    testWidget->setWindowTitle(QStringLiteral("BezierViewer"));
-    testWidget->move(m_availableTopLeft + QPoint(screenWidth / 3, 50));
-    testWidget->resize(m_testWidgetSize);
-    testWidget->show();
-    QVERIFY(QTest::qWaitForWindowExposed(testWidget));
-}
-
-void tst_QWidget::cleanupTestCase()
-{
-    delete testWidget;
-    testWidget = 0;
-}
-
-void tst_QWidget::init()
-{
-// TODO: Add initialization code here.
-// This will be executed immediately before each test is run.
-    testWidget->setFont(QFont());
-    testWidget->setPalette(QPalette());
 }
 
 void tst_QWidget::cleanup()
 {
-    // Only 'testwidget', do not leak any other widgets.
-    QCOMPARE(QApplication::topLevelWidgets().size(), 1);
-}
-
-// Helper class...
-
-BezierViewer::BezierViewer( QWidget* parent)
-    : QWidget(parent)
-{
-    setObjectName(QLatin1String("TestWidget"));
-    setWindowTitle(objectName());
-    QPalette pal;
-    pal.setColor(backgroundRole(), Qt::white);
-    setPalette(pal);
-}
-
-
-void BezierViewer::setPoints( const QPolygonF& a )
-{
-    points = a;
-}
-
-#include "private/qbezier_p.h"
-void BezierViewer::paintEvent( QPaintEvent* )
-{
-    if ( points.size() != 4 ) {
-#if defined(QT_CHECK_RANGE)
-        qWarning( "QPolygon::bezier: The array must have 4 control points" );
-#endif
-        return;
-    }
-
-    /* Calculate Bezier curve */
-    QPolygonF bezier = QBezier::fromPoints(points.at(0),points.at(1),points.at(2),points.at(3)).toPolygon();
-
-    QPainter painter( this );
-
-    /* Calculate scale to fit in window */
-    QRectF br = bezier.boundingRect() | points.boundingRect();
-    QRectF pr = rect();
-    int scl = qMax( qMin(pr.width()/br.width(), pr.height()/br.height()), qreal(1.) );
-    int border = scl-1;
-
-    /* Scale Bezier curve vertices */
-    for ( QPolygonF::Iterator it = bezier.begin(); it != bezier.end(); ++it ) {
-        it->setX( (it->x()-br.x()) * scl + border );
-        it->setY( (it->y()-br.y()) * scl + border );
-    }
-
-    /* Draw grid */
-    painter.setPen( Qt::lightGray );
-    int i;
-    for ( i = border; i <= pr.width(); i += scl ) {
-        painter.drawLine( i, 0, i, pr.height() );
-    }
-    for ( int j = border; j <= pr.height(); j += scl ) {
-        painter.drawLine( 0, j, pr.width(), j );
-    }
-
-    /* Write number of vertices */
-    painter.setPen( Qt::red );
-    painter.setFont( QFont("Helvetica", 14, QFont::DemiBold, true ) );
-    QString caption;
-    caption.setNum( bezier.size() );
-    caption += QString::fromLatin1( " vertices" );
-    painter.drawText( 10, pr.height()-10, caption );
-
-    /* Draw Bezier curve */
-    painter.setPen( Qt::black );
-    painter.drawPolyline( bezier );
-
-    /* Scale and draw control points */
-    painter.setPen( Qt::darkGreen );
-    for ( QPolygonF::Iterator p1 = points.begin(); p1 != points.end(); ++p1 ) {
-        int x = (p1->x()-br.x()) * scl + border;
-        int y = (p1->y()-br.y()) * scl + border;
-        painter.drawLine( x-4, y-4, x+4, y+4 );
-        painter.drawLine( x+4, y-4, x-4, y+4 );
-    }
-
-    /* Draw vertices */
-    painter.setPen( Qt::red );
-    painter.setBrush( Qt::red );
-    for ( QPolygonF::Iterator p2 = bezier.begin(); p2 != bezier.end(); ++p2 )
-        painter.drawEllipse( p2->x()-1, p2->y()-1, 3, 3 );
+    QVERIFY(QApplication::topLevelWidgets().isEmpty());
 }
 
 void tst_QWidget::fontPropagation()
 {
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->resize(m_testWidgetSize);
+    testWidget->setWindowTitle(__FUNCTION__);
+    centerOnScreen(testWidget.data());
+    testWidget->show();
+    QVERIFY(QTest::qWaitForWindowExposed(testWidget.data()));
     QFont font = testWidget->font();
-    QWidget* childWidget = new QWidget( testWidget );
+    QWidget* childWidget = new QWidget( testWidget.data() );
     childWidget->show();
     QCOMPARE( font, childWidget->font() );
 
@@ -821,7 +669,7 @@ void tst_QWidget::fontPropagation()
     font.setPointSize(font.pointSize() + 2);
     testWidget->setFont(font);
 
-    QWidget *one   = new QWidget(testWidget);
+    QWidget *one   = new QWidget(testWidget.data());
     QWidget *two   = new QWidget(one);
     QWidget *three = new QWidget(two);
     QWidget *four  = new QWidget(two);
@@ -977,8 +825,15 @@ void tst_QWidget::fontPropagation2()
 
 void tst_QWidget::palettePropagation()
 {
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->resize(m_testWidgetSize);
+    testWidget->setWindowTitle(__FUNCTION__);
+    centerOnScreen(testWidget.data());
+    testWidget->show();
+    QVERIFY(QTest::qWaitForWindowExposed(testWidget.data()));
+
     QPalette palette = testWidget->palette();
-    QWidget* childWidget = new QWidget( testWidget );
+    QWidget* childWidget = new QWidget( testWidget.data() );
     childWidget->show();
     QCOMPARE( palette, childWidget->palette() );
 
@@ -1111,7 +966,13 @@ void tst_QWidget::palettePropagation2()
 
 void tst_QWidget::enabledPropagation()
 {
-    QWidget* childWidget = new QWidget( testWidget );
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->resize(m_testWidgetSize);
+    testWidget->setWindowTitle(__FUNCTION__);
+    centerOnScreen(testWidget.data());
+    testWidget->show();
+    QVERIFY(QTest::qWaitForWindowExposed(testWidget.data()));
+    QWidget* childWidget = new QWidget( testWidget.data() );
     childWidget->show();
     QVERIFY( testWidget->isEnabled() );
     QVERIFY( childWidget->isEnabled() );
@@ -1194,7 +1055,13 @@ void tst_QWidget::properTabHandlingWhenDisabled_QTBUG27417()
 #ifndef QT_NO_DRAGANDDROP
 void tst_QWidget::acceptDropsPropagation()
 {
-    QWidget *childWidget = new QWidget(testWidget);
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->resize(m_testWidgetSize);
+    testWidget->setWindowTitle(__FUNCTION__);
+    centerOnScreen(testWidget.data());
+    testWidget->show();
+    QVERIFY(QTest::qWaitForWindowExposed(testWidget.data()));
+    QWidget *childWidget = new QWidget(testWidget.data());
     childWidget->show();
     QVERIFY(!testWidget->acceptDrops());
     QVERIFY(!childWidget->acceptDrops());
@@ -1241,32 +1108,38 @@ void tst_QWidget::acceptDropsPropagation()
 
 void tst_QWidget::isEnabledTo()
 {
-    QWidget* childWidget = new QWidget( testWidget );
+    QWidget testWidget;
+    testWidget.resize(m_testWidgetSize);
+    testWidget.setWindowTitle(__FUNCTION__);
+    centerOnScreen(&testWidget);
+    testWidget.show();
+    QWidget* childWidget = new QWidget( &testWidget );
     QWidget* grandChildWidget = new QWidget( childWidget );
 
-    QVERIFY( childWidget->isEnabledTo( testWidget ) );
-    QVERIFY( grandChildWidget->isEnabledTo( testWidget ) );
+    QVERIFY( childWidget->isEnabledTo( &testWidget ) );
+    QVERIFY( grandChildWidget->isEnabledTo( &testWidget ) );
 
     childWidget->setEnabled( false );
-    QVERIFY( !childWidget->isEnabledTo( testWidget ) );
+    QVERIFY( !childWidget->isEnabledTo( &testWidget ) );
     QVERIFY( grandChildWidget->isEnabledTo( childWidget ) );
-    QVERIFY( !grandChildWidget->isEnabledTo( testWidget ) );
+    QVERIFY( !grandChildWidget->isEnabledTo( &testWidget ) );
 
-    QScopedPointer<QMainWindow> childDialog(new QMainWindow(testWidget));
-    testWidget->setEnabled(false);
+    QScopedPointer<QMainWindow> childDialog(new QMainWindow(&testWidget));
+    testWidget.setEnabled(false);
     QVERIFY(!childDialog->isEnabled());
     QVERIFY(childDialog->isEnabledTo(0));
-    testWidget->setEnabled(true);
 }
 
 void tst_QWidget::visible()
 {
     // Ensure that the testWidget is hidden for this test at the
     // start
-
-    testWidget->hide();
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->resize(m_testWidgetSize);
+    testWidget->setWindowTitle(__FUNCTION__);
+    centerOnScreen(testWidget.data());
     QVERIFY( !testWidget->isVisible() );
-    QWidget* childWidget = new QWidget( testWidget );
+    QWidget* childWidget = new QWidget( testWidget.data() );
     QVERIFY( !childWidget->isVisible() );
 
     testWidget->show();
@@ -1332,11 +1205,16 @@ void tst_QWidget::setLocale()
 
 void tst_QWidget::visible_setWindowOpacity()
 {
-    testWidget->hide();
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->resize(m_testWidgetSize);
+    testWidget->setWindowTitle(__FUNCTION__);
+    centerOnScreen(testWidget.data());
+    testWidget->winId();
+
     QVERIFY( !testWidget->isVisible() );
     testWidget->setWindowOpacity(0.5);
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
-    QVERIFY(!::IsWindowVisible(winHandleOf(testWidget)));
+    QVERIFY(!::IsWindowVisible(winHandleOf(testWidget.data())));
 #endif
     testWidget->setWindowOpacity(1.0);
 }
@@ -1345,35 +1223,40 @@ void tst_QWidget::isVisibleTo()
 {
     // Ensure that the testWidget is hidden for this test at the
     // start
+    QWidget testWidget;
+    testWidget.resize(m_testWidgetSize);
+    testWidget.setWindowTitle(__FUNCTION__);
+    centerOnScreen(&testWidget);
 
-    testWidget->hide();
-    QWidget* childWidget = new QWidget( testWidget );
-    QVERIFY( childWidget->isVisibleTo( testWidget ) );
+    QWidget* childWidget = new QWidget( &testWidget );
+    QVERIFY( childWidget->isVisibleTo( &testWidget ) );
     childWidget->hide();
-    QVERIFY( !childWidget->isVisibleTo( testWidget ) );
+    QVERIFY( !childWidget->isVisibleTo( &testWidget ) );
 
     QWidget* grandChildWidget = new QWidget( childWidget );
-    QVERIFY( !grandChildWidget->isVisibleTo( testWidget ) );
+    QVERIFY( !grandChildWidget->isVisibleTo( &testWidget ) );
     QVERIFY( grandChildWidget->isVisibleTo( childWidget ) );
 
-    testWidget->show();
+    testWidget.show();
     childWidget->show();
 
-    QVERIFY( childWidget->isVisibleTo( testWidget ) );
+    QVERIFY( childWidget->isVisibleTo( &testWidget ) );
     grandChildWidget->hide();
     QVERIFY( !grandChildWidget->isVisibleTo( childWidget ) );
-    QVERIFY( !grandChildWidget->isVisibleTo( testWidget ) );
-
+    QVERIFY( !grandChildWidget->isVisibleTo( &testWidget ) );
 }
 
 void tst_QWidget::isHidden()
 {
     // Ensure that the testWidget is hidden for this test at the
     // start
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->resize(m_testWidgetSize);
+    testWidget->setWindowTitle(__FUNCTION__);
+    centerOnScreen(testWidget.data());
 
-    testWidget->hide();
     QVERIFY( testWidget->isHidden() );
-    QWidget* childWidget = new QWidget( testWidget );
+    QWidget* childWidget = new QWidget( testWidget.data() );
     QVERIFY( !childWidget->isHidden() );
 
     testWidget->show();
@@ -1406,8 +1289,15 @@ void tst_QWidget::isHidden()
 
 void tst_QWidget::fonts()
 {
+    QWidget testWidget;
+    testWidget.resize(m_testWidgetSize);
+    testWidget.setWindowTitle(__FUNCTION__);
+    centerOnScreen(&testWidget);
+    testWidget.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&testWidget));
+
     // Tests setFont(), ownFont() and unsetFont()
-    QWidget* cleanTestWidget = new QWidget( testWidget );
+    QWidget* cleanTestWidget = new QWidget( &testWidget );
     QFont originalFont = cleanTestWidget->font();
 
     QVERIFY( !cleanTestWidget->testAttribute(Qt::WA_SetFont) );
@@ -1416,7 +1306,7 @@ void tst_QWidget::fonts()
 
     QFont newFont( "times", 18 );
     cleanTestWidget->setFont( newFont );
-    newFont = newFont.resolve( testWidget->font() );
+    newFont = newFont.resolve( testWidget.font() );
 
     QVERIFY( cleanTestWidget->testAttribute(Qt::WA_SetFont) );
     QVERIFY2( cleanTestWidget->font() == newFont,
@@ -1513,7 +1403,7 @@ void tst_QWidget::mapFromAndTo()
     subWindow2->setGeometry(75, 75, 100, 100);
     subSubWindow->setGeometry(10, 10, 10, 10);
 
-#if !defined(Q_OS_WINCE) && !defined(Q_OS_QNX) || defined(Q_OS_BLACKBERRY)
+#if !defined(Q_OS_QNX)
     //update visibility
     if (windowMinimized) {
         if (!windowHidden) {
@@ -1693,7 +1583,6 @@ void tst_QWidget::focusChainOnReparent()
 
 void tst_QWidget::focusChainOnHide()
 {
-    testWidget->hide(); // We do not want to get disturbed by other widgets
     // focus should move to the next widget in the focus chain when we hide it.
     QScopedPointer<QWidget> parent(new QWidget());
     parent->setObjectName(QLatin1String("focusChainOnHide"));
@@ -1717,8 +1606,6 @@ void tst_QWidget::focusChainOnHide()
 
     QTRY_COMPARE(parent->hasFocus(), true);
     QCOMPARE(parent.data(), qApp->focusWidget());
-
-    testWidget->show(); //don't disturb later tests
 }
 
 class Container : public QWidget
@@ -1826,15 +1713,8 @@ void tst_QWidget::activation()
 {
     Q_CHECK_PAINTEVENTS
 
-#if defined(Q_OS_WINCE)
-    int waitTime = 1000;
-#else
     int waitTime = 100;
-#endif
 
-#ifdef Q_OS_WINCE
-    qApp->processEvents();
-#endif
     QWidget widget1;
     widget1.setObjectName("activation-Widget1");
     widget1.setWindowTitle(widget1.objectName());
@@ -1860,10 +1740,6 @@ void tst_QWidget::activation()
     QCOMPARE(QApplication::activeWindow(), &widget1);
     widget2.showNormal();
     QTest::qWait(waitTime);
-#ifndef Q_OS_WINCE
-    if (QSysInfo::WindowsVersion >= QSysInfo::WV_VISTA)
-        QEXPECT_FAIL("", "MS introduced new behavior after XP", Continue);
-#endif
     QTest::qWait(waitTime);
     QCOMPARE(QApplication::activeWindow(), &widget2);
     widget2.hide();
@@ -1886,10 +1762,6 @@ void tst_QWidget::windowState()
         size = QGuiApplication::primaryScreen()->size();
     } else {
         pos = QPoint(10, 10);
-#ifdef Q_OS_WINCE_WM
-        if (qt_wince_is_smartphone()) { //small screen
-            size = QSize(100,100);
-#endif
     }
 
     QWidget widget1;
@@ -2377,12 +2249,12 @@ void tst_QWidget::showMinimizedKeepsFocus()
         window.showNormal();
         qApp->setActiveWindow(&window);
         QVERIFY(QTest::qWaitForWindowActive(&window));
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
         if (!macHasAccessToWindowsServer())
             QEXPECT_FAIL("", "When not having WindowServer access, we lose focus.", Continue);
 #endif
         QTRY_COMPARE(window.focusWidget(), firstchild);
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
         if (!macHasAccessToWindowsServer())
             QEXPECT_FAIL("", "When not having WindowServer access, we lose focus.", Continue);
 #endif
@@ -2417,11 +2289,7 @@ void tst_QWidget::reparent()
     childTLW.show();
     QVERIFY(QTest::qWaitForWindowExposed(&parent));
 
-#ifdef Q_OS_WINCE
-    parent.move(50, 50);
-#else
     parent.move(parentPosition);
-#endif
 
     QPoint childPos = parent.mapToGlobal(child.pos());
     QPoint tlwPos = childTLW.pos();
@@ -2446,6 +2314,12 @@ void tst_QWidget::icon()
 {
     QPixmap p(20,20);
     p.fill(Qt::red);
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->resize(m_testWidgetSize);
+    testWidget->setWindowTitle(__FUNCTION__);
+    centerOnScreen(testWidget.data());
+    testWidget->show();
+    QVERIFY(QTest::qWaitForWindowExposed(testWidget.data()));
     testWidget->setWindowIcon(p);
 
     QVERIFY(!testWidget->windowIcon().isNull());
@@ -2461,22 +2335,27 @@ void tst_QWidget::hideWhenFocusWidgetIsChild()
 {
     if (m_platform == QStringLiteral("wayland"))
         QSKIP("Wayland: This fails. Figure out why.");
-    testWidget->activateWindow();
-    QScopedPointer<QWidget> parentWidget(new QWidget(testWidget));
+
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->setWindowTitle(__FUNCTION__);
+    testWidget->resize(m_testWidgetSize);
+    centerOnScreen(testWidget.data());
+    QWidget *parentWidget(new QWidget(testWidget.data()));
     parentWidget->setObjectName("parentWidget");
     parentWidget->setGeometry(0, 0, 100, 100);
-    QLineEdit *edit = new QLineEdit(parentWidget.data());
+    QLineEdit *edit = new QLineEdit(parentWidget);
     edit->setObjectName("edit1");
-    QLineEdit *edit3 = new QLineEdit(parentWidget.data());
+    QLineEdit *edit3 = new QLineEdit(parentWidget);
     edit3->setObjectName("edit3");
     edit3->move(0,50);
-    parentWidget->show();
-    QLineEdit *edit2 = new QLineEdit(testWidget);
+    QLineEdit *edit2 = new QLineEdit(testWidget.data());
     edit2->setObjectName("edit2");
-    edit2->show();
     edit2->move(110, 100);
     edit->setFocus();
-    qApp->processEvents();
+    testWidget->show();
+    testWidget->activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(testWidget.data()));
+
     QString actualFocusWidget, expectedFocusWidget;
     if (!qApp->focusWidget() && m_platform == QStringLiteral("xcb"))
         QSKIP("X11: Your window manager is too broken for this test");
@@ -2628,8 +2507,6 @@ void tst_QWidget::setGeometry()
     QCOMPARE(tlw.geometry(), tr);
 }
 
-// Windows CE does not support windowOpacity.
-#ifndef Q_OS_WINCE
 void tst_QWidget::windowOpacity()
 {
     QWidget widget;
@@ -2660,7 +2537,6 @@ void tst_QWidget::windowOpacity()
     child.setWindowOpacity(-1.0);
     QCOMPARE(child.windowOpacity(), 1.0);
 }
-#endif
 
 class UpdateWidget : public QWidget
 {
@@ -2722,7 +2598,7 @@ public:
 
 void tst_QWidget::lostUpdatesOnHide()
 {
-#ifndef Q_OS_MAC
+#ifndef Q_OS_OSX
     UpdateWidget widget;
     widget.setAttribute(Qt::WA_DontShowOnScreen);
     widget.show();
@@ -2764,7 +2640,7 @@ void tst_QWidget::raise()
     QVERIFY(QTest::qWaitForWindowExposed(parentPtr.data()));
     QTest::qWait(10);
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     if (child1->internalWinId()) {
         QSKIP("Cocoa has no Z-Order for views, we hack it, but it results in paint events.");
     }
@@ -2944,7 +2820,7 @@ void tst_QWidget::stackUnder()
 
     foreach (UpdateWidget *child, allChildren) {
         int expectedPaintEvents = child == child4 ? 1 : 0;
-#if defined(Q_OS_WIN) || defined(Q_OS_MAC)
+#if defined(Q_OS_WIN) || defined(Q_OS_OSX)
         if (expectedPaintEvents == 1 && child->numPaintEvents == 2)
             QEXPECT_FAIL(0, "Mac and Windows issues double repaints for Z-Order change", Continue);
 #endif
@@ -2980,10 +2856,7 @@ void tst_QWidget::stackUnder()
     foreach (UpdateWidget *child, allChildren) {
         int expectedZOrderChangeEvents = child == child1 ? 1 : 0;
         if (child == child3) {
-#ifdef Q_OS_WINCE
-            qApp->processEvents();
-#endif
-#ifndef Q_OS_MAC
+#ifndef Q_OS_OSX
             QEXPECT_FAIL(0, "See QTBUG-493", Continue);
 #endif
             QCOMPARE(child->numPaintEvents, 0);
@@ -3040,8 +2913,23 @@ protected:
     QSize sizeHint() const { return QSize(500, 500); }
 };
 
+// Scale to remove devicePixelRatio should scaling be active.
+static QPixmap grabFromWidget(QWidget *w, const QRect &rect)
+{
+    QPixmap pixmap = w->grab(rect);
+    const qreal devicePixelRatio = pixmap.devicePixelRatioF();
+    if (!qFuzzyCompare(devicePixelRatio, qreal(1))) {
+        pixmap = pixmap.scaled((QSizeF(pixmap.size()) / devicePixelRatio).toSize(),
+                               Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        pixmap.setDevicePixelRatio(1);
+    }
+    return pixmap;
+}
+
 void tst_QWidget::testContentsPropagation()
 {
+    if (!qFuzzyCompare(qApp->devicePixelRatio(), qreal(1)))
+        QSKIP("This test does not work with scaling.");
     ContentsPropagationWidget widget;
     widget.setFixedSize(500, 500);
     widget.setContentsPropagation(false);
@@ -3352,9 +3240,6 @@ void tst_QWidget::widgetAt()
     w2->setMask(rgn);
     qApp->processEvents();
     QTest::qWait(10);
-#if defined(Q_OS_WINCE)
-    QEXPECT_FAIL("", "Windows CE does only support rectangular regions", Continue); //See also task 147191
-#endif
 
     QTRY_VERIFY((wr = QApplication::widgetAt(testPos)));
     QTRY_COMPARE(wr->objectName(), w1->objectName());
@@ -3370,9 +3255,6 @@ void tst_QWidget::widgetAt()
     w2->setMask(bitmap);
     qApp->processEvents();
     QTest::qWait(10);
-#if defined(Q_OS_WINCE)
-    QEXPECT_FAIL("", "Windows CE does only support rectangular regions", Continue); //See also task 147191
-#endif
     QTRY_COMPARE(QApplication::widgetAt(testPos), w1.data());
     QTRY_VERIFY(QApplication::widgetAt(testPos + QPoint(1, 1)) == w2.data());
 }
@@ -3505,7 +3387,7 @@ void tst_QWidget::testDeletionInEventHandlers()
     delete w;
 }
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
 void tst_QWidget::sheetOpacity()
 {
     QWidget tmpWindow;
@@ -3551,8 +3433,6 @@ bool verifyWidgetMask(QWidget *widget, QRect mask)
 
 void tst_QWidget::setMask()
 {
-    testWidget->hide(); // get this out of the way.
-
     {
         MaskedPainter w;
         w.resize(200, 200);
@@ -3708,7 +3588,7 @@ void tst_QWidget::optimizedResize_topLevel()
     topLevel.partial = false;
     topLevel.paintedRegion = QRegion();
 
-#if !defined(Q_OS_WIN32) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_WIN32)
     topLevel.resize(topLevel.size() + QSize(10, 10));
 #else
     // Static contents does not work when programmatically resizing
@@ -3779,7 +3659,6 @@ void tst_QWidget::setMinimumSize()
 
     // Setting a minimum size larger than the desktop does not work on WinCE,
     // so skip this part of the test.
-#ifndef Q_OS_WINCE
     QSize nonDefaultSize = defaultSize + QSize(5,5);
     w.setMinimumSize(nonDefaultSize);
     w.showNormal();
@@ -3788,7 +3667,6 @@ void tst_QWidget::setMinimumSize()
              msgComparisonFailed(w.height(), ">=", nonDefaultSize.height()));
     QVERIFY2(w.width() >= nonDefaultSize.width(),
              msgComparisonFailed(w.width(), ">=", nonDefaultSize.width()));
-#endif
 }
 
 void tst_QWidget::setMaximumSize()
@@ -4296,7 +4174,7 @@ void tst_QWidget::update()
         QCOMPARE(sibling.numPaintEvents, 1);
         QCOMPARE(sibling.paintedRegion, sibling.visibleRegion());
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
         if (child.internalWinId()) // child is native
             QEXPECT_FAIL(0, "Cocoa compositor paints child and sibling", Continue);
 #endif
@@ -4322,7 +4200,7 @@ static inline bool isOpaque(QWidget *widget)
 
 void tst_QWidget::isOpaque()
 {
-#ifndef Q_OS_MAC
+#ifndef Q_OS_OSX
     QWidget w;
     QVERIFY(::isOpaque(&w));
 
@@ -4394,7 +4272,7 @@ void tst_QWidget::isOpaque()
 #endif
 }
 
-#ifndef Q_OS_MAC
+#ifndef Q_OS_OSX
 /*
     Test that scrolling of a widget invalidates the correct regions
 */
@@ -4566,8 +4444,18 @@ void tst_QWidget::setWindowGeometry_data()
     QList<int> windowFlags;
     windowFlags << 0 << Qt::FramelessWindowHint;
 
+    const bool skipEmptyRects = (m_platform == QStringLiteral("windows"));
     foreach (QList<QRect> l, rects) {
         QRect rect = l.first();
+        if (skipEmptyRects) {
+            QList<QRect>::iterator it = l.begin();
+            while (it != l.end()) {
+                if (it->isEmpty())
+                    it = l.erase(it);
+                else
+                    ++it;
+            }
+        }
         foreach (int windowFlag, windowFlags) {
             QTest::newRow(QString("%1,%2 %3x%4, flags %5")
                           .arg(rect.x())
@@ -4616,8 +4504,13 @@ void tst_QWidget::setWindowGeometry()
 
         widget.setGeometry(rect);
         widget.showNormal();
-        if (rect.isValid())
+        if (rect.isValid()) {
             QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        } else {
+            // in case of an invalid rect, wait for the geometry to become
+            // adjusted to the actual (valid) value.
+            QApplication::processEvents();
+        }
         QTRY_COMPARE(widget.geometry(), rect);
 
         // setGeometry() while shown
@@ -4709,7 +4602,7 @@ void tst_QWidget::setWindowGeometry()
     }
 }
 
-#if defined (Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
 void tst_QWidget::setGeometry_win()
 {
     QWidget widget;
@@ -4730,7 +4623,7 @@ void tst_QWidget::setGeometry_win()
     QVERIFY2(rt.top <= m_availableTopLeft.y(),
              msgComparisonFailed(int(rt.top), "<=", m_availableTopLeft.y()));
 }
-#endif // defined (Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#endif // defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
 
 // Since X11 WindowManager operation are all async, and we have no way to know if the window
 // manager has finished playing with the window geometry, this test can't be reliable on X11.
@@ -4826,7 +4719,7 @@ void tst_QWidget::windowMoveResize()
             widget.move(r.topLeft());
             widget.resize(r.size());
             QApplication::processEvents();
-#if defined(Q_OS_MAC)
+#if defined(Q_OS_OSX)
             if (r.width() == 0 && r.height() > 0) {
                 widget.move(r.topLeft());
                 widget.resize(r.size());
@@ -4897,7 +4790,7 @@ void tst_QWidget::windowMoveResize()
             widget.move(r.topLeft());
             widget.resize(r.size());
             QApplication::processEvents();
-#if defined(Q_OS_MAC)
+#if defined(Q_OS_OSX)
             if (r.width() == 0 && r.height() > 0) {
                 widget.move(r.topLeft());
                 widget.resize(r.size());
@@ -4972,7 +4865,9 @@ static inline QByteArray msgRgbMismatch(unsigned actual, unsigned expected)
 static QPixmap grabWindow(QWindow *window, int x, int y, int width, int height)
 {
     QScreen *screen = window->screen();
-    return screen ? screen->grabWindow(window->winId(), x, y, width, height) : QPixmap();
+    Q_ASSERT(screen);
+    QPixmap result = screen->grabWindow(window->winId(), x, y, width, height);
+    return result.devicePixelRatio() > 1 ? result.scaled(width, height) : result;
 }
 
 #define VERIFY_COLOR(child, region, color) verifyColor(child, region, color, __LINE__)
@@ -5053,12 +4948,8 @@ void tst_QWidget::moveChild()
     parent.setStyle(QStyleFactory::create(QLatin1String("Windows")));
     ColorWidget child(&parent, Qt::Widget, Qt::blue);
 
-#ifndef Q_OS_WINCE
     parent.setGeometry(QRect(QPoint(QApplication::desktop()->availableGeometry(&parent).topLeft()) + QPoint(50, 50),
                              QSize(200, 200)));
-#else
-    parent.setGeometry(60, 60, 150, 150);
-#endif
     child.setGeometry(25, 25, 50, 50);
 #ifndef QT_NO_CURSOR // Try to make sure the cursor is not in a taskbar area to prevent tooltips or window highlighting
     QCursor::setPos(parent.geometry().topRight() + QPoint(50 , 50));
@@ -5085,7 +4976,7 @@ void tst_QWidget::moveChild()
     QTRY_COMPARE(pos, child.pos());
 
     QCOMPARE(parent.r, QRegion(oldGeometry) - child.geometry());
-#if !defined(Q_OS_MAC)
+#if !defined(Q_OS_OSX)
     // should be scrolled in backingstore
     QCOMPARE(child.r, QRegion());
 #endif
@@ -5277,11 +5168,18 @@ public:
 
 void tst_QWidget::setFocus()
 {
+    QScopedPointer<QWidget> testWidget(new QWidget);
+    testWidget->resize(m_testWidgetSize);
+    testWidget->setWindowTitle(__FUNCTION__);
+    centerOnScreen(testWidget.data());
+    testWidget->show();
+    QVERIFY(QTest::qWaitForWindowExposed(testWidget.data()));
+
     const QPoint windowPos = testWidget->geometry().topRight() + QPoint(50, 0);
     {
         // move focus to another window
         testWidget->activateWindow();
-        QApplication::setActiveWindow(testWidget);
+        QApplication::setActiveWindow(testWidget.data());
         if (testWidget->focusWidget())
             testWidget->focusWidget()->clearFocus();
         else
@@ -5327,7 +5225,7 @@ void tst_QWidget::setFocus()
 
         // note: window may be active, but we don't want it to be
         testWidget->activateWindow();
-        QApplication::setActiveWindow(testWidget);
+        QApplication::setActiveWindow(testWidget.data());
         if (testWidget->focusWidget())
             testWidget->focusWidget()->clearFocus();
         else
@@ -5496,7 +5394,7 @@ private:
     int m_count;
 };
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QWidget::setCursor()
 {
     {
@@ -5639,12 +5537,10 @@ void tst_QWidget::setToolTip()
     QCOMPARE(widget.toolTip(), QString());
     QCOMPARE(spy.count(), 2);
 
-    // Mouse over doesn't work on Windows mobile, so skip the rest of the test for that platform.
-#ifndef Q_OS_WINCE_WM
     for (int pass = 0; pass < 2; ++pass) {
-        QCursor::setPos(0, 0);
+        QCursor::setPos(m_safeCursorPos);
         QScopedPointer<QWidget> popup(new QWidget(0, Qt::Popup));
-        popup->setObjectName(QString::fromLatin1("tst_qwidget setToolTip #%1").arg(pass));
+        popup->setObjectName(QLatin1String("tst_qwidget setToolTip #") + QString::number(pass));
         popup->setWindowTitle(popup->objectName());
         popup->setGeometry(50, 50, 150, 50);
         QFrame *frame = new QFrame(popup.data());
@@ -5668,7 +5564,6 @@ void tst_QWidget::setToolTip()
             QTest::qWait(2200);     // delay is 2000
         QTest::mouseMove(popupWindow);
     }
-#endif
 }
 
 void tst_QWidget::testWindowIconChangeEventPropagation()
@@ -5827,7 +5722,7 @@ public:
         startTimer(1000);
     }
 
-    void timerEvent(QTimerEvent *)
+    void timerEvent(QTimerEvent *) Q_DECL_OVERRIDE
     {
         switch (state++) {
         case 0:
@@ -5850,7 +5745,7 @@ public:
         return false;
     }
 
-    bool nativeEvent(const QByteArray &eventType, void *message, long *)
+    bool nativeEvent(const QByteArray &eventType, void *message, long *) Q_DECL_OVERRIDE
     {
         if (isMapNotify(eventType, message))
             gotExpectedMapNotify = true;
@@ -5858,7 +5753,7 @@ public:
     }
 
     // QAbstractNativeEventFilter interface
-    virtual bool nativeEventFilter(const QByteArray &eventType, void *message, long *) Q_DECL_OVERRIDE
+    bool nativeEventFilter(const QByteArray &eventType, void *message, long *) Q_DECL_OVERRIDE
     {
         if (isMapNotify(eventType, message))
             gotExpectedGlobalEvent = true;
@@ -5993,7 +5888,7 @@ void tst_QWidget::childEvents()
 
     // Move away the cursor; otherwise it might result in an enter event if it's
     // inside the widget when the widget is shown.
-    QCursor::setPos(qApp->desktop()->availableGeometry().bottomRight());
+    QCursor::setPos(m_safeCursorPos);
     QTest::qWait(100);
 
     {
@@ -6747,7 +6642,6 @@ void tst_QWidget::render_task217815()
 }
 
 // Window Opacity is not supported on Windows CE.
-#ifndef Q_OS_WINCE
 void tst_QWidget::render_windowOpacity()
 {
     const qreal opacity = 0.5;
@@ -6820,7 +6714,6 @@ void tst_QWidget::render_windowOpacity()
     QCOMPARE(result, expected);
     }
 }
-#endif
 
 void tst_QWidget::render_systemClip()
 {
@@ -6877,7 +6770,7 @@ void tst_QWidget::render_systemClip()
     // rrrrrrrrrr
     // ...
 
-#ifndef Q_OS_MAC
+#ifndef Q_OS_OSX
     for (int i = 0; i < image.height(); ++i) {
         for (int j = 0; j < image.width(); ++j) {
             if (i < 50 && j < i)
@@ -7278,14 +7171,10 @@ void tst_QWidget::repaintWhenChildDeleted()
     }
 #endif
     ColorWidget w(0, Qt::FramelessWindowHint, Qt::red);
-#if !defined(Q_OS_WINCE)
     QPoint startPoint = QApplication::desktop()->availableGeometry(&w).topLeft();
     startPoint.rx() += 50;
     startPoint.ry() += 50;
     w.setGeometry(QRect(startPoint, QSize(100, 100)));
-#else
-    w.setGeometry(60, 60, 110, 110);
-#endif
     w.show();
     QVERIFY(QTest::qWaitForWindowExposed(&w));
     QTest::qWait(10);
@@ -7309,14 +7198,10 @@ void tst_QWidget::repaintWhenChildDeleted()
 void tst_QWidget::hideOpaqueChildWhileHidden()
 {
     ColorWidget w(0, Qt::FramelessWindowHint, Qt::red);
-#if !defined(Q_OS_WINCE)
     QPoint startPoint = QApplication::desktop()->availableGeometry(&w).topLeft();
     startPoint.rx() += 50;
     startPoint.ry() += 50;
     w.setGeometry(QRect(startPoint, QSize(100, 100)));
-#else
-    w.setGeometry(60, 60, 110, 110);
-#endif
 
     ColorWidget child(&w, Qt::Widget, Qt::blue);
     child.setGeometry(10, 10, 80, 80);
@@ -7345,12 +7230,11 @@ void tst_QWidget::hideOpaqueChildWhileHidden()
 }
 
 // This test doesn't make sense without support for showMinimized().
-#if !defined(Q_OS_WINCE)
 void tst_QWidget::updateWhileMinimized()
 {
     if (m_platform == QStringLiteral("wayland"))
         QSKIP("Wayland: This fails. Figure out why.");
-#if defined(Q_OS_QNX) && !defined(Q_OS_BLACKBERRY)
+#if defined(Q_OS_QNX)
     QSKIP("Platform does not support showMinimized()");
 #endif
     UpdateWidget widget;
@@ -7383,7 +7267,6 @@ void tst_QWidget::updateWhileMinimized()
     QTRY_COMPARE(widget.numPaintEvents, 1);
     QCOMPARE(widget.paintedRegion, QRegion(0, 0, 50, 50));
 }
-#endif
 
 class PaintOnScreenWidget: public QWidget
 {
@@ -7750,13 +7633,6 @@ void tst_QWidget::adjustSize()
         QVERIFY2(child->size().height() < sizeHint.height(),
                  msgComparisonFailed(child->size().height(), "<", sizeHint.height()));
     } else {
-#if defined (Q_OS_WINCE)
-        if (!haveParent) {
-            const QRect& desktopRect = qApp->desktop()->availableGeometry();
-            expectedSize.setWidth(qMin(expectedSize.width(), desktopRect.width()));
-            expectedSize.setHeight(qMin(expectedSize.height(), desktopRect.height()));
-        }
-#endif
         QCOMPARE(child->size(), expectedSize);
     }
     if (!haveParent)
@@ -7881,7 +7757,7 @@ void tst_QWidget::sendUpdateRequestImmediately()
 
 void tst_QWidget::doubleRepaint()
 {
-#if defined(Q_OS_MAC)
+#if defined(Q_OS_OSX)
     if (!macHasAccessToWindowsServer())
         QSKIP("Not having window server access causes the wrong number of repaints to be issues");
 #endif
@@ -7902,7 +7778,7 @@ void tst_QWidget::doubleRepaint()
    // Minmize: Should not trigger a repaint.
    widget.showMinimized();
    QTest::qWait(10);
-#if defined(Q_OS_QNX) && !defined(Q_OS_BLACKBERRY)
+#if defined(Q_OS_QNX)
     QEXPECT_FAIL("", "Platform does not support showMinimized()", Continue);
 #endif
    QCOMPARE(widget.numPaintEvents, 0);
@@ -8498,7 +8374,7 @@ void tst_QWidget::translucentWidget()
 #ifdef Q_OS_WIN
     QWidget *desktopWidget = QApplication::desktop()->screen(0);
     if (QSysInfo::windowsVersion() >= QSysInfo::WV_VISTA)
-        widgetSnapshot = qApp->primaryScreen()->grabWindow(desktopWidget->winId(), labelPos.x(), labelPos.y(), label.width(), label.height());
+        widgetSnapshot = grabWindow(desktopWidget->windowHandle(), labelPos.x(), labelPos.y(), label.width(), label.height());
     else
 #endif
         widgetSnapshot = label.grab(QRect(QPoint(0, 0), label.size()));
@@ -8591,7 +8467,7 @@ void tst_QWidget::setClearAndResizeMask()
     QTRY_COMPARE(child.mask(), childMask);
     QTest::qWait(50);
     // and ensure that the child widget doesn't get any update.
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     // Mac always issues a full update when calling setMask, and we cannot force it to not do so.
     if (child.internalWinId())
         QCOMPARE(child.numPaintEvents, 1);
@@ -8614,7 +8490,7 @@ void tst_QWidget::setClearAndResizeMask()
     // and ensure that that the child widget gets an update for the area outside the old mask.
     QTRY_COMPARE(child.numPaintEvents, 1);
     outsideOldMask = child.rect();
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     // Mac always issues a full update when calling setMask, and we cannot force it to not do so.
     if (!child.internalWinId())
 #endif
@@ -8629,7 +8505,7 @@ void tst_QWidget::setClearAndResizeMask()
     // Mask child widget with a mask that is bigger than the rect
     child.setMask(QRegion(0, 0, 1000, 1000));
     QTest::qWait(100);
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     // Mac always issues a full update when calling setMask, and we cannot force it to not do so.
     if (child.internalWinId())
         QTRY_COMPARE(child.numPaintEvents, 1);
@@ -8642,7 +8518,7 @@ void tst_QWidget::setClearAndResizeMask()
     // ...and the same applies when clearing the mask.
     child.clearMask();
     QTest::qWait(100);
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     // Mac always issues a full update when calling setMask, and we cannot force it to not do so.
     if (child.internalWinId())
         QTRY_VERIFY(child.numPaintEvents > 0);
@@ -8672,7 +8548,7 @@ void tst_QWidget::setClearAndResizeMask()
 
     QTimer::singleShot(100, &resizeChild, SLOT(shrinkMask()));
     QTest::qWait(200);
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     // Mac always issues a full update when calling setMask, and we cannot force it to not do so.
     if (child.internalWinId())
         QTRY_COMPARE(resizeChild.paintedRegion, resizeChild.mask());
@@ -8684,7 +8560,7 @@ void tst_QWidget::setClearAndResizeMask()
     const QRegion oldMask = resizeChild.mask();
     QTimer::singleShot(0, &resizeChild, SLOT(enlargeMask()));
     QTest::qWait(100);
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
     // Mac always issues a full update when calling setMask, and we cannot force it to not do so.
     if (child.internalWinId())
         QTRY_COMPARE(resizeChild.paintedRegion, resizeChild.mask());
@@ -8841,7 +8717,7 @@ void tst_QWidget::maskedUpdate()
     QTRY_COMPARE(grandChild.paintedRegion, QRegion(grandChild.rect())); // Full update.
 }
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QWidget::syntheticEnterLeave()
 {
     if (m_platform == QStringLiteral("wayland"))
@@ -8856,7 +8732,7 @@ void tst_QWidget::syntheticEnterLeave()
         int numLeaveEvents;
     };
 
-    QCursor::setPos(QPoint(0,0));
+    QCursor::setPos(m_safeCursorPos);
 
     MyWidget window;
     window.setWindowFlags(Qt::WindowStaysOnTopHint);
@@ -8947,7 +8823,7 @@ void tst_QWidget::syntheticEnterLeave()
 }
 #endif
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QWidget::taskQTBUG_4055_sendSyntheticEnterLeave()
 {
     if (m_platform == QStringLiteral("wayland"))
@@ -8976,7 +8852,7 @@ void tst_QWidget::taskQTBUG_4055_sendSyntheticEnterLeave()
          int numEnterEvents, numMouseMoveEvents;
      };
 
-     QCursor::setPos(QPoint(0,0));
+     QCursor::setPos(m_safeCursorPos);
 
      SELParent parent;
      parent.move(200, 200);
@@ -9095,8 +8971,6 @@ void tst_QWidget::updateOnDestroyedSignal()
 
 void tst_QWidget::toplevelLineEditFocus()
 {
-    testWidget->hide();
-
     QLineEdit w;
     w.setMinimumWidth(m_testWidgetSize.width());
     w.show();
@@ -9162,10 +9036,9 @@ QWidgetBackingStore* backingStore(QWidget &widget)
 }
 
 // Tables of 5000 elements do not make sense on Windows Mobile.
-#ifndef Q_OS_WINCE_WM
 void tst_QWidget::rectOutsideCoordinatesLimit_task144779()
 {
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     QApplication::setOverrideCursor(Qt::BlankCursor); //keep the cursor out of screen grabs
 #endif
     QWidget main(0,Qt::FramelessWindowHint); //don't get confused by the size of the window frame
@@ -9196,15 +9069,14 @@ void tst_QWidget::rectOutsideCoordinatesLimit_task144779()
 
     QPixmap correct(main.size());
     correct.fill(Qt::green);
-    const QPixmap mainPixmap = main.grab(QRect(QPoint(0, 0), QSize(-1, -1)));
+    const QPixmap mainPixmap = grabFromWidget(&main, QRect(QPoint(0, 0), QSize(-1, -1)));
 
     QTRY_COMPARE(mainPixmap.toImage().convertToFormat(QImage::Format_RGB32),
                  correct.toImage().convertToFormat(QImage::Format_RGB32));
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     QApplication::restoreOverrideCursor();
 #endif
 }
-#endif
 
 void tst_QWidget::setGraphicsEffect()
 {
@@ -9397,7 +9269,7 @@ void tst_QWidget::taskQTBUG_7532_tabOrderWithFocusProxy()
 
 void tst_QWidget::movedAndResizedAttributes()
 {
-#if defined (Q_OS_MAC)
+#if defined (Q_OS_OSX)
     QEXPECT_FAIL("", "FixMe, QTBUG-8941 and QTBUG-8977", Abort);
     QVERIFY(false);
 #else
@@ -9504,7 +9376,7 @@ void tst_QWidget::childAt()
     QCOMPARE(parent.childAt(120, 120), grandChild);
 }
 
-#ifdef Q_OS_MAC
+#ifdef Q_OS_OSX
 void tst_QWidget::childAt_unifiedToolBar()
 {
     QLabel *label = new QLabel(QLatin1String("foo"));
@@ -9660,10 +9532,10 @@ void tst_QWidget::grab()
         p.drawTiledPixmap(0, 0, 128, 128, pal.brush(QPalette::Window).texture(), 0, 0);
         p.end();
 
-        QPixmap actual = widget.grab(QRect(64, 64, 64, 64));
+        QPixmap actual = grabFromWidget(&widget, QRect(64, 64, 64, 64));
         QVERIFY(lenientCompare(actual, expected));
 
-        actual = widget.grab(QRect(64, 64, -1, -1));
+        actual = grabFromWidget(&widget, QRect(64, 64, -1, -1));
         QVERIFY(lenientCompare(actual, expected));
 
         // Make sure a widget that is not yet shown is grabbed correctly.
@@ -9779,6 +9651,7 @@ public:
           m_touchUpdateCount(0),
           m_touchEndCount(0),
           m_touchEventCount(0),
+          m_gestureEventCount(0),
           m_acceptTouch(false),
           m_mouseEventCount(0),
           m_acceptMouse(true)
@@ -9816,6 +9689,9 @@ protected:
             else
                 e->ignore();
             return true;
+        case QEvent::Gesture:
+            ++m_gestureEventCount;
+            return true;
 
         case QEvent::MouseButtonPress:
         case QEvent::MouseMove:
@@ -9838,6 +9714,7 @@ public:
     int m_touchUpdateCount;
     int m_touchEndCount;
     int m_touchEventCount;
+    int m_gestureEventCount;
     bool m_acceptTouch;
     int m_mouseEventCount;
     bool m_acceptMouse;
@@ -9993,6 +9870,48 @@ void tst_QWidget::touchUpdateOnNewTouch()
     QCOMPARE(widget.m_touchEndCount, 1);
 }
 
+void tst_QWidget::touchEventsForGesturePendingWidgets()
+{
+    QTouchDevice *device = new QTouchDevice;
+    device->setType(QTouchDevice::TouchScreen);
+    QWindowSystemInterface::registerTouchDevice(device);
+
+    TouchMouseWidget parent;
+    TouchMouseWidget child(&parent);
+    parent.grabGesture(Qt::TapAndHoldGesture);
+    parent.show();
+
+    QWindow* window = parent.windowHandle();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+    QTest::qWait(500); // needed for QApplication::topLevelAt(), which is used by QGestureManager
+    QCOMPARE(child.m_touchEventCount, 0);
+    QCOMPARE(child.m_gestureEventCount, 0);
+    QCOMPARE(parent.m_touchEventCount, 0);
+    QCOMPARE(parent.m_gestureEventCount, 0);
+    QTest::touchEvent(window, device).press(0, QPoint(20, 20), window);
+    QCOMPARE(child.m_touchEventCount, 0);
+    QCOMPARE(child.m_gestureEventCount, 0);
+    QCOMPARE(parent.m_touchBeginCount, 1); // QTapAndHoldGestureRecognizer::create() sets Qt::WA_AcceptTouchEvents
+    QCOMPARE(parent.m_touchUpdateCount, 0);
+    QCOMPARE(parent.m_touchEndCount, 0);
+    QCOMPARE(parent.m_gestureEventCount, 0);
+    QTest::touchEvent(window, device).move(0, QPoint(25, 25), window);
+    QCOMPARE(child.m_touchEventCount, 0);
+    QCOMPARE(child.m_gestureEventCount, 0);
+    QCOMPARE(parent.m_touchBeginCount, 1);
+    QCOMPARE(parent.m_touchUpdateCount, 0);
+    QCOMPARE(parent.m_touchEndCount, 0);
+    QCOMPARE(parent.m_gestureEventCount, 0);
+    QTest::qWait(1000);
+    QTest::touchEvent(window, device).release(0, QPoint(25, 25), window);
+    QCOMPARE(child.m_touchEventCount, 0);
+    QCOMPARE(child.m_gestureEventCount, 0);
+    QCOMPARE(parent.m_touchBeginCount, 1);
+    QCOMPARE(parent.m_touchUpdateCount, 0);
+    QCOMPARE(parent.m_touchEndCount, 0);
+    QVERIFY(parent.m_gestureEventCount > 0);
+}
+
 void tst_QWidget::styleSheetPropagation()
 {
     QTableView tw;
@@ -10101,11 +10020,11 @@ void tst_QWidget::destroyedSignal()
 
 }
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QWidget::underMouse()
 {
     // Move the mouse cursor to a safe location
-    QCursor::setPos(0,0);
+    QCursor::setPos(m_safeCursorPos);
 
     ColorWidget topLevelWidget(0, Qt::FramelessWindowHint, Qt::blue);
     ColorWidget childWidget1(&topLevelWidget, Qt::Widget, Qt::yellow);
@@ -10361,7 +10280,7 @@ public:
 void tst_QWidget::taskQTBUG_27643_enterEvents()
 {
     // Move the mouse cursor to a safe location so it won't interfere
-    QCursor::setPos(0,0);
+    QCursor::setPos(m_safeCursorPos);
 
     EnterTestMainDialog dialog;
     QPushButton button(&dialog);
@@ -10385,7 +10304,7 @@ void tst_QWidget::taskQTBUG_27643_enterEvents()
     // Must only register only single enter on modal dialog's button after all said and done
     QCOMPARE(dialog.enters, 1);
 }
-#endif // QTEST_NO_CURSOR
+#endif // QT_NO_CURSOR
 
 class KeyboardWidget : public QWidget
 {
@@ -10490,6 +10409,70 @@ void tst_QWidget::qmlSetParentHelper()
 #else
     QSKIP("Needs QT_BUILD_INTERNAL");
 #endif
+}
+
+void tst_QWidget::testForOutsideWSRangeFlag()
+{
+    // QTBUG-49445
+    {
+        QWidget widget;
+        widget.resize(0, 0);
+        widget.show();
+        QTest::qWait(100); // Wait for a while...
+        QVERIFY(!widget.windowHandle()->isExposed()); // The window should not be visible
+        QVERIFY(widget.isVisible()); // The widget should be in visible state
+    }
+    {
+        QWidget widget;
+
+        QWidget native(&widget);
+        native.setAttribute(Qt::WA_NativeWindow);
+        native.resize(0, 0);
+
+        widget.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        QVERIFY(!native.windowHandle()->isExposed());
+    }
+    {
+        QWidget widget;
+        QWidget native(&widget);
+
+        widget.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        QVERIFY(native.isVisible());
+
+        native.resize(0, 0);
+        native.setAttribute(Qt::WA_NativeWindow);
+        QTest::qWait(100); // Wait for a while...
+        QVERIFY(!native.windowHandle()->isExposed());
+    }
+
+    // QTBUG-48321
+    {
+        QWidget widget;
+
+        QWidget native(&widget);
+        native.setAttribute(Qt::WA_NativeWindow);
+
+        widget.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        QVERIFY(native.windowHandle()->isExposed());
+
+        native.resize(0, 0);
+        QTest::qWait(100); // Wait for a while...
+        QVERIFY(!native.windowHandle()->isExposed());
+    }
+
+    // QTBUG-51788
+    {
+        QWidget widget;
+        widget.setLayout(new QGridLayout);
+        widget.layout()->addWidget(new QLineEdit);
+        widget.resize(0, 0);
+        widget.show();
+        // The layout should change the size, so the widget must be visible!
+        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+    }
 }
 
 QTEST_MAIN(tst_QWidget)

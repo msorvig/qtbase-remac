@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -369,10 +375,7 @@ void QDockWidgetGroupWindow::adjustFlags()
     Qt::WindowFlags flags = oldFlags;
     if (nativeDeco) {
         flags |= Qt::CustomizeWindowHint | Qt::WindowTitleHint;
-        if (top->features() & QDockWidget::DockWidgetClosable)
-            flags |= Qt::WindowCloseButtonHint;
-        else
-            flags &= ~Qt::WindowCloseButtonHint;
+        flags.setFlag(Qt::WindowCloseButtonHint, top->features() & QDockWidget::DockWidgetClosable);
         flags &= ~Qt::FramelessWindowHint;
     } else {
         flags |= Qt::FramelessWindowHint;
@@ -849,6 +852,25 @@ static QList<T> findChildrenHelper(const QObject *o)
     return result;
 }
 
+#ifndef QT_NO_DOCKWIDGET
+static QList<QDockWidget*> allMyDockWidgets(const QWidget *mainWindow)
+{
+    QList<QDockWidget*> result;
+    for (QObject *c : mainWindow->children()) {
+        if (auto *dw = qobject_cast<QDockWidget*>(c)) {
+            result.append(dw);
+        } else if (auto *gw = qobject_cast<QDockWidgetGroupWindow*>(c)) {
+            for (QObject *c : gw->children()) {
+                if (auto *dw = qobject_cast<QDockWidget*>(c))
+                    result.append(dw);
+            }
+        }
+    }
+
+    return result;
+}
+#endif // QT_NO_DOCKWIDGET
+
 //pre4.3 tests the format that was used before 4.3
 bool QMainWindowLayoutState::checkFormat(QDataStream &stream)
 {
@@ -872,9 +894,7 @@ bool QMainWindowLayoutState::checkFormat(QDataStream &stream)
 #ifndef QT_NO_DOCKWIDGET
             case QDockAreaLayout::DockWidgetStateMarker:
                 {
-                    QList<QDockWidget *> dockWidgets = findChildrenHelper<QDockWidget*>(mainWindow);
-                    foreach (QDockWidgetGroupWindow *floating, findChildrenHelper<QDockWidgetGroupWindow*>(mainWindow))
-                        dockWidgets += findChildrenHelper<QDockWidget*>(floating);
+                    const auto dockWidgets = allMyDockWidgets(mainWindow);
                     if (!dockAreaLayout.restoreState(stream, dockWidgets, true /*testing*/)) {
                         return false;
                     }
@@ -886,9 +906,7 @@ bool QMainWindowLayoutState::checkFormat(QDataStream &stream)
                     QRect geom;
                     stream >> geom;
                     QDockAreaLayoutInfo info;
-                    QList<QDockWidget *> dockWidgets = findChildrenHelper<QDockWidget*>(mainWindow);
-                    foreach (QDockWidgetGroupWindow *floating, findChildrenHelper<QDockWidgetGroupWindow*>(mainWindow))
-                        dockWidgets += findChildrenHelper<QDockWidget*>(floating);
+                    auto dockWidgets = allMyDockWidgets(mainWindow);
                     if (!info.restoreState(stream, dockWidgets, true /* testing*/))
                         return false;
                 }
@@ -932,9 +950,7 @@ bool QMainWindowLayoutState::restoreState(QDataStream &_stream,
 #ifndef QT_NO_DOCKWIDGET
             case QDockAreaLayout::DockWidgetStateMarker:
                 {
-                    QList<QDockWidget *> dockWidgets = findChildrenHelper<QDockWidget*>(mainWindow);
-                    foreach (QDockWidgetGroupWindow *floating, findChildrenHelper<QDockWidgetGroupWindow*>(mainWindow))
-                        dockWidgets += findChildrenHelper<QDockWidget*>(floating);
+                    const auto dockWidgets = allMyDockWidgets(mainWindow);
                     if (!dockAreaLayout.restoreState(stream, dockWidgets))
                         return false;
 
@@ -958,9 +974,7 @@ bool QMainWindowLayoutState::restoreState(QDataStream &_stream,
 #ifndef QT_NO_TABBAR
             case QDockAreaLayout::FloatingDockWidgetTabMarker:
             {
-                QList<QDockWidget *> dockWidgets = findChildrenHelper<QDockWidget*>(mainWindow);
-                foreach (QDockWidgetGroupWindow *floating, findChildrenHelper<QDockWidgetGroupWindow*>(mainWindow))
-                    dockWidgets += findChildrenHelper<QDockWidget*>(floating);
+                auto dockWidgets = allMyDockWidgets(mainWindow);
                 QDockWidgetGroupWindow* floatingTab = qt_mainwindow_layout(mainWindow)->createTabbedDockWindow();
                 *floatingTab->layoutInfo() = QDockAreaLayoutInfo(&dockAreaLayout.sep, QInternal::LeftDock,
                                                                  Qt::Horizontal, QTabBar::RoundedSouth, mainWindow);
@@ -1160,7 +1174,7 @@ void QMainWindowLayout::insertToolBar(QToolBar *before, QToolBar *toolbar)
             // copy the toolbar also in the saved state
             savedState.toolBarAreaLayout.insertItem(before, item);
         }
-        if (!currentGapPos.isEmpty() && currentGapPos.first() == 0) {
+        if (!currentGapPos.isEmpty() && currentGapPos.constFirst() == 0) {
             currentGapPos = layoutState.toolBarAreaLayout.currentGapIndex();
             if (!currentGapPos.isEmpty()) {
                 currentGapPos.prepend(0);
@@ -1498,7 +1512,7 @@ void QMainWindowLayout::splitDockWidget(QDockWidget *after,
 
 Qt::DockWidgetArea QMainWindowLayout::dockWidgetArea(QWidget *widget) const
 {
-    QList<int> pathToWidget = layoutState.dockAreaLayout.indexOf(widget);
+    const QList<int> pathToWidget = layoutState.dockAreaLayout.indexOf(widget);
     if (pathToWidget.isEmpty())
         return Qt::NoDockWidgetArea;
     return toDockWidgetArea(pathToWidget.first());
@@ -1780,7 +1794,7 @@ QLayoutItem *QMainWindowLayout::takeAt(int index)
         }
 
 #ifndef QT_NO_TOOLBAR
-        if (!currentGapPos.isEmpty() && currentGapPos.first() == 0) {
+        if (!currentGapPos.isEmpty() && currentGapPos.constFirst() == 0) {
             currentGapPos = layoutState.toolBarAreaLayout.currentGapIndex();
             if (!currentGapPos.isEmpty()) {
                 currentGapPos.prepend(0);
@@ -1945,7 +1959,7 @@ bool QMainWindowLayout::plug(QLayoutItem *widgetItem)
                                         static_cast<QMainWindow*>(parentWidget()));
             info->tabbed = true;
             QLayout *parentLayout = currentHoveredFloat->parentWidget()->layout();
-            info->item_list.append(parentLayout->takeAt(parentLayout->indexOf(currentHoveredFloat)));
+            info->item_list.append(QDockAreaLayoutItem(parentLayout->takeAt(parentLayout->indexOf(currentHoveredFloat))));
 
             dropTo->setParent(floatingTabs);
             dropTo->show();
@@ -2054,7 +2068,7 @@ void QMainWindowLayout::animationFinished(QWidget *widget)
 
             if (parentInfo->tabbed) {
                 // merge the two tab widgets
-                int idx = path.last();
+                int idx = path.constLast();
                 Q_ASSERT(parentInfo->item_list[idx].widgetItem->widget() == dwgw);
                 delete parentInfo->item_list[idx].widgetItem;
                 parentInfo->item_list.removeAt(idx);
@@ -2252,17 +2266,18 @@ void QMainWindowLayout::setCentralWidget(QWidget *widget)
 QLayoutItem *QMainWindowLayout::unplug(QWidget *widget, bool group)
 {
 #if !defined(QT_NO_DOCKWIDGET) && !defined(QT_NO_TABBAR)
-    QDockWidgetGroupWindow *floatingParent = qobject_cast<QDockWidgetGroupWindow *>(widget->parentWidget());
-    if (group && floatingParent && !widget->isWindow()) {
-        // We are just dragging a floating window as it, not need to do anything, we just have to
-        // look up the corresponding QWidgetItem* if it exists
-        QList<int> tabbedWindowPath = layoutState.indexOf(widget->parentWidget());
-        return tabbedWindowPath.isEmpty() ? 0 : layoutState.item(tabbedWindowPath);
-    } else if (floatingParent) {
-        // We are unplugging a dock widget from a floating window.
-        if (QDockWidget *dw = qobject_cast<QDockWidget*>(widget)) {
-            dw->d_func()->unplug(widget->geometry());
-            return 0;
+    if (!widget->isWindow() && qobject_cast<const QDockWidgetGroupWindow *>(widget->parentWidget())) {
+        if (group) {
+            // We are just dragging a floating window as it, not need to do anything, we just have to
+            // look up the corresponding QWidgetItem* if it exists
+            QList<int> tabbedWindowPath = layoutState.indexOf(widget->parentWidget());
+            return tabbedWindowPath.isEmpty() ? 0 : layoutState.item(tabbedWindowPath);
+        } else {
+            // We are unplugging a dock widget from a floating window.
+            if (QDockWidget *dw = qobject_cast<QDockWidget*>(widget)) {
+                dw->d_func()->unplug(widget->geometry());
+                return 0;
+            }
         }
     }
 #endif
@@ -2279,7 +2294,7 @@ QLayoutItem *QMainWindowLayout::unplug(QWidget *widget, bool group)
 
 #ifndef QT_NO_DOCKWIDGET
     if (QDockWidget *dw = qobject_cast<QDockWidget*>(widget)) {
-        Q_ASSERT(path.first() == 1);
+        Q_ASSERT(path.constFirst() == 1);
         bool actualGroup = false;
 #ifndef QT_NO_TABBAR
         if (group && (dockOptions & QMainWindow::GroupedDragging) && path.size() > 3) {
@@ -2382,7 +2397,7 @@ void QMainWindowLayout::hover(QLayoutItem *widgetItem, const QPoint &mousePos)
                 }
             }
         }
-        foreach (QWidget *w, candidates) {
+        for (QWidget *w : candidates) {
             QWindow *handle1 = widget->windowHandle();
             QWindow *handle2 = w->windowHandle();
             if (handle1 && handle2 && handle1->screen() != handle2->screen())
@@ -2588,5 +2603,7 @@ void QMainWindowLayout::timerEvent(QTimerEvent *e)
 
 
 QT_END_NAMESPACE
+
+#include "moc_qmainwindowlayout_p.cpp"
 
 #endif // QT_NO_MAINWINDOW

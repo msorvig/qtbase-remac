@@ -1,32 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -210,13 +205,14 @@ Symbols Preprocessor::tokenize(const QByteArray& input, int lineNum, Preprocesso
                     // STRING_LITERAL handling in moc
                     if (!Preprocessor::preprocessOnly
                         && !symbols.isEmpty()
-                        && symbols.last().token == STRING_LITERAL) {
+                        && symbols.constLast().token == STRING_LITERAL) {
 
-                        QByteArray newString = symbols.last().unquotedLexem();
-                        newString += input.mid(lexem - begin + 1, data - lexem - 2);
-                        newString.prepend('\"');
-                        newString.append('\"');
-                        symbols.last() = Symbol(symbols.last().lineNum,
+                        const QByteArray newString
+                                = '\"'
+                                + symbols.constLast().unquotedLexem()
+                                + input.mid(lexem - begin + 1, data - lexem - 2)
+                                + '\"';
+                        symbols.last() = Symbol(symbols.constLast().lineNum,
                                                 STRING_LITERAL,
                                                 newString);
                         continue;
@@ -663,8 +659,11 @@ Symbols Preprocessor::macroExpandIdentifier(Preprocessor *that, SymbolStack &sym
                     expansion += s;
                 }
             } else if (mode == Hash) {
-                if (index < 0 || index >= arguments.size()) {
+                if (index < 0) {
                     that->error("'#' is not followed by a macro parameter");
+                    continue;
+                } else if (index >= arguments.size()) {
+                    that->error("Macro invoked with too few parameters for a use of '#'");
                     continue;
                 }
 
@@ -681,7 +680,7 @@ Symbols Preprocessor::macroExpandIdentifier(Preprocessor *that, SymbolStack &sym
                 if (s.token == WHITESPACE)
                     continue;
 
-                while (expansion.size() && expansion.last().token == PP_WHITESPACE)
+                while (expansion.size() && expansion.constLast().token == PP_WHITESPACE)
                     expansion.pop_back();
 
                 Symbol next = s;
@@ -694,8 +693,8 @@ Symbols Preprocessor::macroExpandIdentifier(Preprocessor *that, SymbolStack &sym
                     next = arg.at(0);
                 }
 
-                if (!expansion.isEmpty() && expansion.last().token == s.token) {
-                    Symbol last = expansion.last();
+                if (!expansion.isEmpty() && expansion.constLast().token == s.token) {
+                    Symbol last = expansion.constLast();
                     expansion.pop_back();
 
                     if (last.token == STRING_LITERAL || s.token == STRING_LITERAL)
@@ -1036,9 +1035,8 @@ void Preprocessor::preprocess(const QByteArray &filename, Symbols &preprocessed)
                     const int slashPos = include.indexOf('/');
                     if (slashPos == -1)
                         continue;
-                    QByteArray frameworkCandidate = include.left(slashPos);
-                    frameworkCandidate.append(".framework/Headers/");
-                    fi.setFile(QString::fromLocal8Bit(QByteArray(p.path + '/' + frameworkCandidate).constData()), QString::fromLocal8Bit(include.mid(slashPos + 1).constData()));
+                    fi.setFile(QString::fromLocal8Bit(p.path + '/' + include.left(slashPos) + ".framework/Headers/"),
+                               QString::fromLocal8Bit(include.mid(slashPos + 1).constData()));
                 } else {
                     fi.setFile(QString::fromLocal8Bit(p.path.constData()), QString::fromLocal8Bit(include.constData()));
                 }
@@ -1129,12 +1127,12 @@ void Preprocessor::preprocess(const QByteArray &filename, Symbols &preprocessed)
             }
             // remove trailing whitespace
             while (!macro.symbols.isEmpty() &&
-                   (macro.symbols.last().token == PP_WHITESPACE || macro.symbols.last().token == WHITESPACE))
+                   (macro.symbols.constLast().token == PP_WHITESPACE || macro.symbols.constLast().token == WHITESPACE))
                 macro.symbols.pop_back();
 
             if (!macro.symbols.isEmpty()) {
-                if (macro.symbols.first().token == PP_HASHHASH ||
-                    macro.symbols.last().token == PP_HASHHASH) {
+                if (macro.symbols.constFirst().token == PP_HASHHASH ||
+                    macro.symbols.constLast().token == PP_HASHHASH) {
                     error("'##' cannot appear at either end of a macro expansion");
                 }
             }
@@ -1219,6 +1217,10 @@ Symbols Preprocessor::preprocessed(const QByteArray &filename, QFile *file)
 
     // phase 3: preprocess conditions and substitute macros
     Symbols result;
+    // Preallocate some space to speed up the code below.
+    // The magic value was found by logging the final size
+    // and calculating an average when running moc over FOSS projects.
+    result.reserve(file->size() / 300000);
     preprocess(filename, result);
     mergeStringLiterals(&result);
 

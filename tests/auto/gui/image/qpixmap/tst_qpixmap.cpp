@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -64,12 +59,8 @@ class tst_QPixmap : public QObject
 
 public:
     tst_QPixmap();
-    virtual ~tst_QPixmap();
-
 
 public slots:
-    void init();
-    void cleanup();
     void initTestCase();
     void cleanupTestCase();
 
@@ -105,6 +96,7 @@ private slots:
     void drawBitmap();
     void isNull();
     void task_246446();
+    void task_51271();
 
     void convertFromImageNoDetach();
     void convertFromImageDetach();
@@ -209,18 +201,6 @@ tst_QPixmap::tst_QPixmap()
     : m_prefix(QFINDTESTDATA("images/"))
     , m_convertFromImage(QFINDTESTDATA("convertFromImage"))
     , m_loadFromData(QFINDTESTDATA("loadFromData"))
-{
-}
-
-tst_QPixmap::~tst_QPixmap()
-{
-}
-
-void tst_QPixmap::init()
-{
-}
-
-void tst_QPixmap::cleanup()
 {
 }
 
@@ -445,7 +425,8 @@ void tst_QPixmap::scroll()
     else
         QVERIFY(pixmap.cacheKey() != oldKey);
 
-    QString fileName = QString(":/images/%1.png").arg(QTest::currentDataTag());
+    const QString fileName = QLatin1String(":/images/") + QLatin1String(QTest::currentDataTag())
+        + QLatin1String(".png");
     QPixmap output(fileName);
     QCOMPARE(input.isNull(), output.isNull());
     QVERIFY(lenientCompare(pixmap, output));
@@ -458,25 +439,19 @@ void tst_QPixmap::fill_data()
     QTest::addColumn<bool>("syscolor");
     QTest::addColumn<bool>("bitmap");
     for (int color = Qt::black; color < Qt::darkYellow; ++color)
-        QTest::newRow(QString("syscolor_%1").arg(color).toLatin1())
+        QTest::newRow(("syscolor_" + QByteArray::number(color)).constData())
             << uint(color) << true << false;
 
-#if defined (Q_OS_WINCE)
-    QPixmap pixmap(1,1);
-    if (QApplication::desktop()->grab().depth() >= 24) {
-#else
-    QPixmap pixmap(1, 1); {
-#endif
-        QTest::newRow("alpha_7f_red")   << 0x7fff0000u << false << false;
-        QTest::newRow("alpha_3f_blue")  << 0x3f0000ffu << false << false;
-        QTest::newRow("alpha_b7_green") << 0xbf00ff00u << false << false;
-        QTest::newRow("alpha_7f_white") << 0x7fffffffu << false << false;
-        QTest::newRow("alpha_3f_white") << 0x3fffffffu << false << false;
-        QTest::newRow("alpha_b7_white") << 0xb7ffffffu << false << false;
-        QTest::newRow("alpha_7f_black") << 0x7f000000u << false << false;
-        QTest::newRow("alpha_3f_black") << 0x3f000000u << false << false;
-        QTest::newRow("alpha_b7_black") << 0xbf000000u << false << false;
-    }
+    QPixmap pixmap(1, 1);
+    QTest::newRow("alpha_7f_red")   << 0x7fff0000u << false << false;
+    QTest::newRow("alpha_3f_blue")  << 0x3f0000ffu << false << false;
+    QTest::newRow("alpha_b7_green") << 0xbf00ff00u << false << false;
+    QTest::newRow("alpha_7f_white") << 0x7fffffffu << false << false;
+    QTest::newRow("alpha_3f_white") << 0x3fffffffu << false << false;
+    QTest::newRow("alpha_b7_white") << 0xb7ffffffu << false << false;
+    QTest::newRow("alpha_7f_black") << 0x7f000000u << false << false;
+    QTest::newRow("alpha_3f_black") << 0x3f000000u << false << false;
+    QTest::newRow("alpha_b7_black") << 0xbf000000u << false << false;
 
     QTest::newRow("bitmap_color0") << uint(Qt::color0) << true << true;
     QTest::newRow("bitmap_color1") << uint(Qt::color1) << true << true;
@@ -910,9 +885,6 @@ void tst_QPixmap::fromWinHBITMAP()
     HGDIOBJ old_brush = SelectObject(bitmap_dc, CreateSolidBrush(RGB(red, green, blue)));
     Rectangle(bitmap_dc, 0, 0, 100, 100);
 
-#ifdef Q_OS_WINCE //the device context has to be deleted before QPixmap::fromWinHBITMAP()
-    DeleteDC(bitmap_dc);
-#endif
     QPixmap pixmap = qt_pixmapFromWinHBITMAP(bitmap);
     QCOMPARE(pixmap.width(), 100);
     QCOMPARE(pixmap.height(), 100);
@@ -925,9 +897,7 @@ void tst_QPixmap::fromWinHBITMAP()
 
     DeleteObject(SelectObject(bitmap_dc, old_brush));
     DeleteObject(SelectObject(bitmap_dc, bitmap));
-#ifndef Q_OS_WINCE
     DeleteDC(bitmap_dc);
-#endif
     ReleaseDC(0, display_dc);
 }
 
@@ -1000,7 +970,9 @@ void tst_QPixmap::toWinHICON()
     HBITMAP bitmap = qt_pixmapToWinHBITMAP(empty, Alpha);
     SelectObject(bitmap_dc, bitmap);
 
-    QImage imageFromFile(image + QString(QLatin1String("_%1x%2.png")).arg(width).arg(height));
+    const QString fileName = image + QLatin1Char('_') + QString::number(width) + QLatin1Char('x')
+        + QString::number(height) + QLatin1String(".png");
+    QImage imageFromFile(fileName);
     imageFromFile = imageFromFile.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 
     HICON icon = qt_pixmapToWinHICON(QPixmap::fromImage(imageFromFile));
@@ -1027,7 +999,6 @@ void tst_QPixmap::fromWinHICON_data()
 
 void tst_QPixmap::fromWinHICON()
 {
-#ifndef Q_OS_WINCE
     QFETCH(int, width);
     QFETCH(int, height);
     QFETCH(QString, image);
@@ -1036,14 +1007,15 @@ void tst_QPixmap::fromWinHICON()
     QImage imageFromHICON = qt_pixmapFromWinHICON(icon).toImage();
     DestroyIcon(icon);
 
-    QImage imageFromFile(image + QString(QLatin1String("_%1x%2.png")).arg(width).arg(height));
+    const QString fileName = image + QLatin1Char('_') + QString::number(width) + QLatin1Char('x')
+        + QString::number(height) + QLatin1String(".png");
+    QImage imageFromFile(fileName);
     imageFromFile = imageFromFile.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 
     // fuzzy comparison must be used, as the pixel values change slightly during conversion
     // between QImage::Format_ARGB32 and QImage::Format_ARGB32_Premultiplied, or elsewhere
 
     QVERIFY(compareImages(imageFromHICON, imageFromFile));
-#endif // Q_OS_WINCE
 }
 
 #endif // Q_OS_WIN && !Q_OS_WINRT
@@ -1439,6 +1411,14 @@ void tst_QPixmap::task_246446()
     }
     QCOMPARE(pm.width(), 10);
     QVERIFY(pm.mask().isNull());
+}
+
+void tst_QPixmap::task_51271()
+{
+    QPixmap pm;
+    QBitmap bm;
+    QVERIFY(!pm.isQBitmap()); // Should not crash !
+    QVERIFY(bm.isQBitmap());
 }
 
 void tst_QPixmap::preserveDepth()

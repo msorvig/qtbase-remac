@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -158,7 +164,7 @@ QXcbIntegration::QXcbIntegration(const QStringList &parameters, int &argc, char 
 
     bool underDebugger = runningUnderDebugger();
     if (noGrabArg && doGrabArg && underDebugger) {
-        qWarning() << "Both -nograb and -dograb command line arguments specified. Please pick one. -nograb takes prcedence";
+        qWarning("Both -nograb and -dograb command line arguments specified. Please pick one. -nograb takes prcedence");
         doGrabArg = false;
     }
 
@@ -174,9 +180,11 @@ QXcbIntegration::QXcbIntegration(const QStringList &parameters, int &argc, char 
     if (canNotGrabEnv)
         m_canGrab = false;
 
+    const int numParameters = parameters.size();
+    m_connections.reserve(1 + numParameters / 2);
     m_connections << new QXcbConnection(m_nativeInterface.data(), m_canGrab, m_defaultVisualId, displayName);
 
-    for (int i = 0; i < parameters.size() - 1; i += 2) {
+    for (int i = 0; i < numParameters - 1; i += 2) {
         qCDebug(lcQpaScreen) << "connecting to additional display: " << parameters.at(i) << parameters.at(i+1);
         QString display = parameters.at(i) + QLatin1Char(':') + parameters.at(i+1);
         m_connections << new QXcbConnection(m_nativeInterface.data(), m_canGrab, m_defaultVisualId, display.toLatin1().constData());
@@ -195,7 +203,7 @@ QPlatformWindow *QXcbIntegration::createPlatformWindow(QWindow *window) const
 {
     QXcbScreen *screen = static_cast<QXcbScreen *>(window->screen()->handle());
     QXcbGlIntegration *glIntegration = screen->connection()->glIntegration();
-    if (window->type() != Qt::Desktop) {
+    if (window->type() != Qt::Desktop && window->supportsOpenGL()) {
         if (glIntegration) {
             QXcbWindow *xcbWindow = glIntegration->createWindow(window);
             xcbWindow->create();
@@ -242,16 +250,25 @@ QPlatformOffscreenSurface *QXcbIntegration::createPlatformOffscreenSurface(QOffs
 bool QXcbIntegration::hasCapability(QPlatformIntegration::Capability cap) const
 {
     switch (cap) {
-    case ThreadedPixmaps: return true;
-    case OpenGL: return m_connections.first()->glIntegration();
-    case ThreadedOpenGL: return m_connections.at(0)->threadedEventHandling()
-                         && m_connections.at(0)->glIntegration()
-                             && m_connections.at(0)->glIntegration()->supportsThreadedOpenGL();
-    case WindowMasks: return true;
-    case MultipleWindows: return true;
-    case ForeignWindows: return true;
-    case SyncState: return true;
-    case RasterGLSurface: return true;
+    case OpenGL:
+    case ThreadedOpenGL:
+    {
+        const auto *connection = qAsConst(m_connections).first();
+        if (const auto *integration = connection->glIntegration())
+            return cap != ThreadedOpenGL
+                || (connection->threadedEventHandling() && integration->supportsThreadedOpenGL());
+        return false;
+    }
+
+    case ThreadedPixmaps:
+    case WindowMasks:
+    case MultipleWindows:
+    case ForeignWindows:
+    case SyncState:
+    case RasterGLSurface:
+    case SwitchableWidgetComposition:
+        return true;
+
     default: return QPlatformIntegration::hasCapability(cap);
     }
 }
@@ -451,6 +468,19 @@ void QXcbIntegration::sync()
     for (int i = 0; i < m_connections.size(); i++) {
         m_connections.at(i)->sync();
     }
+}
+
+// For QApplication::beep()
+void QXcbIntegration::beep() const
+{
+    QScreen *priScreen = QGuiApplication::primaryScreen();
+    if (!priScreen)
+        return;
+    QPlatformScreen *screen = priScreen->handle();
+    if (!screen)
+        return;
+    xcb_connection_t *connection = static_cast<QXcbScreen *>(screen)->xcb_connection();
+    xcb_bell(connection, 0);
 }
 
 QT_END_NAMESPACE

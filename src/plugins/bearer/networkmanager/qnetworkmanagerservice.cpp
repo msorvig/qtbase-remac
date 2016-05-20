@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -74,7 +80,7 @@ QNetworkManagerInterface::QNetworkManagerInterface(QObject *parent)
     if (!propsReply.isError()) {
         propertyMap = propsReply.value();
     } else {
-        qWarning() << Q_FUNC_INFO << "propsReply"<<propsReply.error().message();
+        qWarning() << "propsReply" << propsReply.error().message();
     }
 
     QDBusPendingReply<QList <QDBusObjectPath> > nmReply
@@ -83,7 +89,7 @@ QNetworkManagerInterface::QNetworkManagerInterface(QObject *parent)
     if (!nmReply.isError()) {
         devicesPathList = nmReply.value();
     } else {
-        qWarning() << Q_FUNC_INFO <<"nmReply"<<nmReply.error().message();
+        qWarning() << "nmReply" << nmReply.error().message();
     }
 
     QDBusConnection::systemBus().connect(QLatin1String(NM_DBUS_SERVICE),
@@ -130,7 +136,7 @@ bool QNetworkManagerInterface::setConnections()
 QList <QDBusObjectPath> QNetworkManagerInterface::getDevices()
 {
     if (devicesPathList.isEmpty()) {
-        //qWarning() << "using blocking call!";
+        //qWarning("using blocking call!");
         QDBusReply<QList<QDBusObjectPath> > reply = call(QLatin1String("GetDevices"));
         devicesPathList = reply.value();
     }
@@ -214,7 +220,7 @@ void QNetworkManagerInterface::propertiesSwap(QMap<QString,QVariant> map)
         i.next();
         propertyMap.insert(i.key(),i.value());
 
-        if (i.key() == QStringLiteral("State")) {
+        if (i.key() == QLatin1String("State")) {
             quint32 state = i.value().toUInt();
             if (state == NM_DEVICE_STATE_ACTIVATED
                 || state == NM_DEVICE_STATE_DISCONNECTED
@@ -223,7 +229,7 @@ void QNetworkManagerInterface::propertiesSwap(QMap<QString,QVariant> map)
                 Q_EMIT propertiesChanged(map);
                 Q_EMIT stateChanged(state);
             }
-        } else if (i.key() == QStringLiteral("ActiveConnections")) {
+        } else if (i.key() == QLatin1String("ActiveConnections")) {
             Q_EMIT propertiesChanged(map);
         }
     }
@@ -418,7 +424,7 @@ void QNetworkManagerInterfaceDevice::propertiesSwap(QMap<QString,QVariant> map)
     QMapIterator<QString, QVariant> i(map);
     while (i.hasNext()) {
         i.next();
-        if (i.key() == QStringLiteral("AvailableConnections")) { //Device
+        if (i.key() == QLatin1String("AvailableConnections")) { //Device
             const QDBusArgument &dbusArgs = i.value().value<QDBusArgument>();
             QDBusObjectPath path;
             QStringList paths;
@@ -514,9 +520,8 @@ void QNetworkManagerInterfaceDeviceWired::propertiesSwap(QMap<QString,QVariant> 
     while (i.hasNext()) {
         i.next();
         propertyMap.insert(i.key(),i.value());
-        if (i.key() == QStringLiteral("Carrier")) {
+        if (i.key() == QLatin1String("Carrier"))
             Q_EMIT carrierChanged(i.value().toBool());
-        }
     }
     Q_EMIT propertiesChanged(map);
 }
@@ -634,7 +639,7 @@ void QNetworkManagerInterfaceDeviceWireless::accessPointsFinished(QDBusPendingCa
 QList <QDBusObjectPath> QNetworkManagerInterfaceDeviceWireless::getAccessPoints()
 {
     if (accessPointsList.isEmpty()) {
-        //qWarning() << "Using blocking call!";
+        //qWarning("Using blocking call!");
         QDBusReply<QList<QDBusObjectPath> > reply
                 = call(QLatin1String("GetAccessPoints"));
         accessPointsList = reply.value();
@@ -693,9 +698,8 @@ void QNetworkManagerInterfaceDeviceWireless::propertiesSwap(QMap<QString,QVarian
     while (i.hasNext()) {
         i.next();
         propertyMap.insert(i.key(),i.value());
-        if (i.key() == QStringLiteral("ActiveAccessPoint")) { //DeviceWireless
+        if (i.key() == QLatin1String("ActiveAccessPoint")) //DeviceWireless
             Q_EMIT propertiesChanged(map);
-        }
     }
 }
 
@@ -789,7 +793,7 @@ bool QNetworkManagerSettings::setConnections()
                                              QLatin1String("NewConnection"),
                                              this, SIGNAL(newConnection(QDBusObjectPath)))) {
         allOk = false;
-        qWarning() << Q_FUNC_INFO << "NewConnection could not be connected";
+        qWarning("NewConnection could not be connected");
     }
 
     return allOk;
@@ -798,7 +802,7 @@ bool QNetworkManagerSettings::setConnections()
 QList <QDBusObjectPath> QNetworkManagerSettings::listConnections()
 {
     if (connectionsList.isEmpty()) {
-        //qWarning() << "Using blocking call!";
+        //qWarning("Using blocking call!");
         QDBusReply<QList<QDBusObjectPath> > reply
                 = call(QLatin1String("ListConnections"));
         connectionsList = reply.value();
@@ -870,7 +874,7 @@ void QNetworkManagerSettingsConnection::slotSettingsRemoved()
 QNmSettingsMap QNetworkManagerSettingsConnection::getSettings()
 {
     if (settingsMap.isEmpty()) {
-        //qWarning() << "Using blocking call!";
+        //qWarning("Using blocking call!");
         QDBusReply<QNmSettingsMap> reply = call(QLatin1String("GetSettings"));
         settingsMap = reply.value();
     }
@@ -1051,7 +1055,7 @@ void QNetworkManagerConnectionActive::propertiesSwap(QMap<QString,QVariant> map)
     while (i.hasNext()) {
         i.next();
         propertyMap.insert(i.key(),i.value());
-        if (i.key() == QStringLiteral("State")) {
+        if (i.key() == QLatin1String("State")) {
             quint32 state = i.value().toUInt();
             if (state == NM_ACTIVE_CONNECTION_STATE_ACTIVATED
                 || state == NM_ACTIVE_CONNECTION_STATE_DEACTIVATED) {

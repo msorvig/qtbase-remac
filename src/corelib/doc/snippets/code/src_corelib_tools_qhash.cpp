@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -220,7 +230,7 @@ for (i = hash.begin(); i != hash.end(); ++i)
 //! [19]
 QHash<QString, int>::iterator i = hash.begin();
 while (i != hash.end()) {
-    if (i.key().startsWith("_"))
+    if (i.key().startsWith('_'))
         i = hash.erase(i);
     else
         ++i;
@@ -233,7 +243,7 @@ QHash<QString, int>::iterator i = hash.begin();
 while (i != hash.end()) {
     QHash<QString, int>::iterator prev = i;
     ++i;
-    if (prev.key().startsWith("_"))
+    if (prev.key().startsWith('_'))
         hash.erase(prev);
 }
 //! [20]
@@ -242,7 +252,7 @@ while (i != hash.end()) {
 //! [21]
 // WRONG
 while (i != hash.end()) {
-    if (i.key().startsWith("_"))
+    if (i.key().startsWith('_'))
         hash.erase(i);
     ++i;
 }

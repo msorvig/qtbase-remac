@@ -1,31 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -51,7 +47,7 @@ extern Q_CORE_EXPORT int qt_ntfs_permission_lookup;
 QT_END_NAMESPACE
 #endif
 
-#if !defined(Q_OS_WINCE) && !defined(QT_NO_NETWORK)
+#if !defined(QT_NO_NETWORK)
 #include <QHostInfo>
 #endif
 #include <QProcess>
@@ -70,8 +66,6 @@ QT_END_NAMESPACE
 # include <sys/mount.h>
 #elif defined(Q_OS_IRIX)
 # include <sys/statfs.h>
-#elif defined(Q_OS_WINCE)
-# include <qplatformdefs.h>
 #elif defined(Q_OS_VXWORKS)
 # include <fcntl.h>
 #if defined(_WRS_KERNEL)
@@ -89,7 +83,7 @@ QT_END_NAMESPACE
 #include <stdio.h>
 #include <errno.h>
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
 #include "../../../network-settings.h"
 #endif
 
@@ -139,11 +133,9 @@ private slots:
     void readAll_data();
     void readAll();
     void readAllBuffer();
-#if !defined(Q_OS_WINCE)
     void readAllStdin();
     void readLineStdin();
     void readLineStdin_lineByLine();
-#endif
     void text();
     void missingEndOfLine();
     void readBlock();
@@ -173,7 +165,7 @@ private slots:
     void writeTextFile_data();
     void writeTextFile();
     /* void largeFileSupport(); */
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     void largeUncFileSupport();
 #endif
     void flush();
@@ -229,10 +221,8 @@ private slots:
     void mapWrittenFile_data();
     void mapWrittenFile();
 
-#ifndef Q_OS_WINCE
     void openStandardStreamsFileDescriptors();
     void openStandardStreamsBufferedStreams();
-#endif
 
     void resize_data();
     void resize();
@@ -390,9 +380,30 @@ tst_QFile::tst_QFile() : m_oldDir(QDir::currentPath())
 {
 }
 
+static QByteArray msgOpenFailed(QIODevice::OpenMode om, const QFile &file)
+{
+    QString result;
+    QDebug(&result).noquote().nospace() << "Could not open \""
+        << QDir::toNativeSeparators(file.fileName()) << "\" using "
+        << om << ": " << file.errorString();
+    return result.toLocal8Bit();
+}
+
+static QByteArray msgOpenFailed(const QFile &file)
+{
+    return (QLatin1String("Could not open \"") + QDir::toNativeSeparators(file.fileName())
+        + QLatin1String("\": ") + file.errorString()).toLocal8Bit();
+}
+
+static QByteArray msgFileDoesNotExist(const QString &name)
+{
+    return (QLatin1Char('"') + QDir::toNativeSeparators(name)
+        + QLatin1String("\" does not exist.")).toLocal8Bit();
+}
+
 void tst_QFile::initTestCase()
 {
-    QVERIFY(m_temporaryDir.isValid());
+    QVERIFY2(m_temporaryDir.isValid(), qPrintable(m_temporaryDir.errorString()));
     m_stdinProcessDir = QFINDTESTDATA("stdinprocess");
     QVERIFY(!m_stdinProcessDir.isEmpty());
     m_testSourceFile = QFINDTESTDATA("tst_qfile.cpp");
@@ -418,19 +429,19 @@ void tst_QFile::initTestCase()
 
     // create a file and make it read-only
     QFile file(QString::fromLatin1(readOnlyFile));
-    QVERIFY2(file.open(QFile::WriteOnly), qPrintable(file.errorString()));
+    QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
     file.write("a", 1);
     file.close();
     QVERIFY2(file.setPermissions(QFile::ReadOwner), qPrintable(file.errorString()));
     // create another file and make it not readable
     file.setFileName(QString::fromLatin1(noReadFile));
-    QVERIFY2(file.open(QFile::WriteOnly), qPrintable(file.errorString()));
+    QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
     file.write("b", 1);
     file.close();
 #ifndef Q_OS_WIN // Not supported on Windows.
     QVERIFY2(file.setPermissions(0), qPrintable(file.errorString()));
 #else
-    QVERIFY2(file.open(QFile::WriteOnly), qPrintable(file.errorString()));
+    QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
 #endif
 }
 
@@ -455,28 +466,29 @@ void tst_QFile::cleanupTestCase()
 void tst_QFile::exists()
 {
     QFile f( m_testFile );
-    QVERIFY(f.exists());
+    QVERIFY2(f.exists(), msgFileDoesNotExist(m_testFile));
 
     QFile file("nobodyhassuchafile");
     file.remove();
     QVERIFY(!file.exists());
 
     QFile file2("nobodyhassuchafile");
-    QVERIFY(file2.open(QIODevice::WriteOnly));
+    QVERIFY2(file2.open(QIODevice::WriteOnly), msgOpenFailed(file2).constData());
     file2.close();
 
     QVERIFY(file.exists());
 
-    QVERIFY(file.open(QIODevice::WriteOnly));
+    QVERIFY2(file.open(QIODevice::WriteOnly), msgOpenFailed(file).constData());
     file.close();
     QVERIFY(file.exists());
 
     file.remove();
     QVERIFY(!file.exists());
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
-    QFile unc("//" + QtNetworkSettings::winServerName() + "/testshare/readme.txt");
-    QVERIFY(unc.exists());
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+    const QString uncPath = "//" + QtNetworkSettings::winServerName() + "/testshare/readme.txt";
+    QFile unc(uncPath);
+    QVERIFY2(unc.exists(), msgFileDoesNotExist(uncPath).constData());
 #endif
 }
 
@@ -521,7 +533,11 @@ void tst_QFile::open_data()
                                   << false << QFile::OpenError;
     QTest::newRow("noreadfile") << QString::fromLatin1(noReadFile) << int(QIODevice::ReadOnly)
                                 << false << QFile::OpenError;
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+    QTest::newRow("resource_file") << QString::fromLatin1(":/does/not/exist")
+                                   << int(QIODevice::ReadOnly)
+                                   << false
+                                   << QFile::OpenError;
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     //opening devices requires administrative privileges (and elevation).
     HANDLE hTest = CreateFile(_T("\\\\.\\PhysicalDrive0"), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
     if (hTest != INVALID_HANDLE_VALUE) {
@@ -552,13 +568,18 @@ void tst_QFile::open()
         QSKIP("Running this test as root doesn't make sense");
 #endif
 
-#if defined(Q_OS_WIN32) || defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN32)
     QEXPECT_FAIL("noreadfile", "Windows does not currently support non-readable files.", Abort);
 #endif
     if (filename.isEmpty())
         QTest::ignoreMessage(QtWarningMsg, "QFSFileEngine::open: No file name specified");
 
-    QCOMPARE(f.open( QIODevice::OpenMode(mode) ), ok);
+    const QIODevice::OpenMode om(mode);
+    const bool succeeded = f.open(om);
+    if (ok)
+        QVERIFY2(succeeded, msgOpenFailed(om, f).constData());
+    else
+        QVERIFY(!succeeded);
 
     QTEST( f.error(), "status" );
 }
@@ -566,7 +587,7 @@ void tst_QFile::open()
 void tst_QFile::openUnbuffered()
 {
     QFile file(m_testFile);
-    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Unbuffered));
+    QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Unbuffered), msgOpenFailed(file).constData());
     char c = '\0';
     QVERIFY(file.seek(1));
     QCOMPARE(file.pos(), qint64(1));
@@ -599,7 +620,7 @@ void tst_QFile::size_data()
     QTest::addColumn<qint64>("size");
 
     QTest::newRow( "exist01" ) << m_testFile << (qint64)245;
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     // Only test UNC on Windows./
     QTest::newRow("unc") << "//" + QString(QtNetworkSettings::winServerName() + "/testshare/test.pri") << (qint64)34;
 #endif
@@ -610,15 +631,11 @@ void tst_QFile::size()
     QFETCH( QString, filename );
     QFETCH( qint64, size );
 
-#ifdef Q_OS_WINCE
-        filename = QFileInfo(filename).absoluteFilePath();
-#endif
-
     {
         QFile f( filename );
         QCOMPARE( f.size(), size );
 
-        QVERIFY( f.open(QIODevice::ReadOnly) );
+        QVERIFY2(f.open(QIODevice::ReadOnly), msgOpenFailed(f).constData());
         QCOMPARE( f.size(), size );
     }
 
@@ -633,9 +650,6 @@ void tst_QFile::size()
         fclose(stream);
     }
 
-    // Currently low level file I/O is not well supported on Windows CE, so
-    // skip this part of the test.
-#ifndef Q_OS_WINCE
     {
         QFile f;
 
@@ -648,7 +662,6 @@ void tst_QFile::size()
         f.close();
         QT_CLOSE(fd);
     }
-#endif
 }
 
 void tst_QFile::sizeNoExist()
@@ -662,7 +675,7 @@ void tst_QFile::sizeNoExist()
 void tst_QFile::seek()
 {
     QFile file("newfile.txt");
-    file.open(QIODevice::WriteOnly);
+    QVERIFY2(file.open(QIODevice::WriteOnly), msgOpenFailed(file).constData());
     QCOMPARE(file.size(), qint64(0));
     QCOMPARE(file.pos(), qint64(0));
     QVERIFY(file.seek(10));
@@ -674,7 +687,7 @@ void tst_QFile::seek()
 void tst_QFile::setSize()
 {
     QFile f("createme.txt");
-    QVERIFY(f.open(QIODevice::Truncate | QIODevice::ReadWrite));
+    QVERIFY2(f.open(QIODevice::Truncate | QIODevice::ReadWrite), msgOpenFailed(f).constData());
     f.putChar('a');
 
     f.seek(0);
@@ -712,7 +725,7 @@ void tst_QFile::setSize()
 void tst_QFile::setSizeSeek()
 {
     QFile f("setsizeseek.txt");
-    QVERIFY(f.open(QFile::WriteOnly));
+    QVERIFY2(f.open(QFile::WriteOnly), msgOpenFailed(f).constData());
     f.write("ABCD");
 
     QCOMPARE(f.pos(), qint64(4));
@@ -734,7 +747,7 @@ void tst_QFile::setSizeSeek()
 void tst_QFile::atEnd()
 {
     QFile f( m_testFile );
-    QVERIFY(f.open( QIODevice::ReadOnly ));
+    QVERIFY2(f.open(QFile::ReadOnly), msgOpenFailed(f).constData());
 
     int size = f.size();
     f.seek( size );
@@ -747,7 +760,7 @@ void tst_QFile::atEnd()
 void tst_QFile::readLine()
 {
     QFile f( m_testFile );
-    QVERIFY(f.open( QIODevice::ReadOnly ));
+    QVERIFY2(f.open(QFile::ReadOnly), msgOpenFailed(f).constData());
 
     int i = 0;
     char p[128];
@@ -767,7 +780,8 @@ void tst_QFile::readLine()
 void tst_QFile::readLine2()
 {
     QFile f( m_testFile );
-    f.open( QIODevice::ReadOnly );
+    QVERIFY2(f.open(QFile::ReadOnly), msgOpenFailed(f).constData());
+
 
     char p[128];
     QCOMPARE(f.readLine(p, 60), qlonglong(59));
@@ -785,7 +799,7 @@ void tst_QFile::readLineNullInLine()
 {
     QFile::remove("nullinline.txt");
     QFile file("nullinline.txt");
-    QVERIFY(file.open(QIODevice::ReadWrite));
+    QVERIFY2(file.open(QFile::ReadWrite), msgOpenFailed(file).constData());
     QVERIFY(file.write("linewith\0null\nanotherline\0withnull\n\0\nnull\0", 42) > 0);
     QVERIFY(file.flush());
     file.reset();
@@ -816,10 +830,8 @@ void tst_QFile::readAll()
     QFETCH( QString, fileName );
 
     QFile file(fileName);
-    if (textMode)
-        QVERIFY(file.open(QFile::Text | QFile::ReadOnly));
-    else
-        QVERIFY(file.open(QFile::ReadOnly));
+    const QIODevice::OpenMode om = textMode ? (QFile::Text | QFile::ReadOnly) : QFile::ReadOnly;
+    QVERIFY2(file.open(om), msgOpenFailed(om, file).constData());
 
     QByteArray a = file.readAll();
     file.reset();
@@ -848,8 +860,8 @@ void tst_QFile::readAllBuffer()
     QByteArray data1("This is arguably a very simple text.");
     QByteArray data2("This is surely not as simple a test.");
 
-    QVERIFY( writer.open(QIODevice::ReadWrite | QIODevice::Unbuffered) );
-    QVERIFY( reader.open(QIODevice::ReadOnly) );
+    QVERIFY2(writer.open(QIODevice::ReadWrite | QIODevice::Unbuffered), msgOpenFailed(writer).constData());
+    QVERIFY2(reader.open(QIODevice::ReadOnly), msgOpenFailed(reader).constData());
 
     QCOMPARE( writer.write(data1), qint64(data1.size()) );
     QVERIFY( writer.seek(0) );
@@ -868,7 +880,32 @@ void tst_QFile::readAllBuffer()
     QFile::remove(fileName);
 }
 
-#if !defined(Q_OS_WINCE)
+#ifndef QT_NO_PROCESS
+class StdinReaderProcessGuard { // Ensure the stdin reader process is stopped on destruction.
+    Q_DISABLE_COPY(StdinReaderProcessGuard)
+
+public:
+    StdinReaderProcessGuard(QProcess *p) : m_process(p) {}
+    ~StdinReaderProcessGuard() { stop(); }
+
+    bool stop(int msecs = 30000)
+    {
+        if (m_process->state() != QProcess::Running)
+            return true;
+        m_process->closeWriteChannel();
+        if (m_process->waitForFinished(msecs))
+            return m_process->exitStatus() == QProcess::NormalExit && !m_process->exitCode();
+        m_process->terminate();
+        if (!m_process->waitForFinished())
+            m_process->kill();
+        return false;
+    }
+
+private:
+    QProcess *m_process;
+};
+#endif // !QT_NO_PROCESS
+
 void tst_QFile::readAllStdin()
 {
 #ifdef QT_NO_PROCESS
@@ -877,18 +914,17 @@ void tst_QFile::readAllStdin()
     QByteArray lotsOfData(1024, '@'); // 10 megs
 
     QProcess process;
+    StdinReaderProcessGuard processGuard(&process);
     process.start(m_stdinProcessDir + QStringLiteral("/stdinprocess"), QStringList(QStringLiteral("all")));
     QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
     for (int i = 0; i < 5; ++i) {
         QTest::qWait(1000);
         process.write(lotsOfData);
-        while (process.bytesToWrite() > 0) {
+        while (process.bytesToWrite() > 0)
             QVERIFY(process.waitForBytesWritten());
-        }
     }
 
-    process.closeWriteChannel();
-    process.waitForFinished();
+    QVERIFY(processGuard.stop());
     QCOMPARE(process.readAll().size(), lotsOfData.size() * 5);
 #endif
 }
@@ -908,6 +944,7 @@ void tst_QFile::readLineStdin()
 
     for (int i = 0; i < 2; ++i) {
         QProcess process;
+        StdinReaderProcessGuard processGuard(&process);
         process.start(m_stdinProcessDir + QStringLiteral("/stdinprocess"),
                       QStringList() << QStringLiteral("line") << QString::number(i),
                       QIODevice::Text | QIODevice::ReadWrite);
@@ -915,13 +952,11 @@ void tst_QFile::readLineStdin()
         for (int i = 0; i < 5; ++i) {
             QTest::qWait(1000);
             process.write(lotsOfData);
-            while (process.bytesToWrite() > 0) {
+            while (process.bytesToWrite() > 0)
                 QVERIFY(process.waitForBytesWritten());
-            }
         }
 
-        process.closeWriteChannel();
-        QVERIFY(process.waitForFinished(5000));
+        QVERIFY(processGuard.stop(5000));
 
         QByteArray array = process.readAll();
         QCOMPARE(array.size(), lotsOfData.size() * 5);
@@ -942,6 +977,7 @@ void tst_QFile::readLineStdin_lineByLine()
 #else
     for (int i = 0; i < 2; ++i) {
         QProcess process;
+        StdinReaderProcessGuard processGuard(&process);
         process.start(m_stdinProcessDir + QStringLiteral("/stdinprocess"),
                       QStringList() << QStringLiteral("line") << QString::number(i),
                       QIODevice::Text | QIODevice::ReadWrite);
@@ -956,18 +992,16 @@ void tst_QFile::readLineStdin_lineByLine()
             QCOMPARE(process.readAll(), line);
         }
 
-        process.closeWriteChannel();
-        QVERIFY(process.waitForFinished(5000));
+        QVERIFY(processGuard.stop(5000));
     }
 #endif
 }
-#endif
 
 void tst_QFile::text()
 {
     // dosfile.txt is a binary CRLF file
     QFile file(m_dosFile);
-    QVERIFY(file.open(QFile::Text | QFile::ReadOnly));
+    QVERIFY2(file.open(QFile::Text | QFile::ReadOnly), msgOpenFailed(file).constData());
     QCOMPARE(file.readLine(),
             QByteArray("/dev/system/root     /                    reiserfs   acl,user_xattr        1 1\n"));
     QCOMPARE(file.readLine(),
@@ -980,7 +1014,7 @@ void tst_QFile::text()
 void tst_QFile::missingEndOfLine()
 {
     QFile file(m_noEndOfLineFile);
-    QVERIFY(file.open(QFile::ReadOnly));
+    QVERIFY2(file.open(QFile::ReadOnly), msgOpenFailed(file).constData());
 
     int nlines = 0;
     while (!file.atEnd()) {
@@ -1026,7 +1060,7 @@ void tst_QFile::getch()
 void tst_QFile::ungetChar()
 {
     QFile f(m_testFile);
-    QVERIFY(f.open(QIODevice::ReadOnly));
+    QVERIFY2(f.open(QFile::ReadOnly), msgOpenFailed(f).constData());
 
     QByteArray array = f.readLine();
     QCOMPARE(array.constData(), "----------------------------------------------------------\n");
@@ -1044,7 +1078,7 @@ void tst_QFile::ungetChar()
 
     QFile::remove("genfile.txt");
     QFile out("genfile.txt");
-    QVERIFY(out.open(QIODevice::ReadWrite));
+    QVERIFY2(out.open(QIODevice::ReadWrite), msgOpenFailed(out).constData());
     out.write("123");
     out.seek(0);
     QCOMPARE(out.readAll().constData(), "123");
@@ -1062,7 +1096,7 @@ void tst_QFile::ungetChar()
     QCOMPARE(buf[2], '4');
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 QString driveLetters()
 {
     wchar_t volumeName[MAX_PATH];
@@ -1099,7 +1133,7 @@ void tst_QFile::invalidFile_data()
 #if !defined(Q_OS_WIN)
     QTest::newRow( "x11" ) << QString( "qwe//" );
 #else
-#if !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if !defined(Q_OS_WINRT)
     QTest::newRow( "colon2" ) << invalidDriveLetter() + QString::fromLatin1(":ail:invalid");
 #endif
     QTest::newRow( "colon3" ) << QString( ":failinvalid" );
@@ -1127,7 +1161,7 @@ void tst_QFile::createFile()
     QVERIFY( !QFile::exists( "createme.txt" ) );
 
     QFile f( "createme.txt" );
-    QVERIFY( f.open( QIODevice::WriteOnly ) );
+    QVERIFY2( f.open(QIODevice::WriteOnly), msgOpenFailed(f).constData());
     f.close();
     QVERIFY( QFile::exists( "createme.txt" ) );
 }
@@ -1140,11 +1174,11 @@ void tst_QFile::append()
     QVERIFY(!QFile::exists(name));
 
     QFile f(name);
-    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QVERIFY2(f.open(QIODevice::WriteOnly | QIODevice::Truncate), msgOpenFailed(f).constData());
     f.putChar('a');
     f.close();
 
-    QVERIFY(f.open(QIODevice::Append));
+    QVERIFY2(f.open(QIODevice::Append), msgOpenFailed(f).constData());
     QCOMPARE(f.pos(), 1);
     f.putChar('a');
     f.close();
@@ -1161,13 +1195,11 @@ void tst_QFile::permissions_data()
     QTest::newRow("data0") << QCoreApplication::instance()->applicationFilePath() << uint(QFile::ExeUser) << true << false;
     QTest::newRow("data1") << m_testSourceFile << uint(QFile::ReadUser) << true << false;
     QTest::newRow("readonly") << QString::fromLatin1("readonlyfile") << uint(QFile::WriteUser) << false << false;
-#ifndef Q_OS_WINCE
     QTest::newRow("longfile") << QString::fromLatin1("longFileNamelongFileNamelongFileNamelongFileName"
                                                     "longFileNamelongFileNamelongFileNamelongFileName"
                                                     "longFileNamelongFileNamelongFileNamelongFileName"
                                                     "longFileNamelongFileNamelongFileNamelongFileName"
                                                     "longFileNamelongFileNamelongFileNamelongFileName.txt") << uint(QFile::ReadUser) << true << true;
-#endif
     QTest::newRow("resource1") << ":/tst_qfileinfo/resources/file1.ext1" << uint(QFile::ReadUser) << true << false;
     QTest::newRow("resource2") << ":/tst_qfileinfo/resources/file1.ext1" << uint(QFile::WriteUser) << false << false;
     QTest::newRow("resource3") << ":/tst_qfileinfo/resources/file1.ext1" << uint(QFile::ExeUser) << false << false;
@@ -1181,7 +1213,7 @@ void tst_QFile::permissions()
     QFETCH(bool, create);
     if (create) {
         QFile fc(file);
-        QVERIFY(fc.open(QFile::WriteOnly));
+        QVERIFY2(fc.open(QFile::WriteOnly), msgOpenFailed(fc).constData());
         QVERIFY(fc.write("hello\n"));
         fc.close();
     }
@@ -1230,7 +1262,7 @@ void tst_QFile::setPermissions()
     QVERIFY( !QFile::exists( "createme.txt" ) );
 
     QFile f("createme.txt");
-    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QVERIFY2(f.open(QIODevice::WriteOnly | QIODevice::Truncate), msgOpenFailed(f).constData());
     f.putChar('a');
     f.close();
 
@@ -1247,8 +1279,8 @@ void tst_QFile::copy()
     QFile::remove("test2");
     QVERIFY(QFile::copy(m_testSourceFile, "tst_qfile_copy.cpp"));
     QFile in1(m_testSourceFile), in2("tst_qfile_copy.cpp");
-    QVERIFY(in1.open(QFile::ReadOnly));
-    QVERIFY(in2.open(QFile::ReadOnly));
+    QVERIFY2(in1.open(QFile::ReadOnly), msgOpenFailed(in1).constData());
+    QVERIFY2(in2.open(QFile::ReadOnly), msgOpenFailed(in2).constData());
     QByteArray data1 = in1.readAll(), data2 = in2.readAll();
     QCOMPARE(data1, data2);
     QFile::remove( "main_copy.cpp" );
@@ -1261,8 +1293,8 @@ void tst_QFile::copyAfterFail()
     QFile file1("file-to-be-copied.txt");
     QFile file2("existing-file.txt");
 
-    QVERIFY(file1.open(QIODevice::ReadWrite) && "(test-precondition)");
-    QVERIFY(file2.open(QIODevice::ReadWrite) && "(test-precondition)");
+    QVERIFY2(file1.open(QIODevice::ReadWrite), msgOpenFailed(file1).constData());
+    QVERIFY2(file2.open(QIODevice::ReadWrite), msgOpenFailed(file1).constData());
     file2.close();
     QVERIFY(!QFile::exists("copied-file-1.txt") && "(test-precondition)");
     QVERIFY(!QFile::exists("copied-file-2.txt") && "(test-precondition)");
@@ -1319,19 +1351,13 @@ void tst_QFile::copyFallback()
     QVERIFY(QFile::exists("file-copy-destination.txt"));
     QVERIFY(!file.isOpen());
 
-#ifdef Q_OS_WINCE
-    // Need to reset permissions on Windows to be able to delete
-    QVERIFY(QFile::setPermissions("file-copy-destination.txt",
-            QFile::WriteOther));
-#else
      // Need to reset permissions on Windows to be able to delete
     QVERIFY(QFile::setPermissions("file-copy-destination.txt",
            QFile::ReadOwner | QFile::WriteOwner));
-#endif
     QVERIFY(QFile::remove("file-copy-destination.txt"));
 
     // Fallback copy of open file.
-    QVERIFY(file.open(QIODevice::ReadOnly));
+    QVERIFY2(file.open(QIODevice::ReadOnly), msgOpenFailed(file).constData());
     QVERIFY(file.copy("file-copy-destination.txt"));
     QVERIFY(QFile::exists("file-copy-destination.txt"));
     QVERIFY(!file.isOpen());
@@ -1348,7 +1374,7 @@ void tst_QFile::copyFallback()
 #endif
 #endif
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 static QString getWorkingDirectoryForLink(const QString &linkFileName)
 {
     bool neededCoInit = false;
@@ -1401,13 +1427,13 @@ void tst_QFile::link()
     QCOMPARE(info2.symLinkTarget(), referenceTarget);
 
     QFile link("myLink.lnk");
-    QVERIFY(link.open(QIODevice::ReadOnly));
+    QVERIFY2(link.open(QIODevice::ReadOnly), msgOpenFailed(link).constData());
     QCOMPARE(link.symLinkTarget(), referenceTarget);
     link.close();
 
     QCOMPARE(QFile::symLinkTarget("myLink.lnk"), referenceTarget);
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     QString wd = getWorkingDirectoryForLink(info2.absoluteFilePath());
     QCOMPARE(QDir::fromNativeSeparators(wd), QDir::cleanPath(info1.absolutePath()));
 #endif
@@ -1483,15 +1509,15 @@ void tst_QFile::readTextFile()
     QFETCH(QByteArray, out);
 
     QFile winfile("winfile.txt");
-    QVERIFY(winfile.open(QFile::WriteOnly | QFile::Truncate));
+    QVERIFY2(winfile.open(QFile::WriteOnly | QFile::Truncate), msgOpenFailed(winfile).constData());
     winfile.write(in);
     winfile.close();
 
-    QVERIFY(winfile.open(QFile::ReadOnly));
+    QVERIFY2(winfile.open(QFile::ReadOnly), msgOpenFailed(winfile).constData());
     QCOMPARE(winfile.readAll(), in);
     winfile.close();
 
-    QVERIFY(winfile.open(QFile::ReadOnly | QFile::Text));
+    QVERIFY2(winfile.open(QFile::ReadOnly | QFile::Text), msgOpenFailed(winfile).constData());
     QCOMPARE(winfile.readAll(), out);
 }
 
@@ -1499,13 +1525,13 @@ void tst_QFile::readTextFile2()
 {
     {
         QFile file(m_testLogFile);
-        QVERIFY(file.open(QIODevice::ReadOnly));
+        QVERIFY2(file.open(QIODevice::ReadOnly), msgOpenFailed(file).constData());
         file.read(4097);
     }
 
     {
         QFile file(m_testLogFile);
-        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text), msgOpenFailed(file).constData());
         file.read(4097);
     }
 }
@@ -1532,7 +1558,8 @@ void tst_QFile::writeTextFile()
     QFETCH(QByteArray, in);
 
     QFile file("textfile.txt");
-    QVERIFY(file.open(QFile::WriteOnly | QFile::Truncate | QFile::Text));
+    QVERIFY2(file.open(QFile::WriteOnly | QFile::Truncate | QFile::Text),
+             msgOpenFailed(file).constData());
     QByteArray out = in;
 #ifdef Q_OS_WIN
     out.replace('\n', "\r\n");
@@ -1544,7 +1571,7 @@ void tst_QFile::writeTextFile()
     QCOMPARE(file.readAll(), out);
 }
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 void tst_QFile::largeUncFileSupport()
 {
     qint64 size = Q_INT64_C(8589934592);
@@ -1555,8 +1582,10 @@ void tst_QFile::largeUncFileSupport()
     {
         // 1) Native file handling.
         QFile file(largeFile);
+        QVERIFY2(file.exists(), msgFileDoesNotExist(largeFile));
+
         QCOMPARE(file.size(), size);
-        QVERIFY(file.open(QIODevice::ReadOnly));
+        QVERIFY2(file.open(QIODevice::ReadOnly), msgOpenFailed(file).constData());
         QCOMPARE(file.size(), size);
         QVERIFY(file.seek(dataOffset));
         QCOMPARE(file.read(knownData.size()), knownData);
@@ -1593,13 +1622,13 @@ void tst_QFile::flush()
 
     {
         QFile file(fileName);
-        QVERIFY(file.open(QFile::WriteOnly));
+        QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
         QCOMPARE(file.write("abc", 3),qint64(3));
     }
 
     {
         QFile file(fileName);
-        QVERIFY(file.open(QFile::WriteOnly | QFile::Append));
+        QVERIFY2(file.open(QFile::WriteOnly | QFile::Append), msgOpenFailed(file).constData());
         QCOMPARE(file.pos(), qlonglong(3));
         QCOMPARE(file.write("def", 3), qlonglong(3));
         QCOMPARE(file.pos(), qlonglong(6));
@@ -1607,7 +1636,7 @@ void tst_QFile::flush()
 
     {
         QFile file("stdfile.txt");
-        QVERIFY(file.open(QFile::ReadOnly));
+        QVERIFY2(file.open(QFile::ReadOnly), msgOpenFailed(file).constData());
         QCOMPARE(file.readAll(), QByteArray("abcdef"));
     }
 }
@@ -1617,15 +1646,11 @@ void tst_QFile::bufferedRead()
     QFile::remove("stdfile.txt");
 
     QFile file("stdfile.txt");
-    QVERIFY(file.open(QFile::WriteOnly));
+    QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
     file.write("abcdef");
     file.close();
 
-#if defined(Q_OS_WINCE)
-    FILE *stdFile = fopen((QCoreApplication::applicationDirPath() + "/stdfile.txt").toLatin1() , "r");
-#else
     FILE *stdFile = fopen("stdfile.txt", "r");
-#endif
     QVERIFY(stdFile);
     char c;
     QCOMPARE(int(fread(&c, 1, 1, stdFile)), 1);
@@ -1634,7 +1659,7 @@ void tst_QFile::bufferedRead()
 
     {
         QFile file;
-        QVERIFY(file.open(stdFile, QFile::ReadOnly));
+        QVERIFY2(file.open(stdFile, QFile::ReadOnly), msgOpenFailed(file).constData());
         QCOMPARE(file.pos(), qlonglong(1));
         QCOMPARE(file.read(&c, 1), qlonglong(1));
         QCOMPARE(c, 'b');
@@ -1648,7 +1673,7 @@ void tst_QFile::bufferedRead()
 void tst_QFile::isSequential()
 {
     QFile zero("/dev/null");
-    QVERIFY(zero.open(QFile::ReadOnly));
+    QVERIFY2(zero.open(QFile::ReadOnly), msgOpenFailed(zero).constData());
     QVERIFY(zero.isSequential());
 }
 #endif
@@ -1662,15 +1687,15 @@ void tst_QFile::truncate()
 {
     for (int i = 0; i < 2; ++i) {
         QFile file("truncate.txt");
-        QVERIFY(file.open(QFile::WriteOnly));
+        QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
         file.write(QByteArray(200, '@'));
         file.close();
 
-        QVERIFY(file.open((i ? QFile::WriteOnly : QFile::ReadWrite) | QFile::Truncate));
+        QVERIFY2(file.open((i ? QFile::WriteOnly : QFile::ReadWrite) | QFile::Truncate), msgOpenFailed(file).constData());
         file.write(QByteArray(100, '$'));
         file.close();
 
-        QVERIFY(file.open(QFile::ReadOnly));
+        QVERIFY2(file.open(QFile::ReadOnly), msgOpenFailed(file).constData());
         QCOMPARE(file.readAll(), QByteArray(100, '$'));
     }
 }
@@ -1679,13 +1704,13 @@ void tst_QFile::seekToPos()
 {
     {
         QFile file("seekToPos.txt");
-        QVERIFY(file.open(QFile::WriteOnly));
+        QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
         file.write("a\r\nb\r\nc\r\n");
         file.flush();
     }
 
     QFile file("seekToPos.txt");
-    QVERIFY(file.open(QFile::ReadOnly | QFile::Text));
+    QVERIFY2(file.open(QFile::ReadOnly | QFile::Text), msgOpenFailed(file).constData());
     file.seek(1);
     char c;
     QVERIFY(file.getChar(&c));
@@ -1707,7 +1732,7 @@ void tst_QFile::seekAfterEndOfFile()
     QFile::remove(filename);
     {
         QFile file(filename);
-        QVERIFY(file.open(QFile::WriteOnly));
+        QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
         file.write("abcd");
         QCOMPARE(file.size(), qint64(4));
         file.seek(8);
@@ -1723,7 +1748,7 @@ void tst_QFile::seekAfterEndOfFile()
     }
 
     QFile file(filename);
-    QVERIFY(file.open(QFile::ReadOnly));
+    QVERIFY2(file.open(QFile::ReadOnly), msgOpenFailed(file).constData());
     QByteArray contents = file.readAll();
     QCOMPARE(contents.left(12), QByteArray("abcdefghijkl", 12));
     //bytes 12-15 are uninitialised so we don't care what they read as.
@@ -1741,7 +1766,7 @@ void tst_QFile::FILEReadWrite()
     // create test file
     {
         QFile f("FILEReadWrite.txt");
-        QVERIFY(f.open(QFile::WriteOnly));
+        QVERIFY2(f.open(QFile::WriteOnly), msgOpenFailed(f).constData());
         QDataStream ds(&f);
         qint8 c = 0;
         ds << c;
@@ -1770,14 +1795,10 @@ void tst_QFile::FILEReadWrite()
         f.close();
     }
 
-#ifdef Q_OS_WINCE
-    FILE *fp = fopen(qPrintable(QCoreApplication::applicationDirPath() + "\\FILEReadWrite.txt"), "r+b");
-#else
     FILE *fp = fopen("FILEReadWrite.txt", "r+b");
-#endif
     QVERIFY(fp);
     QFile file;
-    QVERIFY(file.open(fp, QFile::ReadWrite));
+    QVERIFY2(file.open(fp, QFile::ReadWrite), msgOpenFailed(file).constData());
     QDataStream sfile(&file) ;
 
     qint8 var1,var2,var3,var4;
@@ -1814,7 +1835,7 @@ void tst_QFile::FILEReadWrite()
     // check modified file
     {
         QFile f("FILEReadWrite.txt");
-        QVERIFY(f.open(QFile::ReadOnly));
+        QVERIFY2(f.open(QFile::ReadOnly), msgOpenFailed(file).constData());
         QDataStream ds(&f);
         qint8 c = 0;
         ds >> c;
@@ -1928,14 +1949,14 @@ void tst_QFile::i18nFileName()
      }
      {
         QFile file(fileName);
-        QVERIFY(file.open(QFile::WriteOnly | QFile::Text));
+        QVERIFY2(file.open(QFile::WriteOnly | QFile::Text), msgOpenFailed(file).constData());
         QTextStream ts(&file);
         ts.setCodec("UTF-8");
         ts << fileName << endl;
      }
      {
         QFile file(fileName);
-        QVERIFY(file.open(QFile::ReadOnly | QFile::Text));
+        QVERIFY2(file.open(QFile::ReadOnly | QFile::Text), msgOpenFailed(file).constData());
         QTextStream ts(&file);
         ts.setCodec("UTF-8");
         QString line = ts.readLine();
@@ -1979,26 +2000,22 @@ void tst_QFile::longFileName()
     }
     {
         QFile file(fileName);
-#if defined(Q_OS_WINCE)
-        QEXPECT_FAIL("244 chars", "Full pathname must be less than 260 chars", Abort);
-        QEXPECT_FAIL("244 chars to absolutepath", "Full pathname must be less than 260 chars", Abort);
-#endif
-        QVERIFY(file.open(QFile::WriteOnly | QFile::Text));
+        QVERIFY2(file.open(QFile::WriteOnly | QFile::Text), msgOpenFailed(file).constData());
         QTextStream ts(&file);
         ts << fileName << endl;
     }
     {
         QFile file(fileName);
-        QVERIFY(file.open(QFile::ReadOnly | QFile::Text));
+        QVERIFY2(file.open(QFile::ReadOnly | QFile::Text), msgOpenFailed(file).constData());
         QTextStream ts(&file);
         QString line = ts.readLine();
         QCOMPARE(line, fileName);
     }
-    QString newName = fileName + QLatin1String("1");
+    QString newName = fileName + QLatin1Char('1');
     {
         QVERIFY(QFile::copy(fileName, newName));
         QFile file(newName);
-        QVERIFY(file.open(QFile::ReadOnly | QFile::Text));
+        QVERIFY2(file.open(QFile::ReadOnly | QFile::Text), msgOpenFailed(file).constData());
         QTextStream ts(&file);
         QString line = ts.readLine();
         QCOMPARE(line, fileName);
@@ -2008,12 +2025,12 @@ void tst_QFile::longFileName()
     {
         QVERIFY(QFile::rename(fileName, newName));
         QFile file(newName);
-        QVERIFY(file.open(QFile::ReadOnly | QFile::Text));
+        QVERIFY2(file.open(QFile::ReadOnly | QFile::Text), msgOpenFailed(file).constData());
         QTextStream ts(&file);
         QString line = ts.readLine();
         QCOMPARE(line, fileName);
     }
-    QVERIFY(QFile::exists(newName));
+    QVERIFY2(QFile::exists(newName), msgFileDoesNotExist(newName).constData());
 }
 
 #ifdef QT_BUILD_INTERNAL
@@ -2146,7 +2163,7 @@ void tst_QFile::remove_and_exists()
     bool opened = f.open(QIODevice::WriteOnly);
     QVERIFY(opened);
 
-    f.write(QString("testing that remove/exists work...").toLatin1());
+    f.write("testing that remove/exists work...");
     f.close();
 
     QVERIFY(f.exists());
@@ -2165,7 +2182,7 @@ void tst_QFile::removeOpenFile()
         QVERIFY(!f.exists());
         bool opened = f.open(QIODevice::WriteOnly);
         QVERIFY(opened);
-        f.write(QString("testing that remove closes the file first...").toLatin1());
+        f.write("testing that remove closes the file first...");
 
         bool removed = f.remove(); // remove should both close and remove the file
         QVERIFY(removed);
@@ -2184,7 +2201,7 @@ void tst_QFile::removeOpenFile()
             QVERIFY(!f.exists());
             bool opened = f.open(QIODevice::WriteOnly);
             QVERIFY(opened);
-            f.write(QString("testing that remove closes the file first...").toLatin1());
+            f.write("testing that remove closes the file first...");
             f.close();
         }
 
@@ -2208,7 +2225,7 @@ void tst_QFile::fullDisk()
     if (!file.exists())
         QSKIP("/dev/full doesn't exist on this system");
 
-    QVERIFY(file.open(QIODevice::WriteOnly));
+    QVERIFY2(file.open(QIODevice::WriteOnly), msgOpenFailed(file).constData());
     file.write("foobar", 6);
 
     QVERIFY(!file.flush());
@@ -2235,7 +2252,7 @@ void tst_QFile::fullDisk()
     QCOMPARE(file.error(), QFile::NoError);
 
     // try again without flush:
-    QVERIFY(file.open(QIODevice::WriteOnly));
+    QVERIFY2(file.open(QIODevice::WriteOnly), msgOpenFailed(file).constData());
     file.write("foobar", 6);
     file.close();
     QVERIFY(file.error() != QFile::NoError);
@@ -2250,7 +2267,7 @@ void tst_QFile::writeLargeDataBlock_data()
     QTest::newRow("localfile-Fd")     << "./largeblockfile.txt" << (int)OpenFd;
     QTest::newRow("localfile-Stream") << "./largeblockfile.txt" << (int)OpenStream;
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT) && !defined(QT_NO_NETWORK)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT) && !defined(QT_NO_NETWORK)
     // Some semi-randomness to avoid collisions.
     QTest::newRow("unc file")
         << QString("//" + QtNetworkSettings::winServerName() + "/TESTSHAREWRITABLE/largefile-%1-%2.txt")
@@ -2265,8 +2282,8 @@ static QByteArray getLargeDataBlock()
 
     if (array.isNull())
     {
-#if defined(Q_OS_WINCE) || defined(Q_OS_VXWORKS)
-        int resizeSize = 1024 * 1024; // WinCE does not have much space
+#if defined(Q_OS_VXWORKS)
+        int resizeSize = 1024 * 1024; // VxWorks does not have much space
 #else
         int resizeSize = 64 * 1024 * 1024;
 #endif
@@ -2288,8 +2305,7 @@ void tst_QFile::writeLargeDataBlock()
     {
         QFile file(fileName);
 
-        QVERIFY2( openFile(file, QIODevice::WriteOnly, (FileType)type),
-            qPrintable(QString("Couldn't open file for writing: [%1]").arg(fileName)) );
+        QVERIFY2(openFile(file, QIODevice::WriteOnly, (FileType)type), msgOpenFailed(file));
         qint64 fileWriteOriginalData = file.write(originalData);
         qint64 originalDataSize      = (qint64)originalData.size();
 #if defined(Q_OS_WIN)
@@ -2332,7 +2348,7 @@ void tst_QFile::writeLargeDataBlock()
 void tst_QFile::readFromWriteOnlyFile()
 {
     QFile file("writeonlyfile");
-    QVERIFY(file.open(QFile::WriteOnly));
+    QVERIFY2(file.open(QFile::WriteOnly), msgOpenFailed(file).constData());
     char c;
     QTest::ignoreMessage(QtWarningMsg, "QIODevice::read (QFile, \"writeonlyfile\"): WriteOnly device");
     QCOMPARE(file.read(&c, 1), qint64(-1));
@@ -2341,7 +2357,7 @@ void tst_QFile::readFromWriteOnlyFile()
 void tst_QFile::writeToReadOnlyFile()
 {
     QFile file("readonlyfile");
-    QVERIFY(file.open(QFile::ReadOnly));
+    QVERIFY2(file.open(QFile::ReadOnly), msgOpenFailed(file).constData());
     char c = 0;
     QTest::ignoreMessage(QtWarningMsg, "QIODevice::write (QFile, \"readonlyfile\"): ReadOnly device");
     QCOMPARE(file.write(&c, 1), qint64(-1));
@@ -2363,13 +2379,13 @@ void tst_QFile::virtualFile()
 
     // consistency check
     QFileInfo fi(fname);
-    QVERIFY(fi.exists());
+    QVERIFY2(fi.exists(), msgFileDoesNotExist(fname).constData());
     QVERIFY(fi.isFile());
     QCOMPARE(fi.size(), Q_INT64_C(0));
 
     // open the file
     QFile f(fname);
-    QVERIFY(f.open(QIODevice::ReadOnly));
+    QVERIFY2(f.open(QIODevice::ReadOnly), msgOpenFailed(f).constData());
     QCOMPARE(f.size(), Q_INT64_C(0));
     QVERIFY(f.atEnd());
 
@@ -2395,9 +2411,7 @@ void tst_QFile::virtualFile()
 
 void tst_QFile::textFile()
 {
-#if defined(Q_OS_WINCE)
-    FILE *fs = ::fopen((QCoreApplication::applicationDirPath() + "/writeabletextfile").toLatin1() , "wt");
-#elif defined(Q_OS_WIN)
+#if defined(Q_OS_WIN)
     FILE *fs = ::fopen("writeabletextfile", "wt");
 #else
     FILE *fs = ::fopen("writeabletextfile", "w");
@@ -2413,7 +2427,7 @@ void tst_QFile::textFile()
     ::fclose(fs);
 
     QFile file("writeabletextfile");
-    QVERIFY(file.open(QIODevice::ReadOnly));
+    QVERIFY2(file.open(QIODevice::ReadOnly), msgOpenFailed(file).constData());
 
     QByteArray data = file.readAll();
 
@@ -2543,8 +2557,8 @@ void tst_QFile::renameMultiple()
     // create the file if it doesn't exist
     QFile file("file-to-be-renamed.txt");
     QFile file2("existing-file.txt");
-    QVERIFY(file.open(QIODevice::ReadWrite) && "(test-precondition)");
-    QVERIFY(file2.open(QIODevice::ReadWrite) && "(test-precondition)");
+    QVERIFY2(file.open(QIODevice::ReadWrite), msgOpenFailed(file).constData());
+    QVERIFY2(file2.open(QIODevice::ReadWrite), msgOpenFailed(file2).constData());
 
     // any stale files from previous test failures?
     QFile::remove("file-renamed-once.txt");
@@ -2583,10 +2597,10 @@ void tst_QFile::renameMultiple()
 void tst_QFile::appendAndRead()
 {
     QFile writeFile(QLatin1String("appendfile.txt"));
-    QVERIFY(writeFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QVERIFY2(writeFile.open(QIODevice::WriteOnly | QIODevice::Truncate), msgOpenFailed(writeFile).constData());
 
     QFile readFile(QLatin1String("appendfile.txt"));
-    QVERIFY(readFile.open(QIODevice::ReadOnly));
+    QVERIFY2(readFile.open(QIODevice::ReadOnly), msgOpenFailed(readFile).constData());
 
     // Write to the end of the file, then read that character back, and so on.
     for (int i = 0; i < 100; ++i) {
@@ -2610,13 +2624,15 @@ void tst_QFile::appendAndRead()
 
 void tst_QFile::miscWithUncPathAsCurrentDir()
 {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     QString current = QDir::currentPath();
-    QVERIFY(QDir::setCurrent("//" + QtNetworkSettings::winServerName() + "/testshare"));
+    const QString path = QLatin1String("//") + QtNetworkSettings::winServerName()
+        + QLatin1String("/testshare");
+    QVERIFY2(QDir::setCurrent(path), qPrintable(QDir::toNativeSeparators(path)));
     QFile file("test.pri");
-    QVERIFY(file.exists());
+    QVERIFY2(file.exists(), msgFileDoesNotExist(file.fileName()).constData());
     QCOMPARE(int(file.size()), 34);
-    QVERIFY(file.open(QIODevice::ReadOnly));
+    QVERIFY2(file.open(QIODevice::ReadOnly), msgOpenFailed(file).constData());
     QVERIFY(QDir::setCurrent(current));
 #endif
 }
@@ -2632,9 +2648,8 @@ void tst_QFile::standarderror()
 void tst_QFile::handle()
 {
     int fd;
-#if !defined(Q_OS_WINCE)
     QFile file(m_testSourceFile);
-    QVERIFY(file.open(QIODevice::ReadOnly));
+    QVERIFY2(file.open(QIODevice::ReadOnly), msgOpenFailed(file).constData());
     fd = int(file.handle());
     QVERIFY(fd > 2);
     QCOMPARE(int(file.handle()), fd);
@@ -2648,7 +2663,7 @@ void tst_QFile::handle()
 
     // same, but read from QFile first now
     file.close();
-    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Unbuffered));
+    QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Unbuffered), msgOpenFailed(file).constData());
     fd = int(file.handle());
     QVERIFY(fd > 2);
     QVERIFY(file.getChar(&c));
@@ -2660,7 +2675,6 @@ void tst_QFile::handle()
 #endif
 
     QCOMPARE(c, '*');
-#endif
 
     //test round trip of adopted stdio file handle
     QFile file2;
@@ -2690,7 +2704,7 @@ void tst_QFile::nativeHandleLeaks()
 
     {
         QFile file("qt_file.tmp");
-        QVERIFY( file.open(QIODevice::ReadWrite) );
+        QVERIFY2(file.open(QIODevice::ReadWrite), msgOpenFailed(file).constData());
 
         fd1 = file.handle();
         QVERIFY( -1 != fd1 );
@@ -2709,7 +2723,7 @@ void tst_QFile::nativeHandleLeaks()
 
     {
         QFile file("qt_file.tmp");
-        QVERIFY( file.open(QIODevice::ReadOnly) );
+        QVERIFY2(file.open(QIODevice::ReadOnly), msgOpenFailed(file).constData());
 
         fd2 = file.handle();
         QVERIFY( -1 != fd2 );
@@ -2755,7 +2769,7 @@ void tst_QFile::readEof()
 
     {
         QFile file(filename);
-        QVERIFY(file.open(QIODevice::ReadOnly | mode));
+        QVERIFY2(file.open(QIODevice::ReadOnly | mode), msgOpenFailed(file).constData());
         bool isSequential = file.isSequential();
         if (!isSequential) {
             QVERIFY(file.seek(245));
@@ -2777,7 +2791,7 @@ void tst_QFile::readEof()
 
     {
         QFile file(filename);
-        QVERIFY(file.open(QIODevice::ReadOnly | mode));
+        QVERIFY2(file.open(QIODevice::ReadOnly | mode), msgOpenFailed(file).constData());
         bool isSequential = file.isSequential();
         if (!isSequential) {
             QVERIFY(file.seek(245));
@@ -2798,7 +2812,7 @@ void tst_QFile::readEof()
 
     {
         QFile file(filename);
-        QVERIFY(file.open(QIODevice::ReadOnly | mode));
+        QVERIFY2(file.open(QIODevice::ReadOnly | mode), msgOpenFailed(file).constData());
         bool isSequential = file.isSequential();
         if (!isSequential) {
             QVERIFY(file.seek(245));
@@ -2820,7 +2834,7 @@ void tst_QFile::readEof()
 
     {
         QFile file(filename);
-        QVERIFY(file.open(QIODevice::ReadOnly | mode));
+        QVERIFY2(file.open(QIODevice::ReadOnly | mode), msgOpenFailed(file).constData());
         bool isSequential = file.isSequential();
         if (!isSequential) {
             QVERIFY(file.seek(245));
@@ -2841,7 +2855,7 @@ void tst_QFile::readEof()
 
     {
         QFile file(filename);
-        QVERIFY(file.open(QIODevice::ReadOnly | mode));
+        QVERIFY2(file.open(QIODevice::ReadOnly | mode), msgOpenFailed(file).constData());
         bool isSequential = file.isSequential();
         if (!isSequential) {
             QVERIFY(file.seek(245));
@@ -2867,7 +2881,7 @@ void tst_QFile::posAfterFailedStat()
     QFile::remove("tmp.txt");
     QFile file("tmp.txt");
     QVERIFY(!file.exists());
-    QVERIFY(file.open(QIODevice::Append));
+    QVERIFY2(file.open(QIODevice::Append), msgOpenFailed(file).constData());
     QVERIFY(file.exists());
     file.write("qt430", 5);
     QVERIFY(!file.isSequential());
@@ -2903,10 +2917,6 @@ void tst_QFile::map()
 
     QString fileName = QDir::currentPath() + '/' + "qfile_map_testfile";
 
-#ifdef Q_OS_WINCE
-     fileName = QFileInfo(fileName).absoluteFilePath();
-#endif
-
     if (QFile::exists(fileName)) {
         QVERIFY(QFile::setPermissions(fileName,
             QFile::WriteOwner | QFile::ReadOwner | QFile::WriteUser | QFile::ReadUser));
@@ -2922,11 +2932,11 @@ void tst_QFile::map()
     QCOMPARE(file.error(), QFile::PermissionsError);
 
     // make a file
-    QVERIFY(file.open(QFile::ReadWrite));
+    QVERIFY2(file.open(QFile::ReadWrite), msgOpenFailed(file).constData());
     QVERIFY(file.resize(fileSize));
     QVERIFY(file.flush());
     file.close();
-    QVERIFY(file.open(QFile::ReadWrite));
+    QVERIFY2(file.open(QFile::ReadWrite), msgOpenFailed(file).constData());
     memory = file.map(offset, size);
     if (error != QFile::NoError) {
         QVERIFY(file.error() != QFile::NoError);
@@ -2948,7 +2958,7 @@ void tst_QFile::map()
     QCOMPARE(file.error(), QFile::NoError);
 
     // hpux won't let you map multiple times.
-#if !defined(Q_OS_HPUX) && !defined(Q_USE_DEPRECATED_MAP_API) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_HPUX) && !defined(Q_USE_DEPRECATED_MAP_API)
     // exotic test to make sure that multiple maps work
 
     // note: windows ce does not reference count mutliple maps
@@ -3061,19 +3071,16 @@ void tst_QFile::mapOpenMode()
     QFile file(fileName);
 
     // make a file
-    QVERIFY(file.open(QFile::ReadWrite));
+    QVERIFY2(file.open(QFile::ReadWrite), msgOpenFailed(file).constData());
     QVERIFY(file.write(pattern));
     QVERIFY(file.flush());
     file.close();
 
     // open according to our mode
-    QVERIFY(file.open(QIODevice::OpenMode(openMode)));
+    const QIODevice::OpenMode om(openMode);
+    QVERIFY2(file.open(om), msgOpenFailed(om, file).constData());
 
     uchar *memory = file.map(0, fileSize, QFileDevice::MemoryMapFlags(flags));
-#if defined(Q_OS_WINCE)
-    QEXPECT_FAIL("ReadOnly + MapPrivate" , "Windows CE does not support MapPrivateOption.", Abort);
-    QEXPECT_FAIL("ReadWrite + MapPrivate", "Windows CE does not support MapPrivateOption.", Abort);
-#endif
     QVERIFY(memory);
     QVERIFY(memcmp(memory, pattern, fileSize) == 0);
 
@@ -3106,17 +3113,14 @@ void tst_QFile::mapWrittenFile()
 
     QString fileName = QDir::currentPath() + '/' + "qfile_map_testfile";
 
-#ifdef Q_OS_WINCE
-     fileName = QFileInfo(fileName).absoluteFilePath();
-#endif
-
     if (QFile::exists(fileName)) {
         QVERIFY(QFile::setPermissions(fileName,
             QFile::WriteOwner | QFile::ReadOwner | QFile::WriteUser | QFile::ReadUser));
         QFile::remove(fileName);
     }
     QFile file(fileName);
-    QVERIFY(file.open(QIODevice::ReadWrite | QFile::OpenMode(mode)));
+    const QIODevice::OpenMode om = QIODevice::ReadWrite | QIODevice::OpenMode(mode);
+    QVERIFY2(file.open(om), msgOpenFailed(om, file).constData());
     QCOMPARE(file.write(data, sizeof data), qint64(sizeof data));
     if ((mode & QIODevice::Unbuffered) == 0)
         file.flush();
@@ -3207,10 +3211,6 @@ protected:
 bool MessageHandler::ok = true;
 QtMessageHandler MessageHandler::oldMessageHandler = 0;
 
-    //allthough Windows CE (not mobile!) has functions that allow redirecting
-    //the standard file descriptors to a file (see SetStdioPathW/GetStdioPathW)
-    //it does not have functions to simply open them like below .
-#ifndef Q_OS_WINCE
 void tst_QFile::openStandardStreamsFileDescriptors()
 {
 
@@ -3270,7 +3270,6 @@ void tst_QFile::openStandardStreamsBufferedStreams()
 
     QVERIFY(msgHandler.testPassed());
 }
-#endif
 
 void tst_QFile::writeNothing()
 {
@@ -3328,7 +3327,7 @@ void tst_QFile::caseSensitivity()
     QString filename("File.txt");
     {
         QFile f(filename);
-        QVERIFY(f.open(QIODevice::WriteOnly));
+        QVERIFY2(f.open(QIODevice::WriteOnly), msgOpenFailed(f));
         QVERIFY(f.write(testData));
         f.close();
     }

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,6 +44,13 @@
 #include <QOpenGLContext>
 #include <QtPlatformHeaders/QEGLNativeContext>
 #include <QDebug>
+
+#ifdef Q_OS_ANDROID
+#include <QtCore/private/qjnihelpers_p.h>
+#endif
+#ifndef Q_OS_WIN
+#include <dlfcn.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -102,11 +115,12 @@ QT_BEGIN_NAMESPACE
 #endif
 
 QEGLPlatformContext::QEGLPlatformContext(const QSurfaceFormat &format, QPlatformOpenGLContext *share, EGLDisplay display,
-                                         EGLConfig *config, const QVariant &nativeHandle)
+                                         EGLConfig *config, const QVariant &nativeHandle, Flags flags)
     : m_eglDisplay(display)
     , m_swapInterval(-1)
     , m_swapIntervalEnvChecked(false)
     , m_swapIntervalFromEnv(-1)
+    , m_flags(flags)
 {
     if (nativeHandle.isNull()) {
         m_eglConfig = config ? *config : q_configFromGLFormat(display, format);
@@ -270,6 +284,12 @@ void QEGLPlatformContext::destroyTemporaryOffscreenSurface(EGLSurface surface)
     eglDestroySurface(m_eglDisplay, surface);
 }
 
+void QEGLPlatformContext::runGLChecks()
+{
+    // Nothing to do here, subclasses may override in order to perform OpenGL
+    // queries needing a context.
+}
+
 void QEGLPlatformContext::updateFormatFromGL()
 {
 #ifndef QT_NO_OPENGL
@@ -287,7 +307,7 @@ void QEGLPlatformContext::updateFormatFromGL()
     // drivers (Mesa) when certain attributes are present (multisampling).
     EGLSurface tempSurface = EGL_NO_SURFACE;
     EGLContext tempContext = EGL_NO_CONTEXT;
-    if (!q_hasEglExtension(m_eglDisplay, "EGL_KHR_surfaceless_context"))
+    if (m_flags.testFlag(NoSurfaceless) || !q_hasEglExtension(m_eglDisplay, "EGL_KHR_surfaceless_context"))
         tempSurface = createTemporaryOffscreenSurface();
 
     EGLBoolean ok = eglMakeCurrent(m_eglDisplay, tempSurface, tempSurface, m_eglContext);
@@ -305,6 +325,14 @@ void QEGLPlatformContext::updateFormatFromGL()
                 QByteArray version = QByteArray(reinterpret_cast<const char *>(s));
                 int major, minor;
                 if (QPlatformOpenGLContext::parseOpenGLVersion(version, major, minor)) {
+#ifdef Q_OS_ANDROID
+                    // Some Android 4.2.2 devices report OpenGL ES 3.0 without the functions being available.
+                    static int apiLevel = QtAndroidPrivate::androidSdkVersion();
+                    if (apiLevel <= 17 && major >= 3) {
+                        major = 2;
+                        minor = 0;
+                    }
+#endif
                     m_format.setMajorVersion(major);
                     m_format.setMinorVersion(minor);
                 }
@@ -333,6 +361,7 @@ void QEGLPlatformContext::updateFormatFromGL()
                 }
             }
         }
+        runGLChecks();
         eglMakeCurrent(prevDisplay, prevSurfaceDraw, prevSurfaceRead, prevContext);
     } else {
         qWarning("QEGLPlatformContext: Failed to make temporary surface current, format not updated (%x)", eglGetError());
@@ -414,10 +443,15 @@ void QEGLPlatformContext::swapBuffers(QPlatformSurface *surface)
     }
 }
 
-void (*QEGLPlatformContext::getProcAddress(const QByteArray &procName)) ()
+QFunctionPointer QEGLPlatformContext::getProcAddress(const char *procName)
 {
     eglBindAPI(m_api);
-    return eglGetProcAddress(procName.constData());
+    QFunctionPointer proc = (QFunctionPointer) eglGetProcAddress(procName);
+#if !defined(Q_OS_WIN) && !defined(Q_OS_INTEGRITY)
+    if (!proc)
+        proc = (QFunctionPointer) dlsym(RTLD_DEFAULT, procName);
+#endif
+    return proc;
 }
 
 QSurfaceFormat QEGLPlatformContext::format() const

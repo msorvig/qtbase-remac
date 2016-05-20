@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -75,7 +81,6 @@
 #include <stdlib.h>
 
 #ifdef Q_OS_WIN // for homedirpath reading from registry
-#  include <private/qsystemlibrary_p.h>
 #  include <qt_windows.h>
 #  ifndef Q_OS_WINRT
 #    include <shlobj.h>
@@ -100,11 +105,11 @@ using namespace ABI::Windows::Storage;
 #define CSIDL_APPDATA           0x001a  // <username>\Application Data
 #endif
 
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC) && !defined(Q_OS_BLACKBERRY) && !defined(Q_OS_ANDROID)
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC) && !defined(Q_OS_ANDROID)
 #define Q_XDG_PLATFORM
 #endif
 
-#if !defined(QT_NO_STANDARDPATHS) && (defined(Q_XDG_PLATFORM) || defined(Q_OS_IOS))
+#if !defined(QT_NO_STANDARDPATHS) && (defined(Q_XDG_PLATFORM) || defined(QT_PLATFORM_UIKIT))
 #define QSETTINGS_USE_QSTANDARDPATHS
 #endif
 
@@ -488,7 +493,7 @@ QVariant QSettingsPrivate::stringToVariant(const QString &s)
     if (s.startsWith(QLatin1Char('@'))) {
         if (s.endsWith(QLatin1Char(')'))) {
             if (s.startsWith(QLatin1String("@ByteArray("))) {
-                return QVariant(s.toLatin1().mid(11, s.size() - 12));
+                return QVariant(s.midRef(11, s.size() - 12).toLatin1());
             } else if (s.startsWith(QLatin1String("@Variant("))
                        || s.startsWith(QLatin1String("@DateTime("))) {
 #ifndef QT_NO_DATASTREAM
@@ -501,7 +506,7 @@ QVariant QSettingsPrivate::stringToVariant(const QString &s)
                     version = QDataStream::Qt_4_0;
                     offset = 9;
                 }
-                QByteArray a(s.toLatin1().mid(offset));
+                QByteArray a = s.midRef(offset).toLatin1();
                 QDataStream stream(&a, QIODevice::ReadOnly);
                 stream.setVersion(version);
                 QVariant result;
@@ -632,8 +637,9 @@ void QSettingsPrivate::iniEscapedString(const QString &str, QByteArray &result, 
     int startPos = result.size();
 
     result.reserve(startPos + str.size() * 3 / 2);
+    const QChar *unicode = str.unicode();
     for (i = 0; i < str.size(); ++i) {
-        uint ch = str.at(i).unicode();
+        uint ch = unicode[i].unicode();
         if (ch == ';' || ch == ',' || ch == '=')
             needsQuotes = true;
 
@@ -687,7 +693,7 @@ void QSettingsPrivate::iniEscapedString(const QString &str, QByteArray &result, 
 #ifndef QT_NO_TEXTCODEC
             } else if (useCodec) {
                 // slow
-                result += codec->fromUnicode(str.at(i));
+                result += codec->fromUnicode(&unicode[i], 1);
 #endif
             } else {
                 result += (char)ch;
@@ -979,21 +985,12 @@ static QString windowsConfigPath(int type)
 
     if (result.isEmpty()) {
         switch (type) {
-#ifndef Q_OS_WINCE
         case CSIDL_COMMON_APPDATA:
             result = QLatin1String("C:\\temp\\qt-common");
             break;
         case CSIDL_APPDATA:
             result = QLatin1String("C:\\temp\\qt-user");
             break;
-#else
-        case CSIDL_COMMON_APPDATA:
-            result = QLatin1String("\\Temp\\qt-common");
-            break;
-        case CSIDL_APPDATA:
-            result = QLatin1String("\\Temp\\qt-user");
-            break;
-#endif
         default:
             ;
         }
@@ -1072,7 +1069,7 @@ static void initDefaultPaths(QMutexLocker *locker)
 #else
 
 #ifndef QSETTINGS_USE_QSTANDARDPATHS
-        // Non XDG platforms (OS X, iOS, Blackberry, Android...) have used this code path erroneously
+        // Non XDG platforms (OS X, iOS, Android...) have used this code path erroneously
         // for some time now. Moving away from that would require migrating existing settings.
         QString userPath;
         QByteArray env = qgetenv("XDG_CONFIG_HOME");
@@ -1139,7 +1136,6 @@ QConfFileSettingsPrivate::QConfFileSettingsPrivate(QSettings::Format format,
         org = QLatin1String("Unknown Organization");
     }
 
-#if !defined(Q_OS_BLACKBERRY)
     QString appFile = org + QDir::separator() + application + extension;
     QString orgFile = org + extension;
 
@@ -1154,13 +1150,6 @@ QConfFileSettingsPrivate::QConfFileSettingsPrivate(QSettings::Format format,
     if (!application.isEmpty())
         confFiles[F_System | F_Application].reset(QConfFile::fromName(systemPath + appFile, false));
     confFiles[F_System | F_Organization].reset(QConfFile::fromName(systemPath + orgFile, false));
-#else
-    QString confName = getPath(format, QSettings::UserScope) + org;
-    if (!application.isEmpty())
-        confName += QDir::separator() + application;
-    confName += extension;
-    confFiles[SandboxConfFile].reset(QConfFile::fromName(confName, true));
-#endif
 
     for (i = 0; i < NumConfFiles; ++i) {
         if (confFiles[i]) {
@@ -1409,13 +1398,17 @@ void QConfFileSettingsPrivate::syncConfFile(int confFileNo)
         Concurrent read and write are not a problem because the writing operation is atomic.
     */
     QLockFile lockFile(confFile->name + QLatin1String(".lock"));
+#endif
     if (!readOnly) {
-        if (!confFile->isWritable() || !lockFile.lock() ) {
+        if (!confFile->isWritable()
+#ifndef QT_BOOTSTRAPPED
+            || !lockFile.lock()
+#endif
+            ) {
             setStatus(QSettings::AccessError);
             return;
         }
     }
-#endif
 
     /*
         We hold the lock. Let's reread the file if it has changed
@@ -2248,7 +2241,6 @@ void QConfFileSettingsPrivate::ensureSectionParsed(QConfFile *confFile,
     stored in the following registry path:
     \c{HKEY_LOCAL_MACHINE\Software\WOW6432node}.
 
-    On BlackBerry only a single file is used (see \l{Platform Limitations}).
     If the file format is NativeFormat, this is "Settings/MySoft/Star Runner.conf"
     in the application's home directory.
 
@@ -2276,7 +2268,6 @@ void QConfFileSettingsPrivate::ensureSectionParsed(QConfFile *confFile,
     %COMMON_APPDATA% path is usually \tt{C:\\Documents and
     Settings\\All Users\\Application Data}.
 
-    On BlackBerry only a single file is used (see \l{Platform Limitations}).
     If the file format is IniFormat, this is "Settings/MySoft/Star Runner.ini"
     in the application's home directory.
 
@@ -2380,17 +2371,6 @@ void QConfFileSettingsPrivate::ensureSectionParsed(QConfFile *confFile,
        that version, users having admin rights could access these. For 10.7 and
        10.8 (Mountain Lion), only root can. However, 10.9 (Mavericks) changes
        that rule again but only for the native format (plist files).
-
-    \li On the BlackBerry platform, applications run in a sandbox. They are not
-       allowed to read or write outside of this sandbox. This involves the
-       following limitations:
-       \list
-       \li As there is only a single scope the scope is simply ignored,
-           i.e. there is no difference between SystemScope and UserScope.
-       \li The \l{Fallback Mechanism} is not applied, i.e. only a single
-          location is considered.
-       \li It is advised against setting and using custom file paths.
-       \endlist
 
     \endlist
 

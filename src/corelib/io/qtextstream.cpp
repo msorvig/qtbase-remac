@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -222,9 +229,9 @@ static const int QTEXTSTREAM_BUFFERSIZE = 16384;
 #include "qbuffer.h"
 #include "qfile.h"
 #include "qnumeric.h"
-#ifndef Q_OS_WINCE
+#include "qvarlengtharray.h"
+
 #include <locale.h>
-#endif
 #include "private/qlocale_p.h"
 
 #include <stdlib.h>
@@ -447,6 +454,10 @@ bool QTextStreamPrivate::fillReadBuffer(qint64 maxBytes)
             bytesRead = device->read(buf, sizeof(buf));
     }
 
+    // reset the Text flag.
+    if (textModeEnabled)
+        device->setTextModeEnabled(true);
+
     if (bytesRead <= 0)
         return false;
 
@@ -481,10 +492,6 @@ bool QTextStreamPrivate::fillReadBuffer(qint64 maxBytes)
 #else
     readBuffer += QString::fromLatin1(buf, bytesRead);
 #endif
-
-    // reset the Text flag.
-    if (textModeEnabled)
-        device->setTextModeEnabled(true);
 
     // remove all '\r\n' in the string.
     if (readBuffer.size() > oldReadBufferSize && textModeEnabled) {
@@ -584,16 +591,17 @@ void QTextStreamPrivate::flushWriteBuffer()
     qDebug("QTextStreamPrivate::flushWriteBuffer(), device->write(\"%s\") == %d",
            qt_prettyDebug(data.constData(), qMin(data.size(),32), data.size()).constData(), int(bytesWritten));
 #endif
+
+#if defined (Q_OS_WIN)
+    // reset the text flag
+    if (textModeEnabled)
+        device->setTextModeEnabled(true);
+#endif
+
     if (bytesWritten <= 0) {
         status = QTextStream::WriteFailed;
         return;
     }
-
-#if defined (Q_OS_WIN)
-    // replace the text flag
-    if (textModeEnabled)
-        device->setTextModeEnabled(true);
-#endif
 
     // flush the file
 #ifndef QT_NO_QOBJECT
@@ -845,6 +853,36 @@ inline void QTextStreamPrivate::write(QChar ch)
 /*!
     \internal
 */
+void QTextStreamPrivate::write(QLatin1String data)
+{
+    if (string) {
+        // ### What about seek()??
+        string->append(data);
+    } else {
+        writeBuffer += data;
+        if (writeBuffer.size() > QTEXTSTREAM_BUFFERSIZE)
+            flushWriteBuffer();
+    }
+}
+
+/*!
+    \internal
+*/
+void QTextStreamPrivate::writePadding(int len)
+{
+    if (string) {
+        // ### What about seek()??
+        string->resize(string->size() + len, params.padChar);
+    } else {
+        writeBuffer.resize(writeBuffer.size() + len, params.padChar);
+        if (writeBuffer.size() > QTEXTSTREAM_BUFFERSIZE)
+            flushWriteBuffer();
+    }
+}
+
+/*!
+    \internal
+*/
 inline bool QTextStreamPrivate::getChar(QChar *ch)
 {
     if ((string && stringOffset == string->size())
@@ -891,45 +929,90 @@ inline void QTextStreamPrivate::putChar(QChar ch)
         write(ch);
 }
 
+
+/*!
+    \internal
+*/
+QTextStreamPrivate::PaddingResult QTextStreamPrivate::padding(int len) const
+{
+    Q_ASSERT(params.fieldWidth > len); // calling padding() when no padding is needed is an error
+
+    int left = 0, right = 0;
+
+    const int padSize = params.fieldWidth - len;
+
+    switch (params.fieldAlignment) {
+    case QTextStream::AlignLeft:
+        right = padSize;
+        break;
+    case QTextStream::AlignRight:
+    case QTextStream::AlignAccountingStyle:
+        left  = padSize;
+        break;
+    case QTextStream::AlignCenter:
+        left  = padSize/2;
+        right = padSize - padSize/2;
+        break;
+    }
+    const PaddingResult result = { left, right };
+    return result;
+}
+
 /*!
     \internal
 */
 void QTextStreamPrivate::putString(const QChar *data, int len, bool number)
 {
-    QString pad;
-    int padLeft = 0, padRight = 0;
+    if (Q_UNLIKELY(params.fieldWidth > len)) {
 
-    // handle padding
-    int padSize = params.fieldWidth - len;
-    if (padSize > 0) {
-        pad = QString(padSize, params.padChar);
-        switch (params.fieldAlignment) {
-        case QTextStream::AlignLeft:
-            padRight = padSize;
-            break;
-        case QTextStream::AlignRight:
-        case QTextStream::AlignAccountingStyle:
-            padLeft = padSize;
-            if (params.fieldAlignment == QTextStream::AlignAccountingStyle && number) {
-                const QChar sign = len > 0 ? data[0] : QChar();
-                if (sign == locale.negativeSign() || sign == locale.positiveSign()) {
-                    // write the sign before the padding, then skip it later
-                    write(&sign, 1);
-                    ++data;
-                    --len;
-                }
+        // handle padding:
+
+        const PaddingResult pad = padding(len);
+
+        if (params.fieldAlignment == QTextStream::AlignAccountingStyle && number) {
+            const QChar sign = len > 0 ? data[0] : QChar();
+            if (sign == locale.negativeSign() || sign == locale.positiveSign()) {
+                // write the sign before the padding, then skip it later
+                write(&sign, 1);
+                ++data;
+                --len;
             }
-            break;
-        case QTextStream::AlignCenter:
-            padLeft = padSize/2;
-            padRight = padSize - padSize/2;
-            break;
         }
-    }
 
-    write(pad.constData(), padLeft);
-    write(data, len);
-    write(pad.constData(), padRight);
+        writePadding(pad.left);
+        write(data, len);
+        writePadding(pad.right);
+    } else {
+        write(data, len);
+    }
+}
+
+/*!
+    \internal
+*/
+void QTextStreamPrivate::putString(QLatin1String data, bool number)
+{
+    if (Q_UNLIKELY(params.fieldWidth > data.size())) {
+
+        // handle padding
+
+        const PaddingResult pad = padding(data.size());
+
+        if (params.fieldAlignment == QTextStream::AlignAccountingStyle && number) {
+            const QChar sign = data.size() > 0 ? QLatin1Char(*data.data()) : QChar();
+            if (sign == locale.negativeSign() || sign == locale.positiveSign()) {
+                // write the sign before the padding, then skip it later
+                write(&sign, 1);
+                data = QLatin1String(data.data() + 1, data.size() - 1);
+            }
+        }
+
+        writePadding(pad.left);
+        write(data);
+        writePadding(pad.right);
+    } else {
+        write(data);
+    }
 }
 
 /*!
@@ -2476,6 +2559,8 @@ QTextStream &QTextStream::operator<<(double f)
         flags |= QLocaleData::Alternate;
     if (locale() != QLocale::c() && !(locale().numberOptions() & QLocale::OmitGroupSeparator))
         flags |= QLocaleData::ThousandsGroup;
+    if (!(locale().numberOptions() & QLocale::OmitLeadingZeroInExponent))
+        flags |= QLocaleData::ZeroPadExponent;
 
     const QLocaleData *dd = d->locale.d->m_data;
     QString num = dd->doubleToString(f, d->params.realNumberPrecision, form, -1, flags);
@@ -2503,14 +2588,28 @@ QTextStream &QTextStream::operator<<(const QString &string)
     \overload
 
     Writes \a string to the stream, and returns a reference to the
-    QTextStream. The contents of \a string are converted with the
-    QString constructor that takes a QLatin1String as argument.
+    QTextStream.
 */
 QTextStream &QTextStream::operator<<(QLatin1String string)
 {
     Q_D(QTextStream);
     CHECK_VALID_STREAM(*this);
-    d->putString(QString(string));
+    d->putString(string);
+    return *this;
+}
+
+/*!
+    \since 5.6
+    \overload
+
+    Writes \a string to the stream, and returns a reference to the
+    QTextStream.
+*/
+QTextStream &QTextStream::operator<<(const QStringRef &string)
+{
+    Q_D(QTextStream);
+    CHECK_VALID_STREAM(*this);
+    d->putString(string.data(), string.size());
     return *this;
 }
 
@@ -2858,7 +2957,7 @@ QTextStream &endl(QTextStream &stream)
 /*!
     \relates QTextStream
 
-    Calls \l{QTextStream::flush()}{flush()} on \a stream and returns \a stream.
+    Calls QTextStream::flush() on \a stream and returns \a stream.
 
     \sa endl(), reset(), {QTextStream manipulators}
 */
@@ -3030,10 +3129,7 @@ void QTextStream::setGenerateByteOrderMark(bool generate)
 {
     Q_D(QTextStream);
     if (d->writeBuffer.isEmpty()) {
-        if (generate)
-            d->writeConverterState.flags &= ~QTextCodec::IgnoreHeader;
-        else
-            d->writeConverterState.flags |= QTextCodec::IgnoreHeader;
+        d->writeConverterState.flags.setFlag(QTextCodec::IgnoreHeader, !generate);
     }
 }
 

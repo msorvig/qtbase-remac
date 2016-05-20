@@ -1,21 +1,18 @@
 TARGET = qwinrt
-CONFIG -= precompile_header
 
-PLUGIN_TYPE = platforms
-PLUGIN_CLASS_NAME = QWinRTIntegrationPlugin
-!equals(TARGET, $$QT_DEFAULT_QPA_PLUGIN): PLUGIN_EXTENDS = -
-load(qt_plugin)
+CONFIG -= precompile_header
 
 QT += core-private gui-private platformsupport-private
 
-DEFINES *= QT_NO_CAST_FROM_ASCII __WRL_NO_DEFAULT_LIB__ GL_GLEXT_PROTOTYPES
+DEFINES *= QT_NO_CAST_FROM_ASCII __WRL_NO_DEFAULT_LIB__
 
-LIBS += $$QMAKE_LIBS_CORE -ldwrite
+LIBS += $$QMAKE_LIBS_CORE -ldwrite -ld3d11
 INCLUDEPATH += $$QT_SOURCE_TREE/src/3rdparty/freetype/include
 
 SOURCES = \
     main.cpp  \
     qwinrtbackingstore.cpp \
+    qwinrtclipboard.cpp \
     qwinrtcursor.cpp \
     qwinrteglcontext.cpp \
     qwinrteventdispatcher.cpp \
@@ -33,6 +30,7 @@ SOURCES = \
 
 HEADERS = \
     qwinrtbackingstore.h \
+    qwinrtclipboard.h \
     qwinrtcursor.h \
     qwinrteglcontext.h \
     qwinrteventdispatcher.h \
@@ -48,3 +46,8 @@ HEADERS = \
     qwinrtwindow.h
 
 OTHER_FILES += winrt.json
+
+PLUGIN_TYPE = platforms
+PLUGIN_CLASS_NAME = QWinRTIntegrationPlugin
+!equals(TARGET, $$QT_DEFAULT_QPA_PLUGIN): PLUGIN_EXTENDS = -
+load(qt_plugin)

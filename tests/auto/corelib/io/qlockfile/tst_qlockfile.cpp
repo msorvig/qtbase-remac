@@ -1,31 +1,26 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 David Faure <faure+bluesystems@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,7 +34,7 @@
 #include <qsysinfo.h>
 #if defined(Q_OS_UNIX) && !defined(Q_OS_VXWORKS)
 #include <unistd.h>
-#elif defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#elif defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 #  include <qt_windows.h>
 #endif
 
@@ -75,11 +70,12 @@ public:
 
 void tst_QLockFile::initTestCase()
 {
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+#if defined(Q_OS_ANDROID)
     QSKIP("This test requires deploying and running external console applications");
 #elif defined(QT_NO_PROCESS)
     QSKIP("This test requires QProcess support");
 #else
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
     // chdir to our testdata path and execute helper apps relative to that.
     QString testdata_dir = QFileInfo(QFINDTESTDATA("qlockfiletesthelper")).absolutePath();
     QVERIFY2(QDir::setCurrent(testdata_dir), qPrintable("Could not chdir to " + testdata_dir));
@@ -285,7 +281,7 @@ void tst_QLockFile::staleLockFromCrashedProcessReusedPid()
 {
 #if defined(QT_NO_PROCESS)
     QSKIP("This test requires QProcess support");
-#elif defined(Q_OS_WINRT) || defined(Q_OS_WINCE) || defined(Q_OS_IOS)
+#elif defined(Q_OS_WINRT) || defined(QT_PLATFORM_UIKIT)
     QSKIP("We cannot retrieve information about other processes on this platform.");
 #else
     const QString fileName = dir.path() + "/staleLockFromCrashedProcessReusedPid";
@@ -459,7 +455,7 @@ Q_DECLARE_OPERATORS_FOR_FLAGS(ProcessProperties)
 static inline ProcessProperties processProperties()
 {
     ProcessProperties result;
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     HANDLE processToken = NULL;
     if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &processToken)) {
         DWORD elevation; // struct containing a DWORD, not present in some MinGW headers.
@@ -488,7 +484,7 @@ void tst_QLockFile::noPermissionsWindows()
 {
     // Windows: Do the permissions test in a system directory in which
     // files cannot be created.
-#if !defined(Q_OS_WIN) || defined(Q_OS_WINCE) || defined(Q_OS_WINRT)
+#if !defined(Q_OS_WIN) || defined(Q_OS_WINRT)
     QSKIP("This test is for desktop Windows only");
 #endif
 #ifdef Q_OS_WIN
@@ -544,6 +540,16 @@ bool tst_QLockFile::overwritePidInLockFile(const QString &filePath, qint64 pid)
     f.resize(buf.size());
     return f.write(buf) == buf.size();
 }
+
+struct LockFileUsageInGlobalDtor
+{
+    ~LockFileUsageInGlobalDtor() {
+        QLockFile lockFile(QDir::currentPath() + "/lastlock");
+        QVERIFY(lockFile.lock());
+        QVERIFY(lockFile.isLocked());
+    }
+};
+LockFileUsageInGlobalDtor s_instance;
 
 QTEST_MAIN(tst_QLockFile)
 #include "tst_qlockfile.moc"

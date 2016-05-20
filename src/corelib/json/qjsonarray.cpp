@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -256,8 +262,45 @@ QJsonArray QJsonArray::fromStringList(const QStringList &list)
 QJsonArray QJsonArray::fromVariantList(const QVariantList &list)
 {
     QJsonArray array;
-    for (QVariantList::const_iterator it = list.constBegin(); it != list.constEnd(); ++it)
-        array.append(QJsonValue::fromVariant(*it));
+    if (list.isEmpty())
+        return array;
+
+    array.detach2(1024);
+
+    QVector<QJsonPrivate::Value> values;
+    values.resize(list.size());
+    QJsonPrivate::Value *valueData = values.data();
+    uint currentOffset = sizeof(QJsonPrivate::Base);
+
+    for (int i = 0; i < list.size(); ++i) {
+        QJsonValue val = QJsonValue::fromVariant(list.at(i));
+
+        bool latinOrIntValue;
+        int valueSize = QJsonPrivate::Value::requiredStorage(val, &latinOrIntValue);
+
+        if (!array.detach2(valueSize))
+            return QJsonArray();
+
+        QJsonPrivate::Value *v = valueData + i;
+        v->type = (val.t == QJsonValue::Undefined ? QJsonValue::Null : val.t);
+        v->latinOrIntValue = latinOrIntValue;
+        v->latinKey = false;
+        v->value = QJsonPrivate::Value::valueToStore(val, currentOffset);
+        if (valueSize)
+            QJsonPrivate::Value::copyData(val, (char *)array.a + currentOffset, latinOrIntValue);
+
+        currentOffset += valueSize;
+        array.a->size = currentOffset;
+    }
+
+    // write table
+    array.a->tableOffset = currentOffset;
+    if (!array.detach2(sizeof(QJsonPrivate::offset)*values.size()))
+        return QJsonArray();
+    memcpy(array.a->table(), values.constData(), values.size()*sizeof(uint));
+    array.a->length = values.size();
+    array.a->size = currentOffset + sizeof(QJsonPrivate::offset)*values.size();
+
     return array;
 }
 
@@ -382,7 +425,7 @@ void QJsonArray::removeAt(int i)
     if (!a || i < 0 || i >= (int)a->length)
         return;
 
-    detach();
+    detach2();
     a->removeItems(i, 1);
     ++d->compactionCounter;
     if (d->compactionCounter > 32u && d->compactionCounter >= unsigned(a->length) / 2u)
@@ -442,7 +485,8 @@ void QJsonArray::insert(int i, const QJsonValue &value)
     bool compressed;
     int valueSize = QJsonPrivate::Value::requiredStorage(val, &compressed);
 
-    detach(valueSize + sizeof(QJsonPrivate::Value));
+    if (!detach2(valueSize + sizeof(QJsonPrivate::Value)))
+        return;
 
     if (!a->length)
         a->tableOffset = sizeof(QJsonPrivate::Array);
@@ -492,7 +536,8 @@ void QJsonArray::replace(int i, const QJsonValue &value)
     bool compressed;
     int valueSize = QJsonPrivate::Value::requiredStorage(val, &compressed);
 
-    detach(valueSize);
+    if (!detach2(valueSize))
+        return;
 
     if (!a->length)
         a->tableOffset = sizeof(QJsonPrivate::Array);
@@ -1123,21 +1168,38 @@ bool QJsonArray::operator!=(const QJsonArray &other) const
  */
 void QJsonArray::detach(uint reserve)
 {
+    Q_UNUSED(reserve)
+    Q_ASSERT(!reserve);
+    detach2(0);
+}
+
+/*!
+    \internal
+ */
+bool QJsonArray::detach2(uint reserve)
+{
     if (!d) {
+        if (reserve >= QJsonPrivate::Value::MaxSize) {
+            qWarning("QJson: Document too large to store in data structure");
+            return false;
+        }
         d = new QJsonPrivate::Data(reserve, QJsonValue::Array);
         a = static_cast<QJsonPrivate::Array *>(d->header->root());
         d->ref.ref();
-        return;
+        return true;
     }
     if (reserve == 0 && d->ref.load() == 1)
-        return;
+        return true;
 
     QJsonPrivate::Data *x = d->clone(a, reserve);
+    if (!x)
+        return false;
     x->ref.ref();
     if (!d->ref.deref())
         delete d;
     d = x;
     a = static_cast<QJsonPrivate::Array *>(d->header->root());
+    return true;
 }
 
 /*!
@@ -1148,7 +1210,7 @@ void QJsonArray::compact()
     if (!d || !d->compactionCounter)
         return;
 
-    detach();
+    detach2();
     d->compact();
     a = static_cast<QJsonPrivate::Array *>(d->header->root());
 }

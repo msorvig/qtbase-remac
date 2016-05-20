@@ -4,6 +4,10 @@ QT = core testlib core-private
 embedded: QT += gui
 SOURCES = ../tst_qlocale.cpp
 
+!contains(QT_CONFIG, doubleconversion):!contains(QT_CONFIG, system-doubleconversion) {
+    DEFINES += QT_NO_DOUBLECONVERSION
+}
+
 TARGET = ../tst_qlocale
 win32 {
     CONFIG(debug, debug|release) {
@@ -13,6 +17,4 @@ win32 {
     }
 }
 
-TEST_HELPER_INSTALLS = ../syslocaleapp/syslocaleapp
-
-blackberry:LIBS += -lpps
+!winrt: TEST_HELPER_INSTALLS = ../syslocaleapp/syslocaleapp

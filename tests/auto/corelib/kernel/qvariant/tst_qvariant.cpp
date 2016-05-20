@@ -1,32 +1,28 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Olivier Goffart <ogoffart@woboq.com>
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -56,6 +52,7 @@
 #include <QBuffer>
 #include "qnumeric.h"
 
+#include <private/qlocale_p.h>
 #include "tst_qvariant_common.h"
 
 class CustomNonQObject;
@@ -278,6 +275,8 @@ private slots:
     void metaEnums();
     void compareSanity_data();
     void compareSanity();
+
+    void accessSequentialContainerKey();
 
 private:
     void dataStream_data(QDataStream::Version version);
@@ -1028,7 +1027,11 @@ void tst_QVariant::toByteArray_data()
     QTest::newRow( "int" ) << QVariant( -123 ) << QByteArray( "-123" );
     QTest::newRow( "uint" ) << QVariant( (uint)123 ) << QByteArray( "123" );
     QTest::newRow( "double" ) << QVariant( 123.456 ) << QByteArray( "123.456" );
-    QTest::newRow( "float" ) << QVariant( 123.456f ) << QByteArray( "123.456001" );
+
+    // Conversion from float to double adds bits of which the double-to-string converter doesn't
+    // know they're insignificant
+    QTest::newRow( "float" ) << QVariant( 123.456f ) << QByteArray( "123.45600128173828" );
+
     QTest::newRow( "longlong" ) << QVariant( (qlonglong)34 ) << QByteArray( "34" );
     QTest::newRow( "ulonglong" ) << QVariant( (qulonglong)34 ) << QByteArray( "34" );
 }
@@ -1054,7 +1057,11 @@ void tst_QVariant::toString_data()
     QTest::newRow( "int" ) << QVariant( -123 ) << QString( "-123" );
     QTest::newRow( "uint" ) << QVariant( (uint)123 ) << QString( "123" );
     QTest::newRow( "double" ) << QVariant( 123.456 ) << QString( "123.456" );
-    QTest::newRow( "float" ) << QVariant( 123.456f ) << QString( "123.456001" );
+
+    // Conversion from float to double adds bits of which the double-to-string converter doesn't
+    // know they're insignificant
+    QTest::newRow( "float" ) << QVariant( 123.456f ) << QString( "123.45600128173828" );
+
     QTest::newRow( "bool" ) << QVariant( true ) << QString( "true" );
     QTest::newRow( "qdate" ) << QVariant( QDate( 2002, 1, 1 ) ) << QString( "2002-01-01" );
     QTest::newRow( "qtime" ) << QVariant( QTime( 12, 34, 56 ) ) << QString( "12:34:56" );
@@ -1411,12 +1418,28 @@ void tst_QVariant::operator_eq_eq_data()
     QVariant mUIntQString(QString("42"));
 
     QVariant mDouble(42.11);
+#ifdef QT_NO_DOUBLECONVERSION
+    // Without libdouble-conversion we don't get the shortest possible representation.
     QVariant mDoubleString(QByteArray("42.109999999999999"));
-    QVariant mDoubleQString(QString("42.109999999999999"));
+    QVariant mDoubleQString(QByteArray("42.109999999999999"));
+#else
+    // You cannot fool the double-to-string conversion into producing insignificant digits with
+    // libdouble-conversion. You can, of course, add insignificant digits to the string and fool
+    // the double-to-double comparison after converting the string to a double.
+    QVariant mDoubleString(QByteArray("42.11"));
+    QVariant mDoubleQString(QString("42.11"));
+#endif
 
+    // Float-to-double conversion produces insignificant extra bits.
     QVariant mFloat(42.11f);
-    QVariant mFloatString(QByteArray("42.1100006"));
-    QVariant mFloatQString(QString("42.1100006"));
+#ifdef QT_NO_DOUBLECONVERSION
+    // The trailing '2' is not significant, but snprintf doesn't know this.
+    QVariant mFloatString(QByteArray("42.110000610351562"));
+    QVariant mFloatQString(QString("42.110000610351562"));
+#else
+    QVariant mFloatString(QByteArray("42.11000061035156"));
+    QVariant mFloatQString(QString("42.11000061035156"));
+#endif
 
     QVariant mLongLong((qlonglong)-42);
     QVariant mLongLongString(QByteArray("-42"));
@@ -1710,12 +1733,16 @@ void tst_QVariant::compareNumbers_data() const
     QTest::newRow("float3") << qVariantFromValue(0.f) << qVariantFromValue(-1.f) << +1;
     QTest::newRow("float4") << qVariantFromValue(-float(qInf())) << qVariantFromValue(0.f) << -1;
     QTest::newRow("float5") << qVariantFromValue(0.f) << qVariantFromValue(-float(qInf())) << +1;
+    QTest::newRow("float6") << qVariantFromValue(-float(qInf())) << qVariantFromValue(-float(qInf())) << 0;
+    QTest::newRow("float7") << qVariantFromValue(float(qInf())) << qVariantFromValue(float(qInf())) << 0;
 
     QTest::newRow("double1") << qVariantFromValue(0.) << qVariantFromValue(0.) << 0;
     QTest::newRow("double2") << qVariantFromValue(-1.) << qVariantFromValue(0.) << -1;
     QTest::newRow("double3") << qVariantFromValue(0.) << qVariantFromValue(-1.) << +1;
     QTest::newRow("double4") << qVariantFromValue(-qInf()) << qVariantFromValue(0.) << -1;
     QTest::newRow("double5") << qVariantFromValue(0.) << qVariantFromValue(-qInf()) << +1;
+    QTest::newRow("double6") << qVariantFromValue(-double(qInf())) << qVariantFromValue(-qInf()) << 0;
+    QTest::newRow("double7") << qVariantFromValue(qInf()) << qVariantFromValue(qInf()) << 0;
 
     // mixed comparisons
     // fp + fp
@@ -1724,6 +1751,8 @@ void tst_QVariant::compareNumbers_data() const
     QTest::newRow("float+double3") << qVariantFromValue(0.f) << qVariantFromValue(-1.) << +1;
     QTest::newRow("float+double4") << qVariantFromValue(-float(qInf())) << qVariantFromValue(0.) << -1;
     QTest::newRow("float+double5") << qVariantFromValue(0.f) << qVariantFromValue(-qInf()) << +1;
+    QTest::newRow("float+double6") << qVariantFromValue(-float(qInf())) << qVariantFromValue(qInf()) << 0;
+    QTest::newRow("float+double7") << qVariantFromValue(float(qInf())) << qVariantFromValue(qInf()) << 0;
 
     // fp + int
     QTest::newRow("float+int1") << qVariantFromValue(0.f) << qVariantFromValue(0) << 0;
@@ -1734,6 +1763,7 @@ void tst_QVariant::compareNumbers_data() const
     QTest::newRow("double+int3") << qVariantFromValue(0.) << qVariantFromValue(-1) << +1;
     QTest::newRow("float+int4") << qVariantFromValue(1.5f) << qVariantFromValue(1) << +1;
     QTest::newRow("double+int4") << qVariantFromValue(1.5) << qVariantFromValue(1) << +1;
+    QTest::newRow("double+int5") << qVariantFromValue(qInf()) << qVariantFromValue(1) << +1;
 
     // fp + uint
     QTest::newRow("float+uint1") << qVariantFromValue(0.f) << qVariantFromValue(0U) << 0;
@@ -2491,14 +2521,26 @@ void tst_QVariant::variantMap()
 
     QVariant v = map;
     QVariantMap map2 = qvariant_cast<QVariantMap>(v);
-
     QCOMPARE(map2.value("test").toInt(), 42);
+    QCOMPARE(map2, map);
+
+    map2 = v.toMap();
+    QCOMPARE(map2.value("test").toInt(), 42);
+    QCOMPARE(map2, map);
 
     QVariant v2 = QVariant(QMetaType::type("QVariantMap"), &map);
     QCOMPARE(qvariant_cast<QVariantMap>(v2).value("test").toInt(), 42);
 
     QVariant v3 = QVariant(QMetaType::type("QMap<QString, QVariant>"), &map);
     QCOMPARE(qvariant_cast<QVariantMap>(v3).value("test").toInt(), 42);
+
+    // multi-keys
+    map.insertMulti("test", 47);
+    v = map;
+    map2 = qvariant_cast<QVariantMap>(v);
+    QCOMPARE(map2, map);
+    map2 = v.toMap();
+    QCOMPARE(map2, map);
 }
 
 void tst_QVariant::variantHash()
@@ -2508,14 +2550,26 @@ void tst_QVariant::variantHash()
 
     QVariant v = hash;
     QVariantHash hash2 = qvariant_cast<QVariantHash>(v);
-
     QCOMPARE(hash2.value("test").toInt(), 42);
+    QCOMPARE(hash2, hash);
+
+    hash2 = v.toHash();
+    QCOMPARE(hash2.value("test").toInt(), 42);
+    QCOMPARE(hash2, hash);
 
     QVariant v2 = QVariant(QMetaType::type("QVariantHash"), &hash);
     QCOMPARE(qvariant_cast<QVariantHash>(v2).value("test").toInt(), 42);
 
     QVariant v3 = QVariant(QMetaType::type("QHash<QString, QVariant>"), &hash);
     QCOMPARE(qvariant_cast<QVariantHash>(v3).value("test").toInt(), 42);
+
+    // multi-keys
+    hash.insertMulti("test", 47);
+    v = hash;
+    hash2 = qvariant_cast<QVariantHash>(v);
+    QCOMPARE(hash2, hash);
+    hash2 = v.toHash();
+    QCOMPARE(hash2, hash);
 }
 
 class CustomQObject : public QObject {
@@ -3233,10 +3287,18 @@ void tst_QVariant::convertIterables() const
         map.insert("3", 4);
         QCOMPARE(QVariant::fromValue(map).value<QVariantHash>().count(), map.count());
         QCOMPARE(QVariant::fromValue(map).value<QVariantMap>().count(), map.count());
+
+        map.insertMulti("3", 5);
+        QCOMPARE(QVariant::fromValue(map).value<QVariantHash>().count(), map.count());
+        QCOMPARE(QVariant::fromValue(map).value<QVariantMap>().count(), map.count());
     }
     {
         QVariantMap map;
         map.insert("3", 4);
+        QCOMPARE(QVariant::fromValue(map).value<QVariantHash>().count(), map.count());
+        QCOMPARE(QVariant::fromValue(map).value<QVariantMap>().count(), map.count());
+
+        map.insertMulti("3", 5);
         QCOMPARE(QVariant::fromValue(map).value<QVariantHash>().count(), map.count());
         QCOMPARE(QVariant::fromValue(map).value<QVariantMap>().count(), map.count());
     }
@@ -3245,10 +3307,18 @@ void tst_QVariant::convertIterables() const
         hash.insert("3", 4);
         QCOMPARE(QVariant::fromValue(hash).value<QVariantHash>().count(), hash.count());
         QCOMPARE(QVariant::fromValue(hash).value<QVariantMap>().count(), hash.count());
+
+        hash.insertMulti("3", 5);
+        QCOMPARE(QVariant::fromValue(hash).value<QVariantHash>().count(), hash.count());
+        QCOMPARE(QVariant::fromValue(hash).value<QVariantMap>().count(), hash.count());
     }
     {
         QVariantHash hash;
         hash.insert("3", 4);
+        QCOMPARE(QVariant::fromValue(hash).value<QVariantHash>().count(), hash.count());
+        QCOMPARE(QVariant::fromValue(hash).value<QVariantMap>().count(), hash.count());
+
+        hash.insertMulti("3", 5);
         QCOMPARE(QVariant::fromValue(hash).value<QVariantHash>().count(), hash.count());
         QCOMPARE(QVariant::fromValue(hash).value<QVariantMap>().count(), hash.count());
     }
@@ -3374,10 +3444,11 @@ void tst_QVariant::numericalConvert()
     switch (v.userType())
     {
     case QVariant::Double:
-        QCOMPARE(v.toString() , QString::number(num, 'g', DBL_MANT_DIG * std::log10(2.) + 2));
+        QCOMPARE(v.toString() , QString::number(num, 'g', QLocale::FloatingPointShortest));
         break;
     case QMetaType::Float:
-        QCOMPARE(v.toString() , QString::number(float(num), 'g', FLT_MANT_DIG * std::log10(2.) + 2));
+        QCOMPARE(v.toString() ,
+                 QString::number(float(num), 'g', QLocale::FloatingPointShortest));
         break;
     }
 }
@@ -3613,8 +3684,17 @@ void tst_QVariant::moreCustomTypes()
     QCOMPARE(MyNotMovable::count, 0);
 
     {
+#ifdef QT_NO_DOUBLECONVERSION
+        // snprintf cannot do "shortest" conversion and always adds noise.
         PLAY_WITH_VARIANT(12.12, false, "12.119999999999999", 12.12, true);
-        PLAY_WITH_VARIANT(12.12f, false, "12.1199999", 12.12f, true);
+#else
+        // Double can be printed exactly with libdouble-conversion
+        PLAY_WITH_VARIANT(12.12, false, "12.12", 12.12, true);
+#endif
+
+        // Float is converted to double, adding insignificant bits
+        PLAY_WITH_VARIANT(12.12f, false, "12.119999885559082", 12.12f, true);
+
         PLAY_WITH_VARIANT('a', false, "a", 'a', true);
         PLAY_WITH_VARIANT((unsigned char)('a'), false, "a", 'a', true);
         PLAY_WITH_VARIANT( quint8(12), false, "\xc", 12, true);
@@ -4684,6 +4764,31 @@ void tst_QVariant::compareSanity()
         QVERIFY((value1 < value2) || (value1 > value2));
     }
 }
+
+void tst_QVariant::accessSequentialContainerKey()
+{
+    QString nameResult;
+
+    {
+    QMap<QString, QObject*> mapping;
+    QString name = QString::fromLatin1("Seven");
+    mapping.insert(name, Q_NULLPTR);
+
+    QVariant variant = QVariant::fromValue(mapping);
+
+    QAssociativeIterable iterable = variant.value<QAssociativeIterable>();
+    QAssociativeIterable::const_iterator iit = iterable.begin();
+    const QAssociativeIterable::const_iterator end = iterable.end();
+    for ( ; iit != end; ++iit) {
+        nameResult += iit.key().toString();
+    }
+    } // Destroy mapping
+    // Regression test for QTBUG-52246 - no memory corruption/double deletion
+    // of the string key.
+
+    QCOMPARE(nameResult, QStringLiteral("Seven"));
+}
+
 
 QTEST_MAIN(tst_QVariant)
 #include "tst_qvariant.moc"

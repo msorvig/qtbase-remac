@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -72,7 +67,8 @@ public:
         TriggerSlot4,
         TriggerSlot5,
         TriggerSlot6,
-        TriggerSlot7
+        TriggerSlot7,
+        SendKeyEvent
     };
 
     enum Result {
@@ -84,6 +80,7 @@ public:
         Slot5Triggered,
         Slot6Triggered,
         Slot7Triggered,
+        SentKeyEvent,
         Ambiguous
     } currentResult;
 
@@ -104,6 +101,7 @@ public slots:
     void ambigSlot7() { currentResult = Ambiguous; ambigResult = Slot7Triggered; }
     void statusMessage( const QString& message ) { sbText = message; }
     void shortcutDestroyed(QObject* obj);
+    void sendKeyEvent() { sendKeyEvents(edit, Qt::CTRL + Qt::Key_B, 0); currentResult = SentKeyEvent; }
 
 public slots:
     void initTestCase();
@@ -180,12 +178,13 @@ protected:
             QKeyEvent *ke = static_cast<QKeyEvent*>(e);
             if (ke->modifiers() && ke->key() > Qt::Key_Any
                 && ke->key() < Qt::Key_ydiaeresis) {
+                const QChar c = QLatin1Char(char(ke->key()));
                 if (ke->modifiers() == Qt::ControlModifier)
-                    insertPlainText(QString("<Ctrl+%1>").arg(char(ke->key())));
+                    insertPlainText(QLatin1String("<Ctrl+") + c + QLatin1Char('>'));
                 else if (ke->modifiers() == Qt::AltModifier)
-                    insertPlainText(QString("<Alt+%1>").arg(char(ke->key())));
+                    insertPlainText(QLatin1String("<Alt+") + c + QLatin1Char('>'));
                 else if (ke->modifiers() == Qt::ShiftModifier)
-                    insertPlainText(QString("<Shift+%1>").arg(char(ke->key())));
+                    insertPlainText(QLatin1String("<Shift+") + c + QLatin1Char('>'));
                 return true;
             }
         }
@@ -981,6 +980,19 @@ void tst_QShortcut::keypressConsumption()
     QVERIFY(edit->toPlainText().endsWith("<Ctrl+I>a"));
 
     clearAllShortcuts();
+    edit->clear();
+    QCOMPARE(edit->toPlainText().size(), 0);
+
+    setupShortcut(edit, "first", SendKeyEvent, "Ctrl+A");
+
+    // Verify reentrancy when a non-shortcut is triggered as part
+    // of shortcut processing.
+    currentResult = NoResult;
+    ambigResult = NoResult;
+    sendKeyEvents(edit, Qt::CTRL + Qt::Key_A, 0);
+    QCOMPARE(currentResult, SentKeyEvent);
+    QCOMPARE(ambigResult, NoResult);
+    QCOMPARE(edit->toPlainText(), QString(QString("<Ctrl+B>")));
 }
 
 // ------------------------------------------------------------------
@@ -1182,9 +1194,12 @@ QShortcut *tst_QShortcut::setupShortcut(QWidget *parent, const char *name, int t
         normal = SLOT(slotTrig7());
         ambig  = SLOT(ambigSlot7());
         break;
+    case SendKeyEvent:
+        normal = SLOT(sendKeyEvent());
     }
     connect(cut, SIGNAL(activated()), this, normal);
-    connect(cut, SIGNAL(activatedAmbiguously()), this, ambig);
+    if (ambig)
+        connect(cut, SIGNAL(activatedAmbiguously()), this, ambig);
     connect(cut, SIGNAL(destroyed(QObject*)), this, SLOT(shortcutDestroyed(QObject*)));
     shortcuts.append(cut);
     return cut;

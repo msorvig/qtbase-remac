@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -289,7 +295,7 @@ static inline bool isEmptyBlockBeforeTable(const QTextBlock &block, const QTextB
            ;
 }
 
-static inline bool isEmptyBlockBeforeTable(QTextFrame::Iterator it)
+static inline bool isEmptyBlockBeforeTable(const QTextFrame::Iterator &it)
 {
     QTextFrame::Iterator next = it; ++next;
     if (it.currentFrame())
@@ -413,7 +419,7 @@ static bool operator<(int pos, const QCheckPoint &checkPoint)
 
 #endif
 
-static void fillBackground(QPainter *p, const QRectF &rect, QBrush brush, const QPointF &origin, QRectF gradientRect = QRectF())
+static void fillBackground(QPainter *p, const QRectF &rect, QBrush brush, const QPointF &origin, const QRectF &gradientRect = QRectF())
 {
     p->save();
     if (brush.style() >= Qt::LinearGradientPattern && brush.style() <= Qt::ConicalGradientPattern) {
@@ -1498,7 +1504,7 @@ void QTextDocumentLayoutPrivate::drawListItem(const QPointF &offset, QPainter *p
     painter->restore();
 }
 
-static QFixed flowPosition(const QTextFrame::iterator it)
+static QFixed flowPosition(const QTextFrame::iterator &it)
 {
     if (it.atEnd())
         return 0;
@@ -1592,7 +1598,7 @@ QTextLayoutStruct QTextDocumentLayoutPrivate::layoutCell(QTextTable *t, const QT
     // floats in other cells we must clear the list here.
     data(t)->floats.clear();
 
-//    qDebug() << "layoutCell done";
+//    qDebug("layoutCell done");
 
     return layoutStruct;
 }
@@ -2024,7 +2030,7 @@ void QTextDocumentLayoutPrivate::positionFloat(QTextFrame *frame, QTextLine *cur
 //         qDebug() << "have line: right=" << right << "left=" << left << "textWidth=" << currentLine->width();
         if (right - left < QFixed::fromReal(currentLine->naturalTextWidth()) + fd->size.width) {
             layoutStruct->pendingFloats.append(frame);
-//             qDebug() << "    adding to pending list";
+//             qDebug("    adding to pending list");
             return;
         }
     }
@@ -2537,7 +2543,7 @@ void QTextDocumentLayoutPrivate::layoutFlow(QTextFrame::Iterator it, QTextLayout
             contentHasAlignment = true;
 
         if (it.atEnd()) {
-            //qDebug() << "layout done!";
+            //qDebug("layout done!");
             currentLazyLayoutPosition = -1;
             QCheckPoint cp;
             cp.y = layoutStruct->y;
@@ -2895,14 +2901,12 @@ static void markFrames(QTextFrame *current, int from, int oldLength, int length)
         return;
 
     QTextFrameData *fd = data(current);
-    for (int i = 0; i < fd->floats.size(); ++i) {
-        QTextFrame *f = fd->floats[i];
-        if (!f) {
-            // float got removed in editing operation
-            fd->floats.removeAt(i);
-            --i;
-        }
-    }
+    // float got removed in editing operation
+    QTextFrame *null = nullptr; // work-around for (at least) MSVC 2012 emitting
+                                // warning C4100 for its own header <algorithm>
+                                // when passing nullptr directly to std::remove
+    fd->floats.erase(std::remove(fd->floats.begin(), fd->floats.end(), null),
+                     fd->floats.end());
 
     fd->layoutDirty = true;
     fd->sizeDirty = true;

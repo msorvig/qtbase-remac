@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2014 BlackBerry Limited. All rights reserved.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -370,6 +376,9 @@ void *q_SSL_get_ex_data(const SSL *ssl, int idx);
 #ifndef OPENSSL_NO_PSK
 typedef unsigned int (*q_psk_client_callback_t)(SSL *ssl, const char *hint, char *identity, unsigned int max_identity_len, unsigned char *psk, unsigned int max_psk_len);
 void q_SSL_set_psk_client_callback(SSL *ssl, q_psk_client_callback_t callback);
+typedef unsigned int (*q_psk_server_callback_t)(SSL *ssl, const char *identity, unsigned char *psk, unsigned int max_psk_len);
+void q_SSL_set_psk_server_callback(SSL *ssl, q_psk_server_callback_t callback);
+int q_SSL_CTX_use_psk_identity_hint(SSL_CTX *ctx, const char *hint);
 #endif // OPENSSL_NO_PSK
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
 #ifndef OPENSSL_NO_SSL2
@@ -483,6 +492,9 @@ size_t q_EC_get_builtin_curves(EC_builtin_curve *r, size_t nitems);
 int q_EC_curve_nist2nid(const char *name);
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 #endif // OPENSSL_NO_EC
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+#define q_SSL_get_server_tmp_key(ssl, key) q_SSL_ctrl((ssl), SSL_CTRL_GET_SERVER_TMP_KEY, 0, (char *)key)
+#endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
 // PKCS#12 support
 int q_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey, X509 **cert, STACK_OF(X509) **ca);
@@ -549,6 +561,19 @@ void q_SSL_CTX_set_next_proto_select_cb(SSL_CTX *s,
                                         void *arg);
 void q_SSL_get0_next_proto_negotiated(const SSL *s, const unsigned char **data,
                                       unsigned *len);
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+int q_SSL_set_alpn_protos(SSL *ssl, const unsigned char *protos,
+                          unsigned protos_len);
+void q_SSL_CTX_set_alpn_select_cb(SSL_CTX *ctx,
+                                  int (*cb) (SSL *ssl,
+                                             const unsigned char **out,
+                                             unsigned char *outlen,
+                                             const unsigned char *in,
+                                             unsigned int inlen,
+                                             void *arg), void *arg);
+void q_SSL_get0_alpn_selected(const SSL *ssl, const unsigned char **data,
+                              unsigned *len);
+#endif
 #endif // OPENSSL_VERSION_NUMBER >= 0x1000100fL ...
 
 // Helper function

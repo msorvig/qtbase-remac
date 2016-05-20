@@ -2,16 +2,7 @@
 TYPE = $$basename(_PRO_FILE_PWD_)
 dn = $$dirname(_PRO_FILE_PWD_)
 FORCE = $$basename(dn)
-
-equals(FORCE, cxx11) {
-    suffix = Cxx11_$$TYPE
-    DEFINES += QT_ATOMIC_FORCE_CXX11
-} else: equals(FORCE, gcc) {
-    suffix = Gcc_$$TYPE
-    DEFINES += QT_ATOMIC_FORCE_GCC
-} else {
-    suffix = $$TYPE
-}
+suffix = $$TYPE
 
 CONFIG += testcase
 QT = core testlib

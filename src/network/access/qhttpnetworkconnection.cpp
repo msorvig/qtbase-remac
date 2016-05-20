@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -228,7 +234,7 @@ bool QHttpNetworkConnectionPrivate::shouldEmitChannelError(QAbstractSocket *sock
                 emitError = false;
             }
             if (networkLayerState == QHttpNetworkConnectionPrivate::Unknown)
-                qWarning() << "We got a connection error when networkLayerState is Unknown";
+                qWarning("We got a connection error when networkLayerState is Unknown");
         }
     }
     return emitError;
@@ -255,15 +261,17 @@ void QHttpNetworkConnectionPrivate::prepareRequest(HttpMessagePair &messagePair)
     // check if Content-Length is provided
     QNonContiguousByteDevice* uploadByteDevice = request.uploadByteDevice();
     if (uploadByteDevice) {
-        if (request.contentLength() != -1 && uploadByteDevice->size() != -1) {
+        const qint64 contentLength = request.contentLength();
+        const qint64 uploadDeviceSize = uploadByteDevice->size();
+        if (contentLength != -1 && uploadDeviceSize != -1) {
             // both values known, take the smaller one.
-            request.setContentLength(qMin(uploadByteDevice->size(), request.contentLength()));
-        } else if (request.contentLength() == -1 && uploadByteDevice->size() != -1) {
+            request.setContentLength(qMin(uploadDeviceSize, contentLength));
+        } else if (contentLength == -1 && uploadDeviceSize != -1) {
             // content length not supplied by user, but the upload device knows it
-            request.setContentLength(uploadByteDevice->size());
-        } else if (request.contentLength() != -1 && uploadByteDevice->size() == -1) {
+            request.setContentLength(uploadDeviceSize);
+        } else if (contentLength != -1 && uploadDeviceSize == -1) {
             // everything OK, the user supplied us the contentLength
-        } else if (request.contentLength() == -1 && uploadByteDevice->size() == -1) {
+        } else if (Q_UNLIKELY(contentLength == -1 && uploadDeviceSize == -1)) {
             qFatal("QHttpNetworkConnectionPrivate: Neither content-length nor upload device size were given");
         }
     }
@@ -326,7 +334,7 @@ void QHttpNetworkConnectionPrivate::prepareRequest(HttpMessagePair &messagePair)
         QByteArray host;
         if (add.setAddress(hostName)) {
             if (add.protocol() == QAbstractSocket::IPv6Protocol)
-                host = "[" + hostName.toLatin1() + "]";//format the ipv6 in the standard way
+                host = '[' + hostName.toLatin1() + ']'; //format the ipv6 in the standard way
             else
                 host = hostName.toLatin1();
 
@@ -512,8 +520,8 @@ QUrl QHttpNetworkConnectionPrivate::parseRedirectResponse(QAbstractSocket *socke
         return QUrl();
 
     QUrl rUrl;
-    QList<QPair<QByteArray, QByteArray> > fields = reply->header();
-    foreach (const QNetworkReply::RawHeaderPair &header, fields) {
+    const QList<QPair<QByteArray, QByteArray> > fields = reply->header();
+    for (const QNetworkReply::RawHeaderPair &header : fields) {
         if (header.first.toLower() == "location") {
             rUrl = QUrl::fromEncoded(header.second);
             break;
@@ -683,7 +691,7 @@ bool QHttpNetworkConnectionPrivate::dequeueRequest(QAbstractSocket *socket)
     return false;
 }
 
-QHttpNetworkRequest QHttpNetworkConnectionPrivate::predictNextRequest()
+QHttpNetworkRequest QHttpNetworkConnectionPrivate::predictNextRequest() const
 {
     if (!highPriorityQueue.isEmpty())
         return highPriorityQueue.last().first;
@@ -888,8 +896,13 @@ void QHttpNetworkConnectionPrivate::removeReply(QHttpNetworkReply *reply)
             // if HTTP mandates we should close
             // or the reply is not finished yet, e.g. it was aborted
             // we have to close that connection
-            if (reply->d_func()->isConnectionCloseEnabled() || !reply->isFinished())
-                channels[i].close();
+            if (reply->d_func()->isConnectionCloseEnabled() || !reply->isFinished()) {
+                if (reply->isAborted()) {
+                    channels[i].abort();
+                } else {
+                    channels[i].close();
+                }
+            }
 
             QMetaObject::invokeMethod(q, "_q_startNextRequest", Qt::QueuedConnection);
             return;
@@ -1102,11 +1115,12 @@ void QHttpNetworkConnectionPrivate::startHostInfoLookup()
 #endif
     QHostAddress temp;
     if (temp.setAddress(lookupHost)) {
-        if (temp.protocol() == QAbstractSocket::IPv4Protocol) {
+        const QAbstractSocket::NetworkLayerProtocol protocol = temp.protocol();
+        if (protocol == QAbstractSocket::IPv4Protocol) {
             networkLayerState = QHttpNetworkConnectionPrivate::IPv4;
             QMetaObject::invokeMethod(this->q_func(), "_q_startNextRequest", Qt::QueuedConnection);
             return;
-        } else if (temp.protocol() == QAbstractSocket::IPv6Protocol) {
+        } else if (protocol == QAbstractSocket::IPv6Protocol) {
             networkLayerState = QHttpNetworkConnectionPrivate::IPv6;
             QMetaObject::invokeMethod(this->q_func(), "_q_startNextRequest", Qt::QueuedConnection);
             return;
@@ -1126,7 +1140,7 @@ void QHttpNetworkConnectionPrivate::startHostInfoLookup()
 }
 
 
-void QHttpNetworkConnectionPrivate::_q_hostLookupFinished(QHostInfo info)
+void QHttpNetworkConnectionPrivate::_q_hostLookupFinished(const QHostInfo &info)
 {
     bool bIpv4 = false;
     bool bIpv6 = false;
@@ -1134,14 +1148,16 @@ void QHttpNetworkConnectionPrivate::_q_hostLookupFinished(QHostInfo info)
     if (networkLayerState == IPv4 || networkLayerState == IPv6 || networkLayerState == IPv4or6)
         return;
 
-    foreach (const QHostAddress &address, info.addresses()) {
-        if (address.protocol() == QAbstractSocket::IPv4Protocol) {
+    const auto addresses = info.addresses();
+    for (const QHostAddress &address : addresses) {
+        const QAbstractSocket::NetworkLayerProtocol protocol = address.protocol();
+        if (protocol == QAbstractSocket::IPv4Protocol) {
             if (!foundAddress) {
                 foundAddress = true;
                 delayIpv4 = false;
             }
             bIpv4 = true;
-        } else if (address.protocol() == QAbstractSocket::IPv6Protocol) {
+        } else if (protocol == QAbstractSocket::IPv6Protocol) {
             if (!foundAddress) {
                 foundAddress = true;
                 delayIpv4 = true;
@@ -1165,10 +1181,9 @@ void QHttpNetworkConnectionPrivate::_q_hostLookupFinished(QHostInfo info)
         }
 #ifndef QT_NO_SSL
         else if (connectionType == QHttpNetworkConnection::ConnectionTypeSPDY) {
-            QList<HttpMessagePair> spdyPairs = channels[0].spdyRequestsToSend.values();
-            for (int a = 0; a < spdyPairs.count(); ++a) {
+            for (const HttpMessagePair &spdyPair : qAsConst(channels[0].spdyRequestsToSend)) {
                 // emit error for all replies
-                QHttpNetworkReply *currentReply = spdyPairs.at(a).second;
+                QHttpNetworkReply *currentReply = spdyPair.second;
                 Q_ASSERT(currentReply);
                 emitReplyError(channels[0].socket, currentReply, QNetworkReply::HostNotFoundError);
             }
@@ -1176,7 +1191,7 @@ void QHttpNetworkConnectionPrivate::_q_hostLookupFinished(QHostInfo info)
 #endif // QT_NO_SSL
         else {
             // Should not happen
-            qWarning() << "QHttpNetworkConnectionPrivate::_q_hostLookupFinished could not dequeu request";
+            qWarning("QHttpNetworkConnectionPrivate::_q_hostLookupFinished could not de-queue request");
             networkLayerState = QHttpNetworkConnectionPrivate::Unknown;
         }
     }
@@ -1202,13 +1217,14 @@ void QHttpNetworkConnectionPrivate::startNetworkLayerStateLookup()
         int timeout = 300;
 #ifndef QT_NO_BEARERMANAGEMENT
         if (networkSession) {
-            if (networkSession->configuration().bearerType() == QNetworkConfiguration::Bearer2G)
+            const QNetworkConfiguration::BearerType bearerType = networkSession->configuration().bearerType();
+            if (bearerType == QNetworkConfiguration::Bearer2G)
                 timeout = 800;
-            else if (networkSession->configuration().bearerType() == QNetworkConfiguration::BearerCDMA2000)
+            else if (bearerType == QNetworkConfiguration::BearerCDMA2000)
                 timeout = 500;
-            else if (networkSession->configuration().bearerType() == QNetworkConfiguration::BearerWCDMA)
+            else if (bearerType == QNetworkConfiguration::BearerWCDMA)
                 timeout = 500;
-            else if (networkSession->configuration().bearerType() == QNetworkConfiguration::BearerHSPA)
+            else if (bearerType == QNetworkConfiguration::BearerHSPA)
                 timeout = 400;
         }
 #endif

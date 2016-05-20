@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -72,11 +67,14 @@ private slots:
 
     void QTBUG43352_failedSetPermissions();
 
-public:
+private:
+    QString m_previousCurrent;
 };
 
 void tst_QTemporaryDir::initTestCase()
 {
+    m_previousCurrent = QDir::currentPath();
+    QDir::setCurrent(QDir::tempPath());
     QVERIFY(QDir("test-XXXXXX").exists() || QDir().mkdir("test-XXXXXX"));
     QCoreApplication::setApplicationName("tst_qtemporarydir");
 }
@@ -84,6 +82,8 @@ void tst_QTemporaryDir::initTestCase()
 void tst_QTemporaryDir::cleanupTestCase()
 {
     QVERIFY(QDir().rmdir("test-XXXXXX"));
+
+    QDir::setCurrent(m_previousCurrent);
 }
 
 void tst_QTemporaryDir::construction()
@@ -229,6 +229,13 @@ void tst_QTemporaryDir::autoRemove()
 void tst_QTemporaryDir::nonWritableCurrentDir()
 {
 #ifdef Q_OS_UNIX
+
+#  if defined(Q_OS_ANDROID)
+    const char nonWritableDir[] = "/data";
+#  else
+    const char nonWritableDir[] = "/home";
+#  endif
+
     if (::geteuid() == 0)
         QSKIP("not valid running this test as root");
 
@@ -240,13 +247,13 @@ void tst_QTemporaryDir::nonWritableCurrentDir()
         }
         QString dir;
     };
-    ChdirOnReturn cor(QDir::currentPath());
 
-#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
-    QDir::setCurrent("/data");
-#else
-    QDir::setCurrent("/home");
-#endif
+    const QFileInfo nonWritableDirFi = QFileInfo(QLatin1String(nonWritableDir));
+    QVERIFY(nonWritableDirFi.isDir());
+    QVERIFY(!nonWritableDirFi.isWritable());
+
+    ChdirOnReturn cor(QDir::currentPath());
+    QVERIFY(QDir::setCurrent(nonWritableDirFi.absoluteFilePath()));
     // QTemporaryDir("tempXXXXXX") is probably a bad idea in any app
     // where the current dir could anything...
     QTemporaryDir dir("tempXXXXXX");
@@ -259,7 +266,7 @@ void tst_QTemporaryDir::nonWritableCurrentDir()
 
 void tst_QTemporaryDir::openOnRootDrives()
 {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     unsigned int lastErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS);
 #endif
     // If it's possible to create a file in the root directory, it
@@ -273,7 +280,7 @@ void tst_QTemporaryDir::openOnRootDrives()
             QVERIFY(dir.isValid());
         }
     }
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     SetErrorMode(lastErrorMode);
 #endif
 }

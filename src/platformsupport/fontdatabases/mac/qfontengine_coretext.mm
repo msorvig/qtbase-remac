@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -175,7 +181,7 @@ void QCoreTextFontEngine::init()
     synthesisFlags = 0;
     CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(ctfont);
 
-#if defined(Q_OS_IOS) || MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
+#if defined(QT_PLATFORM_UIKIT) || MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
     if (supportsColorGlyphs() && (traits & kCTFontColorGlyphsTrait))
         glyphFormat = QFontEngine::Format_ARGB;
     else
@@ -209,12 +215,17 @@ void QCoreTextFontEngine::init()
     } else
         avgCharWidth = QFontEngine::averageCharWidth();
 
+    underlineThickness = QFixed::fromReal(CTFontGetUnderlineThickness(ctfont));
+    underlinePos = -QFixed::fromReal(CTFontGetUnderlinePosition(ctfont));
+
     cache_cost = (CTFontGetAscent(ctfont) + CTFontGetDescent(ctfont)) * avgCharWidth.toInt() * 2000;
 
     // HACK hb_coretext requires both CTFont and CGFont but user_data is only void*
     Q_ASSERT((void *)(&ctfont + 1) == (void *)&cgFont);
     faceData.user_data = &ctfont;
     faceData.get_font_table = ct_getSfntTable;
+
+    kerningPairsLoaded = false;
 }
 
 glyph_t QCoreTextFontEngine::glyphIndex(uint ucs4) const
@@ -557,7 +568,7 @@ QImage QCoreTextFontEngine::imageForGlyph(glyph_t glyph, QFixed subPixelPosition
     if (!im.width() || !im.height())
         return im;
 
-#ifndef Q_OS_IOS
+#ifdef Q_OS_OSX
     CGColorSpaceRef colorspace = CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB);
 #else
     CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceRGB();
@@ -606,7 +617,7 @@ QImage QCoreTextFontEngine::imageForGlyph(glyph_t glyph, QFixed subPixelPosition
             CGContextShowGlyphsWithAdvances(ctx, &cgGlyph, &CGSizeZero, 1);
         }
     }
-#if defined(Q_OS_IOS) || MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
+#if defined(QT_PLATFORM_UIKIT) || MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
     else if (supportsColorGlyphs()) {
         // CGContextSetTextMatrix does not work with color glyphs, so we use
         // the CTM instead. This means we must translate the CTM as well, to
@@ -738,6 +749,11 @@ QFontEngine *QCoreTextFontEngine::cloneWithSize(qreal pixelSize) const
     return new QCoreTextFontEngine(cgFont, newFontDef);
 }
 
+Qt::HANDLE QCoreTextFontEngine::handle() const
+{
+    return (Qt::HANDLE)ctfont;
+}
+
 bool QCoreTextFontEngine::supportsTransformation(const QTransform &transform) const
 {
     if (transform.type() < QTransform::TxScale)
@@ -747,6 +763,16 @@ bool QCoreTextFontEngine::supportsTransformation(const QTransform &transform) co
         return true;
     else
         return false;
+}
+
+QFixed QCoreTextFontEngine::lineThickness() const
+{
+    return underlineThickness;
+}
+
+QFixed QCoreTextFontEngine::underlinePosition() const
+{
+    return underlinePos;
 }
 
 QFontEngine::Properties QCoreTextFontEngine::properties() const
@@ -786,6 +812,19 @@ QFontEngine::Properties QCoreTextFontEngine::properties() const
     }
 
     return result;
+}
+
+void QCoreTextFontEngine::doKerning(QGlyphLayout *g, ShaperFlags flags) const
+{
+    if (!kerningPairsLoaded) {
+        kerningPairsLoaded = true;
+        qreal emSquare = CTFontGetUnitsPerEm(ctfont);
+        qreal scale = emSquare / CTFontGetSize(ctfont);
+
+        const_cast<QCoreTextFontEngine *>(this)->loadKerningPairs(QFixed::fromReal(scale));
+    }
+
+    QFontEngine::doKerning(g, flags);
 }
 
 QT_END_NAMESPACE

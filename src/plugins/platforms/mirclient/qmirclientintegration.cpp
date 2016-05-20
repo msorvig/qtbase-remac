@@ -1,39 +1,54 @@
 /****************************************************************************
 **
 ** Copyright (C) 2014-2015 Canonical, Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
+
+// Local
+#include "qmirclientintegration.h"
+#include "qmirclientbackingstore.h"
+#include "qmirclientclipboard.h"
+#include "qmirclientglcontext.h"
+#include "qmirclientinput.h"
+#include "qmirclientlogging.h"
+#include "qmirclientnativeinterface.h"
+#include "qmirclientscreen.h"
+#include "qmirclienttheme.h"
+#include "qmirclientwindow.h"
 
 // Qt
 #include <QGuiApplication>
@@ -45,18 +60,6 @@
 #include <QtPlatformSupport/private/qgenericunixeventdispatcher_p.h>
 #include <QOpenGLContext>
 
-// Local
-#include "qmirclientbackingstore.h"
-#include "qmirclientclipboard.h"
-#include "qmirclientglcontext.h"
-#include "qmirclientinput.h"
-#include "qmirclientintegration.h"
-#include "qmirclientlogging.h"
-#include "qmirclientnativeinterface.h"
-#include "qmirclientscreen.h"
-#include "qmirclienttheme.h"
-#include "qmirclientwindow.h"
-
 // platform-api
 #include <ubuntu/application/lifecycle_delegate.h>
 #include <ubuntu/application/id.h>
@@ -67,8 +70,11 @@ static void resumedCallback(const UApplicationOptions *options, void* context)
     Q_UNUSED(options)
     Q_UNUSED(context)
     DASSERT(context != NULL);
-    QCoreApplication::postEvent(QCoreApplication::instance(),
-                                new QEvent(QEvent::ApplicationActivate));
+    if (qGuiApp->focusWindow()) {
+        QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationActive);
+    } else {
+        QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationInactive);
+    }
 }
 
 static void aboutToStopCallback(UApplicationArchive *archive, void* context)
@@ -76,9 +82,13 @@ static void aboutToStopCallback(UApplicationArchive *archive, void* context)
     Q_UNUSED(archive)
     DASSERT(context != NULL);
     QMirClientClientIntegration* integration = static_cast<QMirClientClientIntegration*>(context);
-    integration->inputContext()->hideInputPanel();
-    QCoreApplication::postEvent(QCoreApplication::instance(),
-                                new QEvent(QEvent::ApplicationDeactivate));
+    QPlatformInputContext *inputContext = integration->inputContext();
+    if (inputContext) {
+        inputContext->hideInputPanel();
+    } else {
+        qWarning("QMirClientClientIntegration aboutToStopCallback(): no input context");
+    }
+    QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationSuspended);
 }
 
 QMirClientClientIntegration::QMirClientClientIntegration()
@@ -95,14 +105,15 @@ QMirClientClientIntegration::QMirClientClientIntegration()
     // Create new application instance
     mInstance = u_application_instance_new_from_description_with_options(mDesc, mOptions);
 
-    if (mInstance == nullptr)
+    if (Q_UNLIKELY(!mInstance))
         qFatal("QMirClientClientIntegration: connection to Mir server failed. Check that a Mir server is\n"
                "running, and the correct socket is being used and is accessible. The shell may have\n"
                "rejected the incoming connection, so check its log file");
 
+    mNativeInterface->setMirConnection(u_application_instance_get_mir_connection(mInstance));
+
     // Create default screen.
-    mScreen = new QMirClientScreen(u_application_instance_get_mir_connection(mInstance));
-    screenAdded(mScreen);
+    screenAdded(new QMirClientScreen(u_application_instance_get_mir_connection(mInstance)));
 
     // Initialize input.
     if (qEnvironmentVariableIsEmpty("QTUBUNTU_NO_INPUT")) {
@@ -131,7 +142,8 @@ QMirClientClientIntegration::~QMirClientClientIntegration()
 {
     delete mInput;
     delete mInputContext;
-    delete mScreen;
+    for (QScreen *screen : QGuiApplication::screens())
+        QPlatformIntegration::destroyScreen(screen->handle());
     delete mServices;
 }
 
@@ -176,10 +188,13 @@ QPlatformWindow* QMirClientClientIntegration::createPlatformWindow(QWindow* wind
 
 QPlatformWindow* QMirClientClientIntegration::createPlatformWindow(QWindow* window)
 {
-    QPlatformWindow* platformWindow = new QMirClientWindow(
-            window, mClipboard, static_cast<QMirClientScreen*>(mScreen), mInput, u_application_instance_get_mir_connection(mInstance));
-    platformWindow->requestActivateWindow();
-    return platformWindow;
+    return new QMirClientWindow(window, mClipboard, screen(),
+                                mInput, u_application_instance_get_mir_connection(mInstance));
+}
+
+QMirClientScreen *QMirClientClientIntegration::screen() const
+{
+    return static_cast<QMirClientScreen *>(QGuiApplication::primaryScreen()->handle());
 }
 
 bool QMirClientClientIntegration::hasCapability(QPlatformIntegration::Capability cap) const
@@ -187,11 +202,12 @@ bool QMirClientClientIntegration::hasCapability(QPlatformIntegration::Capability
     switch (cap) {
     case ThreadedPixmaps:
         return true;
-        break;
 
     case OpenGL:
         return true;
-        break;
+
+    case ApplicationState:
+        return true;
 
     case ThreadedOpenGL:
         if (qEnvironmentVariableIsEmpty("QTUBUNTU_NO_THREADED_OPENGL")) {
@@ -200,8 +216,9 @@ bool QMirClientClientIntegration::hasCapability(QPlatformIntegration::Capability
             DLOG("ubuntumirclient: disabled threaded OpenGL");
             return false;
         }
-        break;
-
+    case MultipleWindows:
+    case NonFullScreenWindows:
+        return true;
     default:
         return QPlatformIntegration::hasCapability(cap);
     }
@@ -261,4 +278,9 @@ QVariant QMirClientClientIntegration::styleHint(StyleHint hint) const
 QPlatformClipboard* QMirClientClientIntegration::clipboard() const
 {
     return mClipboard.data();
+}
+
+QPlatformNativeInterface* QMirClientClientIntegration::nativeInterface() const
+{
+    return mNativeInterface;
 }

@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -408,12 +418,12 @@ void Widget::firstIndexOfFunction()
     str.indexOf(QRegularExpression("m[aeiou]"), 0);       // returns 4
     //! [93]
 
-    //! [97]
+    //! [99]
     QString str = "the minimum";
     QRegularExpressionMatch match;
     str.indexOf(QRegularExpression("m[aeiou]"), 0, &match);       // returns 4
     // match.captured() == mi
-    //! [97]
+    //! [99]
 }
 
 void Widget::insertFunction()
@@ -465,12 +475,12 @@ void Widget::lastIndexOfFunction()
     str.lastIndexOf(QRegularExpression("m[aeiou]"));      // returns 8
     //! [94]
 
-    //! [98]
+    //! [100]
     QString str = "the minimum";
     QRegularExpressionMatch match;
     str.lastIndexOf(QRegularExpression("m[aeiou]"), -1, &match);      // returns 8
     // match.captured() == mu
-    //! [98]
+    //! [100]
 }
 
 void Widget::leftFunction()
@@ -625,7 +635,7 @@ void Widget::resizeFunction()
 
     //! [46]
     QString t = "Hello";
-    t += QString(10, 'X');
+    r.resize(t.size() + 10, 'X');
     // t == "HelloXXXXXXXXXX"
     //! [46]
 
@@ -777,10 +787,10 @@ void Widget::splitCaseSensitiveFunction()
     //! [62]
     QString str = "a,,b,c";
 
-    QStringList list1 = str.split(",");
+    QStringList list1 = str.split(',');
     // list1: [ "a", "", "b", "c" ]
 
-    QStringList list2 = str.split(",", QString::SkipEmptyParts);
+    QStringList list2 = str.split(',', QString::SkipEmptyParts);
     // list2: [ "a", "b", "c" ]
     //! [62]
 }

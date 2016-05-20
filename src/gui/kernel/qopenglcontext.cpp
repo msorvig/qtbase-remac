@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -510,8 +516,10 @@ void QOpenGLContext::setScreen(QScreen *screen)
 void QOpenGLContextPrivate::_q_screenDestroyed(QObject *object)
 {
     Q_Q(QOpenGLContext);
-    if (object == static_cast<QObject *>(screen))
+    if (object == static_cast<QObject *>(screen)) {
+        screen = 0;
         q->setScreen(0);
+    }
 }
 
 /*!
@@ -647,7 +655,7 @@ void QOpenGLContext::destroy()
     delete d->functions;
     d->functions = 0;
 
-    foreach (QAbstractOpenGLFunctions *func, d->externalVersionFunctions) {
+    for (QAbstractOpenGLFunctions *func : qAsConst(d->externalVersionFunctions)) {
         QAbstractOpenGLFunctionsPrivate *func_d = QAbstractOpenGLFunctionsPrivate::get(func);
         func_d->owningContext = 0;
         func_d->initialized = false;
@@ -655,8 +663,6 @@ void QOpenGLContext::destroy()
     d->externalVersionFunctions.clear();
     qDeleteAll(d->versionFunctions);
     d->versionFunctions.clear();
-    qDeleteAll(d->versionFunctionsBackend);
-    d->versionFunctionsBackend.clear();
 
     delete d->textureFunctions;
     d->textureFunctions = 0;
@@ -934,13 +940,20 @@ GLuint QOpenGLContext::defaultFramebufferObject() const
 
     If \a surface is 0 this is equivalent to calling doneCurrent().
 
-    Do not call this function from a different thread than the one the
+    Avoid calling this function from a different thread than the one the
     QOpenGLContext instance lives in. If you wish to use QOpenGLContext from a
     different thread you should first call make sure it's not current in the
     current thread, by calling doneCurrent() if necessary. Then call
     moveToThread(otherThread) before using it in the other thread.
 
-    \sa functions(), doneCurrent()
+    By default Qt employs a check that enforces the above condition on the
+    thread affinity. It is still possible to disable this check by setting the
+    \c{Qt::AA_DontCheckOpenGLContextThreadAffinity} application attribute. Be
+    sure to understand the consequences of using QObjects from outside
+    the thread they live in, as explained in the
+    \l{QObject#Thread Affinity}{QObject thread affinity} documentation.
+
+    \sa functions(), doneCurrent(), Qt::AA_DontCheckOpenGLContextThreadAffinity
 */
 bool QOpenGLContext::makeCurrent(QSurface *surface)
 {
@@ -948,8 +961,10 @@ bool QOpenGLContext::makeCurrent(QSurface *surface)
     if (!isValid())
         return false;
 
-    if (thread() != QThread::currentThread())
+    if (Q_UNLIKELY(!qApp->testAttribute(Qt::AA_DontCheckOpenGLContextThreadAffinity)
+                   && thread() != QThread::currentThread())) {
         qFatal("Cannot make QOpenGLContext current in a different thread");
+    }
 
     if (!surface) {
         doneCurrent();
@@ -1029,19 +1044,19 @@ void QOpenGLContext::swapBuffers(QSurface *surface)
         return;
 
     if (!surface) {
-        qWarning() << "QOpenGLContext::swapBuffers() called with null argument";
+        qWarning("QOpenGLContext::swapBuffers() called with null argument");
         return;
     }
 
     if (!surface->supportsOpenGL()) {
-        qWarning() << "QOpenGLContext::swapBuffers() called with non-opengl surface";
+        qWarning("QOpenGLContext::swapBuffers() called with non-opengl surface");
         return;
     }
 
     if (surface->surfaceClass() == QSurface::Window
         && !qt_window_private(static_cast<QWindow *>(surface))->receivedExpose)
     {
-        qWarning() << "QOpenGLContext::swapBuffers() called with non-exposed window, behavior is undefined";
+        qWarning("QOpenGLContext::swapBuffers() called with non-exposed window, behavior is undefined");
     }
 
     QPlatformSurface *surfaceHandle = surface->surfaceHandle();
@@ -1050,7 +1065,7 @@ void QOpenGLContext::swapBuffers(QSurface *surface)
 
 #if !defined(QT_NO_DEBUG)
     if (!QOpenGLContextPrivate::toggleMakeCurrentTracker(this, false))
-        qWarning() << "QOpenGLContext::swapBuffers() called without corresponding makeCurrent()";
+        qWarning("QOpenGLContext::swapBuffers() called without corresponding makeCurrent()");
 #endif
     if (surface->format().swapBehavior() == QSurfaceFormat::SingleBuffer)
         functions()->glFlush();
@@ -1064,9 +1079,18 @@ void QOpenGLContext::swapBuffers(QSurface *surface)
 */
 QFunctionPointer QOpenGLContext::getProcAddress(const QByteArray &procName) const
 {
+    return getProcAddress(procName.constData());
+}
+
+/*!
+  \overload
+  \since 5.8
+ */
+QFunctionPointer QOpenGLContext::getProcAddress(const char *procName) const
+{
     Q_D(const QOpenGLContext);
     if (!d->platformGLContext)
-        return 0;
+        return nullptr;
     return d->platformGLContext->getProcAddress(procName);
 }
 
@@ -1210,7 +1234,7 @@ void *QOpenGLContext::openGLModuleHandle()
 
   \note A desktop OpenGL implementation may be capable of creating
   ES-compatible contexts too. Therefore in most cases it is more
-  appropriate to check QSurfaceFormat::renderableType() or using the
+  appropriate to check QSurfaceFormat::renderableType() or use
   the convenience function isOpenGLES().
 
   \note This function requires that the QGuiApplication instance is already created.
@@ -1287,29 +1311,10 @@ QOpenGLContext *QOpenGLContext::globalShareContext()
 /*!
     \internal
 */
-QOpenGLVersionFunctionsBackend *QOpenGLContext::functionsBackend(const QOpenGLVersionStatus &v) const
+QOpenGLVersionFunctionsStorage *QOpenGLContext::functionsBackendStorage() const
 {
     Q_D(const QOpenGLContext);
-    return d->versionFunctionsBackend.value(v, 0);
-}
-
-/*!
-    \internal
-*/
-void QOpenGLContext::insertFunctionsBackend(const QOpenGLVersionStatus &v,
-                                            QOpenGLVersionFunctionsBackend *backend)
-{
-    Q_D(QOpenGLContext);
-    d->versionFunctionsBackend.insert(v, backend);
-}
-
-/*!
-    \internal
-*/
-void QOpenGLContext::removeFunctionsBackend(const QOpenGLVersionStatus &v)
-{
-    Q_D(QOpenGLContext);
-    d->versionFunctionsBackend.remove(v);
+    return &d->versionFunctionsStorage;
 }
 
 /*!
@@ -1459,11 +1464,11 @@ void QOpenGLContextGroupPrivate::deletePendingResources(QOpenGLContext *ctx)
 {
     QMutexLocker locker(&m_mutex);
 
-    QList<QOpenGLSharedResource *> pending = m_pendingDeletion;
+    const QList<QOpenGLSharedResource *> pending = m_pendingDeletion;
     m_pendingDeletion.clear();
 
-    QList<QOpenGLSharedResource *>::iterator it = pending.begin();
-    QList<QOpenGLSharedResource *>::iterator end = pending.end();
+    QList<QOpenGLSharedResource *>::const_iterator it = pending.begin();
+    QList<QOpenGLSharedResource *>::const_iterator end = pending.end();
     while (it != end) {
         (*it)->freeResource(ctx);
         delete *it;

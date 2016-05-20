@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the qmake application of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,7 +28,6 @@
 
 #include "msvc_nmake.h"
 #include "option.h"
-#include "cesdkhandler.h"
 
 #include <qregexp.h>
 #include <qdir.h>
@@ -49,11 +43,12 @@ QT_BEGIN_NAMESPACE
 static QString nmakePathList(const QStringList &list)
 {
     QStringList pathList;
-    foreach (const QString &path, list)
+    pathList.reserve(list.size());
+    for (const QString &path : list)
         pathList.append(QDir::cleanPath(path));
 
     return QDir::toNativeSeparators(pathList.join(QLatin1Char(';')))
-            .replace('#', QStringLiteral("^#")).replace('$', QStringLiteral("$$"));
+            .replace('#', QLatin1String("^#")).replace('$', QLatin1String("$$"));
 }
 
 NmakeMakefileGenerator::NmakeMakefileGenerator() : Win32MakefileGenerator(), usePCH(false)
@@ -76,44 +71,14 @@ NmakeMakefileGenerator::writeMakefile(QTextStream &t)
             return MakefileGenerator::writeStubMakefile(t);
 #endif
         if (!project->isHostBuild()) {
-            const ProValueMap &variables = project->variables();
-            if (project->isActiveConfig("wince")) {
-                CeSdkHandler sdkhandler;
-                sdkhandler.retrieveAvailableSDKs();
-                const QString sdkName = variables["CE_SDK"].join(' ')
-                                        + " (" + variables["CE_ARCH"].join(' ') + ")";
-                const QList<CeSdkInfo> sdkList = sdkhandler.listAll();
-                CeSdkInfo sdk;
-                foreach (const CeSdkInfo &info, sdkList) {
-                    if (info.name().compare(sdkName, Qt::CaseInsensitive ) == 0) {
-                        sdk = info;
-                        break;
-                    }
-                }
-                if (sdk.isValid()) {
-                    t << "\nINCLUDE = " << sdk.includePath();
-                    t << "\nLIB = " << sdk.libPath();
-                    t << "\nPATH = " << sdk.binPath() << "\n";
-                } else {
-                    QStringList sdkStringList;
-                    foreach (const CeSdkInfo &info, sdkList)
-                        sdkStringList << info.name();
-
-                    fprintf(stderr, "Failed to find Windows CE SDK matching %s, found: %s\n"
-                                    "SDK needs to be specified in mkspec (using: %s/qmake.conf)\n"
-                                    "SDK name needs to match the following format: CE_SDK (CE_ARCH)\n",
-                            qPrintable(sdkName), qPrintable(sdkStringList.join(", ")),
-                            qPrintable(variables["QMAKESPEC"].first().toQString()));
-                    return false;
-                }
-            } else if (project->isActiveConfig(QStringLiteral("winrt"))) {
+            if (project->isActiveConfig(QStringLiteral("winrt"))) {
                 QString arch = project->first("VCPROJ_ARCH").toQString().toLower();
                 QString compiler;
                 QString compilerArch;
-                if (arch == QStringLiteral("arm")) {
+                if (arch == QLatin1String("arm")) {
                     compiler = QStringLiteral("x86_arm");
                     compilerArch = QStringLiteral("arm");
-                } else if (arch == QStringLiteral("x64")) {
+                } else if (arch == QLatin1String("x64")) {
                     const ProStringList hostArch = project->values("QMAKE_TARGET.arch");
                     if (hostArch.contains("x86_64"))
                         compiler = QStringLiteral("amd64");
@@ -142,18 +107,8 @@ NmakeMakefileGenerator::writeMakefile(QTextStream &t)
 
                 const bool isPhone = project->isActiveConfig(QStringLiteral("winphone"));
 #ifdef Q_OS_WIN
-                QString regKeyPrefix;
-#if !defined(Q_OS_WIN64) && _WIN32_WINNT >= 0x0501
-                BOOL isWow64;
-                IsWow64Process(GetCurrentProcess(), &isWow64);
-                if (!isWow64)
-                    regKeyPrefix = QStringLiteral("Software\\");
-                else
-#endif
-                    regKeyPrefix = QStringLiteral("Software\\Wow6432Node\\");
-
-                QString regKey = regKeyPrefix + QStringLiteral("Microsoft\\VisualStudio\\") + msvcVer + ("\\Setup\\VC\\ProductDir");
-                const QString vcInstallDir = qt_readRegistryKey(HKEY_LOCAL_MACHINE, regKey);
+                QString regKey = QStringLiteral("Software\\Microsoft\\VisualStudio\\") + msvcVer + ("\\Setup\\VC\\ProductDir");
+                const QString vcInstallDir = qt_readRegistryKey(HKEY_LOCAL_MACHINE, regKey, KEY_WOW64_32KEY);
                 if (vcInstallDir.isEmpty()) {
                     fprintf(stderr, "Failed to find the Visual Studio installation directory.\n");
                     return false;
@@ -161,13 +116,13 @@ NmakeMakefileGenerator::writeMakefile(QTextStream &t)
 
                 QString windowsPath;
                 if (isPhone) {
-                    windowsPath = "Microsoft\\Microsoft SDKs\\WindowsPhoneApp\\v";
+                    windowsPath = "Software\\Microsoft\\Microsoft SDKs\\WindowsPhoneApp\\v";
                 } else {
-                    windowsPath = "Microsoft\\Microsoft SDKs\\Windows\\v";
+                    windowsPath = "Software\\Microsoft\\Microsoft SDKs\\Windows\\v";
                 }
 
-                regKey = regKeyPrefix + windowsPath + winsdkVer + QStringLiteral("\\InstallationFolder");
-                const QString kitDir = qt_readRegistryKey(HKEY_LOCAL_MACHINE, regKey);
+                regKey = windowsPath + winsdkVer + QStringLiteral("\\InstallationFolder");
+                const QString kitDir = qt_readRegistryKey(HKEY_LOCAL_MACHINE, regKey, KEY_WOW64_32KEY);
                 if (kitDir.isEmpty()) {
                     fprintf(stderr, "Failed to find the Windows Kit installation directory.\n");
                     return false;
@@ -202,6 +157,9 @@ NmakeMakefileGenerator::writeMakefile(QTextStream &t)
                     incDirs << crtInclude + QStringLiteral("/um");
                     incDirs << crtInclude + QStringLiteral("/shared");
                     incDirs << crtInclude + QStringLiteral("/winrt");
+
+                    incDirs << kitDir + QStringLiteral("Extension SDKs/WindowsMobile/")
+                                      + crtVersion + QStringLiteral("/Include/WinRT");
 
                     libDirs << vcInstallDir + QStringLiteral("lib/store/") + compilerArch;
                     libDirs << vcInstallDir + QStringLiteral("atlmfc/lib") + compilerArch;
@@ -266,21 +224,13 @@ void NmakeMakefileGenerator::writeSubMakeCall(QTextStream &t, const QString &cal
     Win32MakefileGenerator::writeSubMakeCall(t, callPrefix, makeArguments);
 }
 
-QString NmakeMakefileGenerator::getPdbTarget()
-{
-    return QString(project->first("TARGET") + project->first("TARGET_VERSION_EXT") + ".pdb");
-}
-
 QString NmakeMakefileGenerator::defaultInstall(const QString &t)
 {
-    if((t != "target" && t != "dlltarget") ||
-       (t == "dlltarget" && (project->first("TEMPLATE") != "lib" || !project->isActiveConfig("shared"))) ||
-        project->first("TEMPLATE") == "subdirs")
-       return QString();
-
     QString ret = Win32MakefileGenerator::defaultInstall(t);
+    if (ret.isEmpty())
+        return ret;
 
-    const QString root = "$(INSTALL_ROOT)";
+    const QString root = installRoot();
     ProStringList &uninst = project->values(ProKey(t + ".uninstall"));
     QString targetdir = fileFixify(project->first(ProKey(t + ".path")).toQString(), FileFixifyAbsolute);
     if(targetdir.right(1) != Option::dir_sep)
@@ -288,7 +238,7 @@ QString NmakeMakefileGenerator::defaultInstall(const QString &t)
 
     if (project->isActiveConfig("debug_info")) {
         if (t == "dlltarget" || project->values(ProKey(t + ".CONFIG")).indexOf("no_dll") == -1) {
-            QString pdb_target = getPdbTarget();
+            QString pdb_target = project->first("TARGET") + project->first("TARGET_VERSION_EXT") + ".pdb";
             QString src_targ = (project->isEmpty("DESTDIR") ? QString("$(DESTDIR)") : project->first("DESTDIR")) + pdb_target;
             QString dst_targ = filePrefixRoot(root, fileFixify(targetdir + pdb_target, FileFixifyAbsolute));
             if(!ret.isEmpty())
@@ -342,7 +292,7 @@ QString NmakeMakefileGenerator::var(const ProKey &value) const
             QString precompRule = QString("-c -FI%1 -Yu%2 -Fp%3")
                     .arg(precompH_f, precompH_f, escapeFilePath(precompPch));
             QString p = MakefileGenerator::var(value);
-            p.replace("-c", precompRule);
+            p.replace(QLatin1String("-c"), precompRule);
             // Cannot use -Gm with -FI & -Yu, as this gives an
             // internal compiler error, on the newer compilers
             // ### work-around for a VS 2003 bug. Move to some prf file or remove completely.
@@ -372,8 +322,6 @@ void NmakeMakefileGenerator::init()
             project->values("MAKEFILE").append("Makefile");
         return;
     }
-
-    project->values("QMAKE_L_FLAG") << "/LIBPATH:";
 
     processVars();
 
@@ -419,21 +367,22 @@ void NmakeMakefileGenerator::init()
         project->values("PRECOMPILED_PCH")    = ProStringList(precompPch);
     }
 
-    ProString version = project->first("TARGET_VERSION_EXT");
+    ProString tgt = project->first("DESTDIR")
+                    + project->first("TARGET") + project->first("TARGET_VERSION_EXT");
     if(project->isActiveConfig("shared")) {
-        project->values("QMAKE_CLEAN").append(project->first("DESTDIR") + project->first("TARGET") + version + ".exp");
-        project->values("QMAKE_DISTCLEAN").append(project->first("DESTDIR") + project->first("TARGET") + version + ".lib");
+        project->values("QMAKE_CLEAN").append(tgt + ".exp");
+        project->values("QMAKE_DISTCLEAN").append(tgt + ".lib");
     }
     if (project->isActiveConfig("debug_info")) {
-        QString pdbfile = project->first("DESTDIR") + project->first("TARGET") + version + ".pdb";
+        QString pdbfile = tgt + ".pdb";
         QString escapedPdbFile = escapeFilePath(pdbfile);
         project->values("QMAKE_CFLAGS").append("/Fd" + escapedPdbFile);
         project->values("QMAKE_CXXFLAGS").append("/Fd" + escapedPdbFile);
         project->values("QMAKE_DISTCLEAN").append(pdbfile);
     }
     if (project->isActiveConfig("debug")) {
-        project->values("QMAKE_CLEAN").append(project->first("DESTDIR") + project->first("TARGET") + version + ".ilk");
-        project->values("QMAKE_CLEAN").append(project->first("DESTDIR") + project->first("TARGET") + version + ".idb");
+        project->values("QMAKE_CLEAN").append(tgt + ".ilk");
+        project->values("QMAKE_CLEAN").append(tgt + ".idb");
     } else {
         ProStringList &defines = project->values("DEFINES");
         if (!defines.contains("NDEBUG"))
@@ -445,15 +394,17 @@ QStringList NmakeMakefileGenerator::sourceFilesForImplicitRulesFilter()
 {
     QStringList filter;
     const QChar wildcard = QLatin1Char('*');
-    foreach (const QString &ext, Option::c_ext)
+    for (const QString &ext : qAsConst(Option::c_ext))
         filter << wildcard + ext;
-    foreach (const QString &ext, Option::cpp_ext)
+    for (const QString &ext : qAsConst(Option::cpp_ext))
         filter << wildcard + ext;
     return filter;
 }
 
 void NmakeMakefileGenerator::writeImplicitRulesPart(QTextStream &t)
 {
+    t << "####### Implicit rules\n\n";
+
     t << ".SUFFIXES:";
     for(QStringList::Iterator cit = Option::c_ext.begin(); cit != Option::c_ext.end(); ++cit)
         t << " " << (*cit);
@@ -493,7 +444,7 @@ void NmakeMakefileGenerator::writeImplicitRulesPart(QTextStream &t)
         const QStringList sourceFilesFilter = sourceFilesForImplicitRulesFilter();
         QStringList fixifiedSourceDirs = fileFixify(source_directories.toList(), FileFixifyAbsolute);
         fixifiedSourceDirs.removeDuplicates();
-        foreach (const QString &sourceDir, fixifiedSourceDirs) {
+        for (const QString &sourceDir : qAsConst(fixifiedSourceDirs)) {
             QDirIterator dit(sourceDir, sourceFilesFilter, QDir::Files | QDir::NoDotAndDotDot);
             while (dit.hasNext()) {
                 dit.next();
@@ -518,7 +469,7 @@ void NmakeMakefileGenerator::writeImplicitRulesPart(QTextStream &t)
         project->variables().remove("QMAKE_RUN_CXX");
         project->variables().remove("QMAKE_RUN_CC");
 
-        foreach (const QString &sourceDir, source_directories) {
+        for (const QString &sourceDir : qAsConst(source_directories)) {
             if (sourceDir.isEmpty())
                 continue;
             QString objDir = var("OBJECTS_DIR");
@@ -630,12 +581,6 @@ void NmakeMakefileGenerator::writeBuildRulesPart(QTextStream &t)
             t << "\n\t";
             writeLinkCommand(t);
         }
-    }
-    QString signature = !project->isEmpty("SIGNATURE_FILE") ? var("SIGNATURE_FILE") : var("DEFAULT_SIGNATURE");
-    bool useSignature = !signature.isEmpty() && !project->isActiveConfig("staticlib") &&
-                        !project->isEmpty("CE_SDK") && !project->isEmpty("CE_ARCH");
-    if(useSignature) {
-        t << "\n\tsigntool sign /F " << escapeFilePath(signature) << " $(DESTDIR_TARGET)";
     }
     if(!project->isEmpty("QMAKE_POST_LINK")) {
         t << "\n\t" << var("QMAKE_POST_LINK");

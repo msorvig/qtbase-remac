@@ -13,13 +13,13 @@ wince* {
 	DEPLOYMENT += addit tests sourceFile
 }
 
-android|wince {
+android {
     DEFINES += SRCDIR=\\\"./\\\"
 } else {
     DEFINES += SRCDIR=\\\"$$PWD/\\\"
 }
 
-android: !android-no-sdk {
+android {
     RESOURCES += \
         testdata.qrc
 }

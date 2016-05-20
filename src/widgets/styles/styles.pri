@@ -14,7 +14,9 @@ HEADERS += \
         styles/qproxystyle_p.h \
         styles/qcommonstyle_p.h \
         styles/qstylepainter.h \
-        styles/qstylesheetstyle_p.h
+        styles/qstylesheetstyle_p.h \
+        styles/qpixmapstyle_p.h \
+        styles/qpixmapstyle_p_p.h
 
 SOURCES += \
         styles/qdrawutil.cpp \
@@ -28,13 +30,10 @@ SOURCES += \
         styles/qproxystyle.cpp \
         styles/qstylepainter.cpp \
         styles/qstylesheetstyle.cpp \
-        styles/qstylesheetstyle_default.cpp
+        styles/qstylesheetstyle_default.cpp \
+        styles/qpixmapstyle.cpp
 
-wince* {
-    RESOURCES += styles/qstyle_wince.qrc
-} else {
-    RESOURCES += styles/qstyle.qrc
-}
+RESOURCES += styles/qstyle.qrc
 
 contains( styles, all ) {
     styles = fusion mac windows windowsxp windowsvista
@@ -46,7 +45,8 @@ contains( styles, mac ) {
     HEADERS += \
         styles/qmacstyle_mac_p.h \
         styles/qmacstyle_mac_p_p.h
-        OBJECTIVE_SOURCES += styles/qmacstyle_mac.mm
+    OBJECTIVE_SOURCES += styles/qmacstyle_mac.mm
+    LIBS_PRIVATE += -framework Carbon
 } else {
     DEFINES += QT_NO_STYLE_MAC
 }
@@ -89,22 +89,6 @@ contains( styles, fusion ) {
         SOURCES += styles/qfusionstyle.cpp
 } else {
     DEFINES += QT_NO_STYLE_FUSION
-}
-
-contains( styles, windowsce ) {
-    HEADERS += styles/qwindowscestyle_p.h
-    HEADERS += styles/qwindowscestyle_p_p.h
-    SOURCES += styles/qwindowscestyle.cpp
-} else {
-    DEFINES += QT_NO_STYLE_WINDOWSCE
-}
-
-contains( styles, windowsmobile ) {
-    HEADERS += styles/qwindowsmobilestyle_p.h
-    HEADERS += styles/qwindowsmobilestyle_p_p.h
-    SOURCES += styles/qwindowsmobilestyle.cpp
-} else {
-    DEFINES += QT_NO_STYLE_WINDOWSMOBILE
 }
 
 contains( styles, android ) {

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -321,7 +327,7 @@ class QMap
     QMapData<Key, T> *d;
 
 public:
-    inline QMap() : d(static_cast<QMapData<Key, T> *>(const_cast<QMapDataBase *>(&QMapDataBase::shared_null))) { }
+    inline QMap() Q_DECL_NOTHROW : d(static_cast<QMapData<Key, T> *>(const_cast<QMapDataBase *>(&QMapDataBase::shared_null))) { }
 #ifdef Q_COMPILER_INITIALIZER_LISTS
     inline QMap(std::initializer_list<std::pair<Key,T> > list)
         : d(static_cast<QMapData<Key, T> *>(const_cast<QMapDataBase *>(&QMapDataBase::shared_null)))
@@ -336,17 +342,17 @@ public:
 
     QMap<Key, T> &operator=(const QMap<Key, T> &other);
 #ifdef Q_COMPILER_RVALUE_REFS
-    inline QMap(QMap<Key, T> &&other)
+    inline QMap(QMap<Key, T> &&other) Q_DECL_NOTHROW
         : d(other.d)
     {
         other.d = static_cast<QMapData<Key, T> *>(
                 const_cast<QMapDataBase *>(&QMapDataBase::shared_null));
     }
 
-    inline QMap<Key, T> &operator=(QMap<Key, T> &&other)
+    inline QMap<Key, T> &operator=(QMap<Key, T> &&other) Q_DECL_NOTHROW
     { QMap moved(std::move(other)); swap(moved); return *this; }
 #endif
-    inline void swap(QMap<Key, T> &other) { qSwap(d, other.d); }
+    inline void swap(QMap<Key, T> &other) Q_DECL_NOTHROW { qSwap(d, other.d); }
     explicit QMap(const typename std::map<Key, T> &other);
     std::map<Key, T> toStdMap() const;
 
@@ -634,6 +640,8 @@ Q_INLINE_TEMPLATE void QMap<Key, T>::clear()
     *this = QMap<Key, T>();
 }
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_CLANG("-Wreturn-stack-address")
 
 template <class Key, class T>
 Q_INLINE_TEMPLATE const T QMap<Key, T>::value(const Key &akey, const T &adefaultValue) const
@@ -641,6 +649,8 @@ Q_INLINE_TEMPLATE const T QMap<Key, T>::value(const Key &akey, const T &adefault
     Node *n = d->findNode(akey);
     return n ? n->value : adefaultValue;
 }
+
+QT_WARNING_POP
 
 template <class Key, class T>
 Q_INLINE_TEMPLATE const T QMap<Key, T>::operator[](const Key &akey) const
@@ -903,7 +913,7 @@ template <class Key, class T>
 void QMap<Key, T>::dump() const
 {
     const_iterator it = begin();
-    qDebug() << "map dump:";
+    qDebug("map dump:");
     while (it != end()) {
         const QMapNodeBase *n = it.i;
         int depth = 0;
@@ -916,7 +926,7 @@ void QMap<Key, T>::dump() const
                  << it.key() << it.value();
         ++it;
     }
-    qDebug() << "---------";
+    qDebug("---------");
 }
 #endif
 
@@ -1168,7 +1178,7 @@ template <class Key, class T>
 class QMultiMap : public QMap<Key, T>
 {
 public:
-    QMultiMap() {}
+    QMultiMap() Q_DECL_NOTHROW {}
 #ifdef Q_COMPILER_INITIALIZER_LISTS
     inline QMultiMap(std::initializer_list<std::pair<Key,T> > list)
     {
@@ -1177,7 +1187,10 @@ public:
     }
 #endif
     QMultiMap(const QMap<Key, T> &other) : QMap<Key, T>(other) {}
-    inline void swap(QMultiMap<Key, T> &other) { QMap<Key, T>::swap(other); }
+#ifdef Q_COMPILER_RVALUE_REFS
+    QMultiMap(QMap<Key, T> &&other) Q_DECL_NOTHROW : QMap<Key, T>(std::move(other)) {}
+#endif
+    void swap(QMultiMap<Key, T> &other) Q_DECL_NOTHROW { QMap<Key, T>::swap(other); }
 
     inline typename QMap<Key, T>::iterator replace(const Key &key, const T &value)
     { return QMap<Key, T>::insert(key, value); }

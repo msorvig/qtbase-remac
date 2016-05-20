@@ -1,32 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2012 Intel Corporation.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -62,11 +57,13 @@ private slots:
     void basics_data();
     void basics();
     void operators();
+    void nullptrOps();
     void swap();
     void moveSemantics();
     void useOfForwardDeclared();
     void memoryManagement();
     void dropLastReferenceOfForwardDeclared();
+    void nonVirtualDestructors();
     void lock();
     void downCast();
     void functionCallDownCast();
@@ -95,18 +92,18 @@ private slots:
     void creatingQObject();
     void mixTrackingPointerCode();
     void reentrancyWhileDestructing();
-
-    void threadStressTest_data();
-    void threadStressTest();
     void map();
     void hash();
-    void validConstructs();
-    void invalidConstructs_data();
-    void invalidConstructs();
-
     void qvariantCast();
     void sharedFromThis();
 
+    void threadStressTest_data();
+    void threadStressTest();
+    void validConstructs();
+    void invalidConstructs_data();
+    void invalidConstructs();
+    // let invalidConstructs be the last test, because it's the slowest;
+    // add new tests above this block
 public slots:
     void cleanup() { safetyCheck(); }
 
@@ -232,6 +229,14 @@ void tst_QSharedPointer::basics()
         QCOMPARE(sizeof(weakref), 2*sizeof(void*));
     }
 
+    {
+        QSharedPointer<const Data> ptr;
+        QWeakPointer<const Data> weakref;
+
+        QCOMPARE(sizeof(ptr), 2*sizeof(void*));
+        QCOMPARE(sizeof(weakref), 2*sizeof(void*));
+    }
+
     QFETCH(bool, isNull);
     Data *aData = 0;
     if (!isNull)
@@ -247,8 +252,10 @@ void tst_QSharedPointer::basics()
 
         QCOMPARE(ptr.data(), aData);
         QCOMPARE(ptr.operator->(), aData);
-        Data &dataReference = *ptr;
-        QCOMPARE(&dataReference, aData);
+        if (!isNull) {
+            Data &dataReference = *ptr;
+            QCOMPARE(&dataReference, aData);
+        }
 
         QVERIFY(ptr == aData);
         QVERIFY(!(ptr != aData));
@@ -355,6 +362,30 @@ void tst_QSharedPointer::operators()
     // qHash
     QCOMPARE(qHash(p1), qHash(p1.data()));
     QCOMPARE(qHash(p2), qHash(p2.data()));
+}
+
+void tst_QSharedPointer::nullptrOps()
+{
+    QSharedPointer<char> p1(nullptr);
+    QSharedPointer<char> p2 = nullptr;
+    QSharedPointer<char> null;
+
+    QVERIFY(p1 == null);
+    QVERIFY(p2 == null);
+    QVERIFY(!p1.data());
+    QVERIFY(!p2.data());
+
+    QSharedPointer<char> p3 = p1;
+    QVERIFY(p3 == null);
+    QVERIFY(!p3.data());
+
+    p3 = nullptr;
+
+    // check for non-ambiguity
+    QSharedPointer<char> p1_zero(0);
+    QSharedPointer<char> p2_zero = 0;
+
+    p3 = 0;
 }
 
 void tst_QSharedPointer::swap()
@@ -571,6 +602,56 @@ void tst_QSharedPointer::dropLastReferenceOfForwardDeclared()
     forwardDeclaredDestructorRunCount = 0;
     delete forwardPointer();
     QCOMPARE(forwardDeclaredDestructorRunCount, 1);
+}
+
+// NVD for "non-virtual destructor"
+struct NVDData
+{
+    static int destructorCounter;
+    ~NVDData() { ++destructorCounter; }
+
+    int dummy;
+};
+int NVDData::destructorCounter;
+
+struct NVDDerivedData : NVDData
+{
+    static int destructorCounter;
+    ~NVDDerivedData() { ++destructorCounter; }
+};
+int NVDDerivedData::destructorCounter;
+
+void tst_QSharedPointer::nonVirtualDestructors()
+{
+    NVDData::destructorCounter = NVDDerivedData::destructorCounter = 0;
+    {
+        QSharedPointer<NVDData> ptr(new NVDData);
+    }
+    QCOMPARE(NVDData::destructorCounter, 1);
+    QCOMPARE(NVDDerivedData::destructorCounter, 0);
+
+    NVDData::destructorCounter = NVDDerivedData::destructorCounter = 0;
+    {
+        QSharedPointer<NVDDerivedData> ptr(new NVDDerivedData);
+    }
+    QCOMPARE(NVDData::destructorCounter, 1);
+    QCOMPARE(NVDDerivedData::destructorCounter, 1);
+
+    NVDData::destructorCounter = NVDDerivedData::destructorCounter = 0;
+    {
+        QSharedPointer<NVDData> bptr;
+        QSharedPointer<NVDDerivedData> ptr(new NVDDerivedData);
+        bptr = ptr;
+    }
+    QCOMPARE(NVDData::destructorCounter, 1);
+    QCOMPARE(NVDDerivedData::destructorCounter, 1);
+
+    NVDData::destructorCounter = NVDDerivedData::destructorCounter = 0;
+    {
+        QSharedPointer<NVDData> ptr(new NVDDerivedData);
+    }
+    QCOMPARE(NVDData::destructorCounter, 1);
+    QCOMPARE(NVDDerivedData::destructorCounter, 1);
 }
 
 void tst_QSharedPointer::lock()
@@ -1305,6 +1386,18 @@ template<typename T> int CustomDeleter<T>::callCount = 0;
 void tst_QSharedPointer::customDeleter()
 {
     {
+        QSharedPointer<Data> ptr(0, &Data::doDelete);
+        QSharedPointer<Data> ptr2(0, &Data::alsoDelete);
+        QSharedPointer<Data> ptr3(0, &Data::virtualDelete);
+    }
+    safetyCheck();
+    {
+        QSharedPointer<Data> ptr(nullptr, &Data::doDelete);
+        QSharedPointer<Data> ptr2(nullptr, &Data::alsoDelete);
+        QSharedPointer<Data> ptr3(nullptr, &Data::virtualDelete);
+    }
+    safetyCheck();
+    {
         QSharedPointer<Data> ptr(new Data, &Data::doDelete);
         QSharedPointer<Data> ptr2(new Data, &Data::alsoDelete);
         QSharedPointer<Data> ptr3(new Data, &Data::virtualDelete);
@@ -1485,6 +1578,33 @@ void tst_QSharedPointer::customDeleter()
     QCOMPARE(dataDeleter.callCount, 0);
     QCOMPARE(derivedDataDeleter.callCount, 1);
     QCOMPARE(refcount, 2);
+    safetyCheck();
+
+    CustomDeleter<NVDData> nvdeleter;
+    nvdeleter.callCount = 0;
+    {
+        QSharedPointer<NVDData> ptr(new NVDData, nvdeleter);
+    }
+    QCOMPARE(nvdeleter.callCount, 1);
+    safetyCheck();
+
+    CustomDeleter<NVDDerivedData> nvderiveddeleter;
+    nvdeleter.callCount = 0;
+    nvderiveddeleter.callCount = 0;
+    {
+        QSharedPointer<NVDDerivedData> ptr(new NVDDerivedData, nvderiveddeleter);
+    }
+    QCOMPARE(nvdeleter.callCount, 0);
+    QCOMPARE(nvderiveddeleter.callCount, 1);
+    safetyCheck();
+
+    nvdeleter.callCount = 0;
+    nvderiveddeleter.callCount = 0;
+    {
+        QSharedPointer<NVDData> ptr(new NVDDerivedData, nvderiveddeleter);
+    }
+    QCOMPARE(nvdeleter.callCount, 0);
+    QCOMPARE(nvderiveddeleter.callCount, 1);
     safetyCheck();
 
     // a custom deleter with a different pointer parameter
@@ -1766,13 +1886,11 @@ void tst_QSharedPointer::threadStressTest_data()
     QTest::newRow("1+1") << 1 << 1;
 
     QTest::newRow("2+10") << 2 << 10;
-#ifndef Q_OS_WINCE
-    // Windows CE cannot run this many threads
+
     QTest::newRow("5+10") << 5 << 10;
     QTest::newRow("5+30") << 5 << 30;
 
     QTest::newRow("100+100") << 100 << 100;
-#endif
 }
 
 void tst_QSharedPointer::threadStressTest()
@@ -1806,11 +1924,7 @@ void tst_QSharedPointer::threadStressTest()
 
         base.clear();
 
-#ifdef Q_OS_WINCE
-        srand(QDateTime::currentDateTime().toTime_t());
-#else
         srand(time(NULL));
-#endif
         // start threads
         for (int i = 0; i < allThreads.count(); ++i)
             if (allThreads[i]) allThreads[i]->start();
@@ -2232,6 +2346,16 @@ void tst_QSharedPointer::sharedFromThis()
         QVERIFY(const_scp.isNull());
         QCOMPARE(Data::generationCounter, generations + 1);
         QCOMPARE(Data::destructorCounter, destructions);
+
+        QWeakPointer<SomeClass> wcp = sc.sharedFromThis();
+        QVERIFY(wcp.isNull());
+        QCOMPARE(Data::generationCounter, generations + 1);
+        QCOMPARE(Data::destructorCounter, destructions);
+
+        QWeakPointer<const SomeClass> const_wcp = sc.sharedFromThis();
+        QVERIFY(const_wcp.isNull());
+        QCOMPARE(Data::generationCounter, generations + 1);
+        QCOMPARE(Data::destructorCounter, destructions);
     }
 
     QCOMPARE(Data::generationCounter, generations + 1);
@@ -2241,6 +2365,11 @@ void tst_QSharedPointer::sharedFromThis()
         const SomeClass sc;
         QSharedPointer<const SomeClass> const_scp = sc.sharedFromThis();
         QVERIFY(const_scp.isNull());
+        QCOMPARE(Data::generationCounter, generations + 2);
+        QCOMPARE(Data::destructorCounter, destructions + 1);
+
+        QWeakPointer<const SomeClass> const_wcp = sc.sharedFromThis();
+        QVERIFY(const_wcp.isNull());
         QCOMPARE(Data::generationCounter, generations + 2);
         QCOMPARE(Data::destructorCounter, destructions + 1);
     }
@@ -2434,6 +2563,21 @@ void tst_QSharedPointer::sharedFromThis()
 
     QCOMPARE(Data::generationCounter, generations + 5);
     QCOMPARE(Data::destructorCounter, destructions + 5);
+
+    {
+        QSharedPointer<const SomeClass> scp2(new SomeClass());
+        QVERIFY(!scp2.isNull());
+        QCOMPARE(Data::generationCounter, generations + 6);
+        QCOMPARE(Data::destructorCounter, destructions + 5);
+
+        QWeakPointer<const SomeClass> wcp2(scp2.constCast<SomeClass>());
+        QVERIFY(!wcp2.isNull());
+        QCOMPARE(Data::generationCounter, generations + 6);
+        QCOMPARE(Data::destructorCounter, destructions + 5);
+    }
+
+    QCOMPARE(Data::generationCounter, generations + 6);
+    QCOMPARE(Data::destructorCounter, destructions + 6);
 }
 
 namespace ReentrancyWhileDestructing {

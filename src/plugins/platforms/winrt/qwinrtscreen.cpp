@@ -1,34 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL3$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
 ** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
 ** packaging of this file. Please review the following information to
 ** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
 ** GNU General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,8 +42,10 @@
 #include "qwinrtbackingstore.h"
 #include "qwinrtinputcontext.h"
 #include "qwinrtcursor.h"
+#include "qwinrtwindow.h"
 #include <private/qeventdispatcher_winrt_p.h>
 
+#include <QtCore/QLoggingCategory>
 #include <QtGui/QSurfaceFormat>
 #include <QtGui/QGuiApplication>
 #include <qpa/qwindowsysteminterface.h>
@@ -83,11 +88,32 @@ typedef ITypedEventHandler<CoreWindow*, PointerEventArgs*> PointerHandler;
 typedef ITypedEventHandler<CoreWindow*, WindowSizeChangedEventArgs*> SizeChangedHandler;
 typedef ITypedEventHandler<CoreWindow*, VisibilityChangedEventArgs*> VisibilityChangedHandler;
 typedef ITypedEventHandler<DisplayInformation*, IInspectable*> DisplayInformationHandler;
-#ifdef Q_OS_WINPHONE
-typedef ITypedEventHandler<StatusBar*, IInspectable*> StatusBarHandler;
-#endif
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+typedef ITypedEventHandler<ApplicationView*, IInspectable*> VisibleBoundsChangedHandler;
+#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
 
 QT_BEGIN_NAMESPACE
+
+struct KeyInfo {
+    KeyInfo()
+        : virtualKey(0)
+    {
+    }
+
+    KeyInfo(const QString &text, quint32 virtualKey)
+        : text(text)
+        , virtualKey(virtualKey)
+    {
+    }
+
+    KeyInfo(quint32 virtualKey)
+        : virtualKey(virtualKey)
+    {
+    }
+
+    QString text;
+    quint32 virtualKey;
+};
 
 static inline Qt::ScreenOrientations qtOrientationsFromNative(DisplayOrientations native)
 {
@@ -393,6 +419,23 @@ static inline Qt::Key qKeyFromVirtual(VirtualKey key)
     }
 }
 
+// Some keys like modifiers, caps lock etc. should not be automatically repeated if the key is held down
+static inline bool shouldAutoRepeat(Qt::Key key)
+{
+    switch (key) {
+    case Qt::Key_Shift:
+    case Qt::Key_Control:
+    case Qt::Key_Alt:
+    case Qt::Key_Meta:
+    case Qt::Key_CapsLock:
+    case Qt::Key_NumLock:
+    case Qt::Key_ScrollLock:
+        return false;
+    default:
+        return true;
+    }
+}
+
 static inline Qt::Key qKeyFromCode(quint32 code, int mods)
 {
     if (code >= 'a' && code <= 'z')
@@ -408,10 +451,10 @@ typedef HRESULT (__stdcall ICoreWindow::*CoreWindowCallbackRemover)(EventRegistr
 uint qHash(CoreWindowCallbackRemover key) { void *ptr = *(void **)(&key); return qHash(ptr); }
 typedef HRESULT (__stdcall IDisplayInformation::*DisplayCallbackRemover)(EventRegistrationToken);
 uint qHash(DisplayCallbackRemover key) { void *ptr = *(void **)(&key); return qHash(ptr); }
-#ifdef Q_OS_WINPHONE
-typedef HRESULT (__stdcall IStatusBar::*StatusBarCallbackRemover)(EventRegistrationToken);
-uint qHash(StatusBarCallbackRemover key) { void *ptr = *(void **)(&key); return qHash(ptr); }
-#endif
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+typedef HRESULT (__stdcall IApplicationView2::*ApplicationView2CallbackRemover)(EventRegistrationToken);
+uint qHash(ApplicationView2CallbackRemover key) { void *ptr = *(void **)(&key); return qHash(ptr); }
+#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
 
 class QWinRTScreenPrivate
 {
@@ -421,13 +464,11 @@ public:
     ComPtr<Xaml::IDependencyObject> canvas;
     ComPtr<IApplicationView> view;
     ComPtr<IDisplayInformation> displayInformation;
-#ifdef Q_OS_WINPHONE
-    ComPtr<IStatusBar> statusBar;
-#endif
 
     QScopedPointer<QWinRTCursor> cursor;
     QHash<quint32, QWindowSystemInterface::TouchPoint> touchPoints;
-    QSizeF logicalSize;
+    QRectF logicalRect;
+    QRectF visibleRect;
     QSurfaceFormat surfaceFormat;
     qreal logicalDpi;
     QDpi physicalDpi;
@@ -435,27 +476,36 @@ public:
     Qt::ScreenOrientation nativeOrientation;
     Qt::ScreenOrientation orientation;
     QList<QWindow *> visibleWindows;
-#ifndef Q_OS_WINPHONE
-    QHash<quint32, QPair<Qt::Key, QString>> activeKeys;
-#endif
-
+    QHash<Qt::Key, KeyInfo> activeKeys;
     QHash<CoreWindowCallbackRemover, EventRegistrationToken> windowTokens;
     QHash<DisplayCallbackRemover, EventRegistrationToken> displayTokens;
-#ifdef Q_OS_WINPHONE
-    QHash<StatusBarCallbackRemover, EventRegistrationToken> statusBarTokens;
-#endif
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+    QHash<ApplicationView2CallbackRemover, EventRegistrationToken> view2Tokens;
+    ComPtr<IApplicationView2> view2;
+#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
 };
 
 // To be called from the XAML thread
-QWinRTScreen::QWinRTScreen(Xaml::IWindow *xamlWindow)
+QWinRTScreen::QWinRTScreen()
     : d_ptr(new QWinRTScreenPrivate)
 {
     Q_D(QWinRTScreen);
+    qCDebug(lcQpaWindows) << __FUNCTION__;
     d->orientation = Qt::PrimaryOrientation;
     d->touchDevice = Q_NULLPTR;
 
     HRESULT hr;
-    hr = xamlWindow->get_CoreWindow(&d->coreWindow);
+    ComPtr<Xaml::IWindowStatics> windowStatics;
+    hr = RoGetActivationFactory(HString::MakeReference(RuntimeClass_Windows_UI_Xaml_Window).Get(),
+                                IID_PPV_ARGS(&windowStatics));
+    Q_ASSERT_SUCCEEDED(hr);
+    ComPtr<Xaml::IWindow> window;
+    hr = windowStatics->get_Current(&window);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = window->Activate();
+    Q_ASSERT_SUCCEEDED(hr);
+
+    hr = window->get_CoreWindow(&d->coreWindow);
     Q_ASSERT_SUCCEEDED(hr);
     hr = d->coreWindow->Activate();
     Q_ASSERT_SUCCEEDED(hr);
@@ -463,36 +513,8 @@ QWinRTScreen::QWinRTScreen(Xaml::IWindow *xamlWindow)
     Rect rect;
     hr = d->coreWindow->get_Bounds(&rect);
     Q_ASSERT_SUCCEEDED(hr);
-    d->logicalSize = QSizeF(rect.Width, rect.Height);
-
-    hr = d->coreWindow->add_KeyDown(Callback<KeyHandler>(this, &QWinRTScreen::onKeyDown).Get(), &d->windowTokens[&ICoreWindow::remove_KeyDown]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_KeyUp(Callback<KeyHandler>(this, &QWinRTScreen::onKeyUp).Get(), &d->windowTokens[&ICoreWindow::remove_KeyUp]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_CharacterReceived(Callback<CharacterReceivedHandler>(this, &QWinRTScreen::onCharacterReceived).Get(), &d->windowTokens[&ICoreWindow::remove_CharacterReceived]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_PointerEntered(Callback<PointerHandler>(this, &QWinRTScreen::onPointerEntered).Get(), &d->windowTokens[&ICoreWindow::remove_PointerEntered]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_PointerExited(Callback<PointerHandler>(this, &QWinRTScreen::onPointerExited).Get(), &d->windowTokens[&ICoreWindow::remove_PointerExited]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_PointerMoved(Callback<PointerHandler>(this, &QWinRTScreen::onPointerUpdated).Get(), &d->windowTokens[&ICoreWindow::remove_PointerMoved]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_PointerPressed(Callback<PointerHandler>(this, &QWinRTScreen::onPointerUpdated).Get(), &d->windowTokens[&ICoreWindow::remove_PointerPressed]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_PointerReleased(Callback<PointerHandler>(this, &QWinRTScreen::onPointerUpdated).Get(), &d->windowTokens[&ICoreWindow::remove_PointerReleased]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_PointerWheelChanged(Callback<PointerHandler>(this, &QWinRTScreen::onPointerUpdated).Get(), &d->windowTokens[&ICoreWindow::remove_PointerWheelChanged]);
-    Q_ASSERT_SUCCEEDED(hr);
-#ifndef Q_OS_WINPHONE
-    hr = d->coreWindow->add_SizeChanged(Callback<SizeChangedHandler>(this, &QWinRTScreen::onSizeChanged).Get(), &d->windowTokens[&ICoreWindow::remove_SizeChanged]);
-    Q_ASSERT_SUCCEEDED(hr);
-#endif
-    hr = d->coreWindow->add_Activated(Callback<ActivatedHandler>(this, &QWinRTScreen::onActivated).Get(), &d->windowTokens[&ICoreWindow::remove_Activated]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_Closed(Callback<ClosedHandler>(this, &QWinRTScreen::onClosed).Get(), &d->windowTokens[&ICoreWindow::remove_Closed]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->coreWindow->add_VisibilityChanged(Callback<VisibilityChangedHandler>(this, &QWinRTScreen::onVisibilityChanged).Get(), &d->windowTokens[&ICoreWindow::remove_VisibilityChanged]);
-    Q_ASSERT_SUCCEEDED(hr);
+    d->logicalRect = QRectF(0.0f, 0.0f, rect.Width, rect.Height);
+    d->visibleRect = QRectF(0.0f, 0.0f, rect.Width, rect.Height);
 
     // Orientation handling
     ComPtr<IDisplayInformationStatics> displayInformationStatics;
@@ -508,17 +530,9 @@ QWinRTScreen::QWinRTScreen(Xaml::IWindow *xamlWindow)
     hr = d->displayInformation->get_NativeOrientation(&displayOrientation);
     Q_ASSERT_SUCCEEDED(hr);
     d->nativeOrientation = static_cast<Qt::ScreenOrientation>(static_cast<int>(qtOrientationsFromNative(displayOrientation)));
-
-    hr = d->displayInformation->add_OrientationChanged(Callback<DisplayInformationHandler>(this, &QWinRTScreen::onOrientationChanged).Get(), &d->displayTokens[&IDisplayInformation::remove_OrientationChanged]);
-    Q_ASSERT_SUCCEEDED(hr);
-
-    hr = d->displayInformation->add_DpiChanged(Callback<DisplayInformationHandler>(this, &QWinRTScreen::onDpiChanged).Get(), &d->displayTokens[&IDisplayInformation::remove_DpiChanged]);
-    Q_ASSERT_SUCCEEDED(hr);
-
-    // Set initial orientation & pixel density
+    // Set initial pixel density
     onDpiChanged(Q_NULLPTR, Q_NULLPTR);
     d->orientation = d->nativeOrientation;
-    onOrientationChanged(Q_NULLPTR, Q_NULLPTR);
 
     ComPtr<IApplicationViewStatics2> applicationViewStatics;
     hr = RoGetActivationFactory(HString::MakeReference(RuntimeClass_Windows_UI_ViewManagement_ApplicationView).Get(),
@@ -535,37 +549,30 @@ QWinRTScreen::QWinRTScreen(Xaml::IWindow *xamlWindow)
     ComPtr<Xaml::IFrameworkElement> frameworkElement;
     hr = canvas.As(&frameworkElement);
     Q_ASSERT_SUCCEEDED(hr);
-    hr = frameworkElement->put_Width(d->logicalSize.width());
+    hr = frameworkElement->put_Width(d->logicalRect.width());
     Q_ASSERT_SUCCEEDED(hr);
-    hr = frameworkElement->put_Height(d->logicalSize.height());
+    hr = frameworkElement->put_Height(d->logicalRect.height());
     Q_ASSERT_SUCCEEDED(hr);
     ComPtr<Xaml::IUIElement> uiElement;
     hr = canvas.As(&uiElement);
     Q_ASSERT_SUCCEEDED(hr);
-    hr = xamlWindow->put_Content(uiElement.Get());
+    hr = window->put_Content(uiElement.Get());
     Q_ASSERT_SUCCEEDED(hr);
     hr = canvas.As(&d->canvas);
     Q_ASSERT_SUCCEEDED(hr);
 
     d->cursor.reset(new QWinRTCursor);
 
-#ifdef Q_OS_WINPHONE
-    ComPtr<IStatusBarStatics> statusBarStatics;
-    hr = RoGetActivationFactory(HString::MakeReference(RuntimeClass_Windows_UI_ViewManagement_StatusBar).Get(),
-                                IID_PPV_ARGS(&statusBarStatics));
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+    hr = d->view.As(&d->view2);
     Q_ASSERT_SUCCEEDED(hr);
-    hr = statusBarStatics->GetForCurrentView(&d->statusBar);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->statusBar->add_Showing(Callback<StatusBarHandler>(this, &QWinRTScreen::onStatusBarShowing).Get(), &d->statusBarTokens[&IStatusBar::remove_Showing]);
-    Q_ASSERT_SUCCEEDED(hr);
-    hr = d->statusBar->add_Hiding(Callback<StatusBarHandler>(this, &QWinRTScreen::onStatusBarHiding).Get(), &d->statusBarTokens[&IStatusBar::remove_Hiding]);
-    Q_ASSERT_SUCCEEDED(hr);
-#endif // Q_OS_WINPHONE
+#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
 }
 
 QWinRTScreen::~QWinRTScreen()
 {
     Q_D(QWinRTScreen);
+    qCDebug(lcQpaWindows) << __FUNCTION__ << this;
 
     // Unregister callbacks
     HRESULT hr;
@@ -579,12 +586,12 @@ QWinRTScreen::~QWinRTScreen()
             hr = (d->displayInformation.Get()->*i.key())(i.value());
             Q_ASSERT_SUCCEEDED(hr);
         }
-#ifdef Q_OS_WINPHONE
-        for (QHash<StatusBarCallbackRemover, EventRegistrationToken>::const_iterator i = d->statusBarTokens.begin(); i != d->statusBarTokens.end(); ++i) {
-            hr = (d->statusBar.Get()->*i.key())(i.value());
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+        for (QHash<ApplicationView2CallbackRemover, EventRegistrationToken>::const_iterator i = d->view2Tokens.begin(); i != d->view2Tokens.end(); ++i) {
+            hr = (d->view2.Get()->*i.key())(i.value());
             Q_ASSERT_SUCCEEDED(hr);
         }
-#endif //Q_OS_WINPHONE
+#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
         return hr;
     });
     RETURN_VOID_IF_FAILED("Failed to unregister screen event callbacks");
@@ -593,33 +600,17 @@ QWinRTScreen::~QWinRTScreen()
 QRect QWinRTScreen::geometry() const
 {
     Q_D(const QWinRTScreen);
-    return QRect(QPoint(), (d->logicalSize * d->scaleFactor).toSize());
+    return QRect(QPoint(), QSizeF(d->logicalRect.size() * d->scaleFactor).toSize());
 }
 
-#ifdef Q_OS_WINPHONE
 QRect QWinRTScreen::availableGeometry() const
 {
     Q_D(const QWinRTScreen);
-    QRect statusBar;
-    QEventDispatcherWinRT::runOnXamlThread([d, &statusBar]() {
-        HRESULT hr;
-        Rect rect;
-        hr = d->statusBar->get_OccludedRect(&rect);
-        Q_ASSERT_SUCCEEDED(hr);
-        statusBar.setRect(qRound(rect.X * d->scaleFactor),
-                          qRound(rect.Y * d->scaleFactor),
-                          qRound(rect.Width * d->scaleFactor),
-                          qRound(rect.Height * d->scaleFactor));
-        return S_OK;
-    });
-
-    return geometry().adjusted(
-                d->orientation == Qt::LandscapeOrientation ? statusBar.width() : 0,
-                d->orientation == Qt::PortraitOrientation ? statusBar.height() : 0,
-                d->orientation == Qt::InvertedLandscapeOrientation ? -statusBar.width() : 0,
-                0);
+    return QRectF((d->visibleRect.x() - d->logicalRect.x())* d->scaleFactor,
+                  (d->visibleRect.y() - d->logicalRect.y()) * d->scaleFactor,
+                  d->visibleRect.width() * d->scaleFactor,
+                  d->visibleRect.height() * d->scaleFactor).toRect();
 }
-#endif //Q_OS_WINPHONE
 
 int QWinRTScreen::depth() const
 {
@@ -634,14 +625,20 @@ QImage::Format QWinRTScreen::format() const
 QSizeF QWinRTScreen::physicalSize() const
 {
     Q_D(const QWinRTScreen);
-    return QSizeF(d->logicalSize.width() * d->scaleFactor / d->physicalDpi.first * qreal(25.4),
-                  d->logicalSize.height() * d->scaleFactor / d->physicalDpi.second * qreal(25.4));
+    return QSizeF(d->logicalRect.width() * d->scaleFactor / d->physicalDpi.first * qreal(25.4),
+                  d->logicalRect.height() * d->scaleFactor / d->physicalDpi.second * qreal(25.4));
 }
 
 QDpi QWinRTScreen::logicalDpi() const
 {
     Q_D(const QWinRTScreen);
     return QDpi(d->logicalDpi, d->logicalDpi);
+}
+
+qreal QWinRTScreen::pixelDensity() const
+{
+    Q_D(const QWinRTScreen);
+    return qRound(d->logicalDpi / 96);
 }
 
 qreal QWinRTScreen::scaleFactor() const
@@ -706,25 +703,49 @@ Xaml::IDependencyObject *QWinRTScreen::canvas() const
     return d->canvas.Get();
 }
 
-#ifdef Q_OS_WINPHONE
-void QWinRTScreen::setStatusBarVisibility(bool visible, QWindow *window)
+void QWinRTScreen::initialize()
 {
     Q_D(QWinRTScreen);
-    if (!window || (window->flags() & Qt::WindowType_Mask) != Qt::Window)
-        return;
+    HRESULT hr;
+    hr = d->coreWindow->add_KeyDown(Callback<KeyHandler>(this, &QWinRTScreen::onKeyDown).Get(), &d->windowTokens[&ICoreWindow::remove_KeyDown]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_KeyUp(Callback<KeyHandler>(this, &QWinRTScreen::onKeyUp).Get(), &d->windowTokens[&ICoreWindow::remove_KeyUp]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_CharacterReceived(Callback<CharacterReceivedHandler>(this, &QWinRTScreen::onCharacterReceived).Get(), &d->windowTokens[&ICoreWindow::remove_CharacterReceived]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_PointerEntered(Callback<PointerHandler>(this, &QWinRTScreen::onPointerEntered).Get(), &d->windowTokens[&ICoreWindow::remove_PointerEntered]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_PointerExited(Callback<PointerHandler>(this, &QWinRTScreen::onPointerExited).Get(), &d->windowTokens[&ICoreWindow::remove_PointerExited]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_PointerMoved(Callback<PointerHandler>(this, &QWinRTScreen::onPointerUpdated).Get(), &d->windowTokens[&ICoreWindow::remove_PointerMoved]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_PointerPressed(Callback<PointerHandler>(this, &QWinRTScreen::onPointerUpdated).Get(), &d->windowTokens[&ICoreWindow::remove_PointerPressed]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_PointerReleased(Callback<PointerHandler>(this, &QWinRTScreen::onPointerUpdated).Get(), &d->windowTokens[&ICoreWindow::remove_PointerReleased]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_PointerWheelChanged(Callback<PointerHandler>(this, &QWinRTScreen::onPointerUpdated).Get(), &d->windowTokens[&ICoreWindow::remove_PointerWheelChanged]);
+    Q_ASSERT_SUCCEEDED(hr);
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+    hr = d->view2->add_VisibleBoundsChanged(Callback<VisibleBoundsChangedHandler>(this, &QWinRTScreen::onWindowSizeChanged).Get(), &d->view2Tokens[&IApplicationView2::remove_VisibleBoundsChanged]);
+    Q_ASSERT_SUCCEEDED(hr);
+#else
+    hr = d->coreWindow->add_SizeChanged(Callback<SizeChangedHandler>(this, &QWinRTScreen::onWindowSizeChanged).Get(), &d->windowTokens[&ICoreWindow::remove_SizeChanged]);
+    Q_ASSERT_SUCCEEDED(hr)
+#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
 
-    QEventDispatcherWinRT::runOnXamlThread([d, visible]() {
-        HRESULT hr;
-        ComPtr<IAsyncAction> op;
-        if (visible)
-            hr = d->statusBar->ShowAsync(&op);
-        else
-            hr = d->statusBar->HideAsync(&op);
-        Q_ASSERT_SUCCEEDED(hr);
-        return S_OK;
-    });
+    hr = d->coreWindow->add_Activated(Callback<ActivatedHandler>(this, &QWinRTScreen::onActivated).Get(), &d->windowTokens[&ICoreWindow::remove_Activated]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_Closed(Callback<ClosedHandler>(this, &QWinRTScreen::onClosed).Get(), &d->windowTokens[&ICoreWindow::remove_Closed]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->coreWindow->add_VisibilityChanged(Callback<VisibilityChangedHandler>(this, &QWinRTScreen::onVisibilityChanged).Get(), &d->windowTokens[&ICoreWindow::remove_VisibilityChanged]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->displayInformation->add_OrientationChanged(Callback<DisplayInformationHandler>(this, &QWinRTScreen::onOrientationChanged).Get(), &d->displayTokens[&IDisplayInformation::remove_OrientationChanged]);
+    Q_ASSERT_SUCCEEDED(hr);
+    hr = d->displayInformation->add_DpiChanged(Callback<DisplayInformationHandler>(this, &QWinRTScreen::onDpiChanged).Get(), &d->displayTokens[&IDisplayInformation::remove_DpiChanged]);
+    Q_ASSERT_SUCCEEDED(hr);
+    onOrientationChanged(Q_NULLPTR, Q_NULLPTR);
+    onVisibilityChanged(nullptr, nullptr);
 }
-#endif //Q_OS_WINPHONE
 
 QWindow *QWinRTScreen::topWindow() const
 {
@@ -735,27 +756,20 @@ QWindow *QWinRTScreen::topWindow() const
 void QWinRTScreen::addWindow(QWindow *window)
 {
     Q_D(QWinRTScreen);
+    qCDebug(lcQpaWindows) << __FUNCTION__ << window;
     if (window == topWindow())
         return;
-
-#ifdef Q_OS_WINPHONE
-    if (window->visibility() != QWindow::Maximized && window->visibility() != QWindow::Windowed)
-        setStatusBarVisibility(false, window);
-#endif
 
     d->visibleWindows.prepend(window);
     QWindowSystemInterface::handleWindowActivated(window, Qt::OtherFocusReason);
     handleExpose();
+    QWindowSystemInterface::flushWindowSystemEvents();
 }
 
 void QWinRTScreen::removeWindow(QWindow *window)
 {
     Q_D(QWinRTScreen);
-
-#ifdef Q_OS_WINPHONE
-    if (window->visibility() == QWindow::Minimized)
-        setStatusBarVisibility(false, window);
-#endif
+    qCDebug(lcQpaWindows) << __FUNCTION__ << window;
 
     const bool wasTopWindow = window == topWindow();
     if (!d->visibleWindows.removeAll(window))
@@ -763,6 +777,7 @@ void QWinRTScreen::removeWindow(QWindow *window)
     if (wasTopWindow)
         QWindowSystemInterface::handleWindowActivated(window, Qt::OtherFocusReason);
     handleExpose();
+    QWindowSystemInterface::flushWindowSystemEvents();
 }
 
 void QWinRTScreen::raise(QWindow *window)
@@ -812,57 +827,115 @@ void QWinRTScreen::handleExpose()
 
 HRESULT QWinRTScreen::onKeyDown(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IKeyEventArgs *args)
 {
+    Q_D(QWinRTScreen);
     VirtualKey virtualKey;
-    args->get_VirtualKey(&virtualKey);
+    HRESULT hr = args->get_VirtualKey(&virtualKey);
+    Q_ASSERT_SUCCEEDED(hr);
+    CorePhysicalKeyStatus status;
+    hr = args->get_KeyStatus(&status);
+    Q_ASSERT_SUCCEEDED(hr);
+
     Qt::Key key = qKeyFromVirtual(virtualKey);
+
+    const bool wasPressed =  d->activeKeys.contains(key);
+    if (wasPressed) {
+        if (!shouldAutoRepeat(key))
+            return S_OK;
+
+        // If the key was pressed before trigger a key release before the next key press
+        QWindowSystemInterface::handleExtendedKeyEvent(
+                    topWindow(),
+                    QEvent::KeyRelease,
+                    key,
+                    keyboardModifiers(),
+                    !status.ScanCode ? -1 : status.ScanCode,
+                    virtualKey,
+                    0,
+                    QString(),
+                    status.WasKeyDown,
+                    !status.RepeatCount ? 1 : status.RepeatCount,
+                    false);
+    } else {
+        d->activeKeys.insert(key, KeyInfo(virtualKey));
+    }
+
     // Defer character key presses to onCharacterReceived
     if (key == Qt::Key_unknown || (key >= Qt::Key_Space && key <= Qt::Key_ydiaeresis))
         return S_OK;
-    QWindowSystemInterface::handleKeyEvent(topWindow(), QEvent::KeyPress, key, keyboardModifiers());
+
+    QWindowSystemInterface::handleExtendedKeyEvent(
+                topWindow(),
+                QEvent::KeyPress,
+                key,
+                keyboardModifiers(),
+                !status.ScanCode ? -1 : status.ScanCode,
+                virtualKey,
+                0,
+                QString(),
+                status.WasKeyDown,
+                !status.RepeatCount ? 1 : status.RepeatCount,
+                false);
     return S_OK;
 }
 
 HRESULT QWinRTScreen::onKeyUp(ABI::Windows::UI::Core::ICoreWindow *, ABI::Windows::UI::Core::IKeyEventArgs *args)
 {
-    Qt::KeyboardModifiers mods = keyboardModifiers();
-#ifndef Q_OS_WINPHONE
     Q_D(QWinRTScreen);
-    CorePhysicalKeyStatus status; // Look for a pressed character key
-    if (SUCCEEDED(args->get_KeyStatus(&status)) && d->activeKeys.contains(status.ScanCode)) {
-        QPair<Qt::Key, QString> keyStatus = d->activeKeys.take(status.ScanCode);
-        QWindowSystemInterface::handleKeyEvent(topWindow(), QEvent::KeyRelease,
-                                               keyStatus.first, mods, keyStatus.second);
-        return S_OK;
-    }
-#endif // !Q_OS_WINPHONE
     VirtualKey virtualKey;
-    args->get_VirtualKey(&virtualKey);
-    QWindowSystemInterface::handleKeyEvent(topWindow(), QEvent::KeyRelease,
-                                           qKeyFromVirtual(virtualKey), mods);
+    HRESULT hr = args->get_VirtualKey(&virtualKey);
+    Q_ASSERT_SUCCEEDED(hr);
+    CorePhysicalKeyStatus status;
+    hr = args->get_KeyStatus(&status);
+    Q_ASSERT_SUCCEEDED(hr);
+
+    Qt::Key key = qKeyFromVirtual(virtualKey);
+    const KeyInfo info = d->activeKeys.take(key);
+    QWindowSystemInterface::handleExtendedKeyEvent(
+                topWindow(),
+                QEvent::KeyRelease,
+                key,
+                keyboardModifiers(),
+                !status.ScanCode ? -1 : status.ScanCode,
+                virtualKey,
+                0,
+                info.text,
+                false, // The final key release does not have autoRepeat set on Windows
+                !status.RepeatCount ? 1 : status.RepeatCount,
+                false);
     return S_OK;
 }
 
 HRESULT QWinRTScreen::onCharacterReceived(ICoreWindow *, ICharacterReceivedEventArgs *args)
 {
+    Q_D(QWinRTScreen);
     quint32 keyCode;
-    args->get_KeyCode(&keyCode);
+    HRESULT hr = args->get_KeyCode(&keyCode);
+    Q_ASSERT_SUCCEEDED(hr);
+    CorePhysicalKeyStatus status;
+    hr = args->get_KeyStatus(&status);
+    Q_ASSERT_SUCCEEDED(hr);
+
     // Don't generate character events for non-printables; the meta key stage is enough
     if (qIsNonPrintable(keyCode))
         return S_OK;
 
-    Qt::KeyboardModifiers mods = keyboardModifiers();
-    Qt::Key key = qKeyFromCode(keyCode, mods);
-    QString text = QChar(keyCode);
-    QWindowSystemInterface::handleKeyEvent(topWindow(), QEvent::KeyPress, key, mods, text);
-#ifndef Q_OS_WINPHONE
-    Q_D(QWinRTScreen);
-    CorePhysicalKeyStatus status; // Defer release to onKeyUp for physical keys
-    if (SUCCEEDED(args->get_KeyStatus(&status)) && !status.IsKeyReleased) {
-        d->activeKeys.insert(status.ScanCode, qMakePair(key, text));
-        return S_OK;
-    }
-#endif // !Q_OS_WINPHONE
-    QWindowSystemInterface::handleKeyEvent(topWindow(), QEvent::KeyRelease, key, mods, text);
+    const Qt::KeyboardModifiers modifiers = keyboardModifiers();
+    const Qt::Key key = qKeyFromCode(keyCode, modifiers);
+    const QString text = QChar(keyCode);
+    const quint32 virtualKey = d->activeKeys.value(key).virtualKey;
+    QWindowSystemInterface::handleExtendedKeyEvent(
+                topWindow(),
+                QEvent::KeyPress,
+                key,
+                modifiers,
+                !status.ScanCode ? -1 : status.ScanCode,
+                virtualKey,
+                0,
+                text,
+                status.WasKeyDown,
+                !status.RepeatCount ? 1 : status.RepeatCount,
+                false);
+    d->activeKeys.insert(key, KeyInfo(text, virtualKey));
     return S_OK;
 }
 
@@ -882,8 +955,20 @@ HRESULT QWinRTScreen::onPointerEntered(ICoreWindow *, IPointerEventArgs *args)
     return S_OK;
 }
 
-HRESULT QWinRTScreen::onPointerExited(ICoreWindow *, IPointerEventArgs *)
+HRESULT QWinRTScreen::onPointerExited(ICoreWindow *, IPointerEventArgs *args)
 {
+    Q_D(QWinRTScreen);
+
+    ComPtr<IPointerPoint> pointerPoint;
+    if (FAILED(args->get_CurrentPoint(&pointerPoint)))
+        return E_INVALIDARG;
+
+    quint32 id;
+    if (FAILED(pointerPoint->get_PointerId(&id)))
+        return E_INVALIDARG;
+
+    d->touchPoints.remove(id);
+
     QWindowSystemInterface::handleLeaveEvent(0);
     return S_OK;
 }
@@ -899,6 +984,11 @@ HRESULT QWinRTScreen::onPointerUpdated(ICoreWindow *, IPointerEventArgs *args)
     Point point;
     pointerPoint->get_Position(&point);
     QPointF pos(point.X * d->scaleFactor, point.Y * d->scaleFactor);
+    QPointF localPos = pos;
+    if (topWindow()) {
+        const QPointF globalPosDelta = pos - pos.toPoint();
+        localPos = topWindow()->mapFromGlobal(pos.toPoint()) + globalPosDelta;
+    }
 
     VirtualKeyModifiers modifiers;
     args->get_KeyModifiers(&modifiers);
@@ -932,7 +1022,7 @@ HRESULT QWinRTScreen::onPointerUpdated(ICoreWindow *, IPointerEventArgs *args)
             boolean isHorizontal;
             properties->get_IsHorizontalMouseWheel(&isHorizontal);
             QPoint angleDelta(isHorizontal ? delta : 0, isHorizontal ? 0 : delta);
-            QWindowSystemInterface::handleWheelEvent(topWindow(), pos, pos, QPoint(), angleDelta, mods);
+            QWindowSystemInterface::handleWheelEvent(topWindow(), localPos, pos, QPoint(), angleDelta, mods);
             break;
         }
 
@@ -958,10 +1048,11 @@ HRESULT QWinRTScreen::onPointerUpdated(ICoreWindow *, IPointerEventArgs *args)
         if (isPressed)
             buttons |= Qt::XButton2;
 
-        QWindowSystemInterface::handleMouseEvent(topWindow(), pos, pos, buttons, mods);
+        QWindowSystemInterface::handleMouseEvent(topWindow(), localPos, pos, buttons, mods);
 
         break;
     }
+    case PointerDeviceType_Pen:
     case PointerDeviceType_Touch: {
         if (!d->touchDevice) {
             d->touchDevice = new QTouchDevice;
@@ -980,50 +1071,44 @@ HRESULT QWinRTScreen::onPointerUpdated(ICoreWindow *, IPointerEventArgs *args)
         float pressure;
         properties->get_Pressure(&pressure);
 
-        QHash<quint32, QWindowSystemInterface::TouchPoint>::iterator it = d->touchPoints.find(id);
-        if (it != d->touchPoints.end()) {
-            boolean isPressed;
+        boolean isPressed;
 #ifndef Q_OS_WINPHONE
-            pointerPoint->get_IsInContact(&isPressed);
+        pointerPoint->get_IsInContact(&isPressed);
 #else
-            properties->get_IsLeftButtonPressed(&isPressed); // IsInContact not reliable on phone
+        properties->get_IsLeftButtonPressed(&isPressed); // IsInContact not reliable on phone
 #endif
-            it.value().state = isPressed ? Qt::TouchPointMoved : Qt::TouchPointReleased;
-        } else {
+
+        const QRectF areaRect(area.X * d->scaleFactor, area.Y * d->scaleFactor,
+                        area.Width * d->scaleFactor, area.Height * d->scaleFactor);
+
+        QHash<quint32, QWindowSystemInterface::TouchPoint>::iterator it = d->touchPoints.find(id);
+        if (it == d->touchPoints.end()) {
             it = d->touchPoints.insert(id, QWindowSystemInterface::TouchPoint());
-            it.value().state = Qt::TouchPointPressed;
             it.value().id = id;
         }
-        it.value().area = QRectF(area.X * d->scaleFactor, area.Y * d->scaleFactor,
-                                 area.Width * d->scaleFactor, area.Height * d->scaleFactor);
-        it.value().normalPosition = QPointF(point.X/d->logicalSize.width(), point.Y/d->logicalSize.height());
+
+        if (isPressed && it.value().pressure == 0.)
+            it.value().state = Qt::TouchPointPressed;
+        else if (!isPressed && it.value().pressure > 0.)
+            it.value().state = Qt::TouchPointReleased;
+        else if (it.value().area == areaRect)
+            it.value().state = Qt::TouchPointStationary;
+        else
+            it.value().state = Qt::TouchPointMoved;
+
+        it.value().area = areaRect;
+        it.value().normalPosition = QPointF(point.X/d->logicalRect.width(), point.Y/d->logicalRect.height());
         it.value().pressure = pressure;
 
         QWindowSystemInterface::handleTouchEvent(topWindow(), d->touchDevice, d->touchPoints.values(), mods);
 
-        // Remove released points, station others
-        for (QHash<quint32, QWindowSystemInterface::TouchPoint>::iterator i = d->touchPoints.begin(); i != d->touchPoints.end();) {
-            if (i.value().state == Qt::TouchPointReleased)
-                i = d->touchPoints.erase(i);
-            else
-                (i++).value().state = Qt::TouchPointStationary;
-        }
-
-        break;
-    }
-    case PointerDeviceType_Pen: {
-        quint32 id;
-        pointerPoint->get_PointerId(&id);
-
-        boolean isPressed;
-        pointerPoint->get_IsInContact(&isPressed);
+        // Fall-through for pen to generate tablet event
+        if (pointerDeviceType != PointerDeviceType_Pen)
+            break;
 
         boolean isEraser;
         properties->get_IsEraser(&isEraser);
         int pointerType = isEraser ? 3 : 1;
-
-        float pressure;
-        properties->get_Pressure(&pressure);
 
         float xTilt;
         properties->get_XTilt(&xTilt);
@@ -1045,24 +1130,10 @@ HRESULT QWinRTScreen::onPointerUpdated(ICoreWindow *, IPointerEventArgs *args)
     return S_OK;
 }
 
-HRESULT QWinRTScreen::onSizeChanged(ICoreWindow *, IWindowSizeChangedEventArgs *)
-{
-    Q_D(QWinRTScreen);
-
-    Rect size;
-    HRESULT hr;
-    hr = d->coreWindow->get_Bounds(&size);
-    RETURN_OK_IF_FAILED("Failed to get window bounds");
-    d->logicalSize = QSizeF(size.Width, size.Height);
-    QWindowSystemInterface::handleScreenGeometryChange(screen(), geometry(), availableGeometry());
-    QPlatformScreen::resizeMaximizedWindows();
-    handleExpose();
-    return S_OK;
-}
-
 HRESULT QWinRTScreen::onActivated(ICoreWindow *, IWindowActivatedEventArgs *args)
 {
     Q_D(QWinRTScreen);
+    qCDebug(lcQpaWindows) << __FUNCTION__;
 
     CoreWindowActivationState activationState;
     args->get_WindowActivationState(&activationState);
@@ -1070,6 +1141,8 @@ HRESULT QWinRTScreen::onActivated(ICoreWindow *, IWindowActivatedEventArgs *args
         QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationInactive);
         return S_OK;
     }
+
+    QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationActive);
 
     // Activate topWindow
     if (!d->visibleWindows.isEmpty()) {
@@ -1082,6 +1155,8 @@ HRESULT QWinRTScreen::onActivated(ICoreWindow *, IWindowActivatedEventArgs *args
 
 HRESULT QWinRTScreen::onClosed(ICoreWindow *, ICoreWindowEventArgs *)
 {
+    qCDebug(lcQpaWindows) << __FUNCTION__;
+
     foreach (QWindow *w, QGuiApplication::topLevelWindows())
         QWindowSystemInterface::handleCloseEvent(w);
     return S_OK;
@@ -1089,18 +1164,23 @@ HRESULT QWinRTScreen::onClosed(ICoreWindow *, ICoreWindowEventArgs *)
 
 HRESULT QWinRTScreen::onVisibilityChanged(ICoreWindow *, IVisibilityChangedEventArgs *args)
 {
+    Q_D(QWinRTScreen);
     boolean visible;
-    args->get_Visible(&visible);
+    HRESULT hr = args ? args->get_Visible(&visible) : d->coreWindow->get_Visible(&visible);
+    RETURN_OK_IF_FAILED("Failed to get visibility.");
+    qCDebug(lcQpaWindows) << __FUNCTION__ << visible;
     QWindowSystemInterface::handleApplicationStateChanged(visible ? Qt::ApplicationActive : Qt::ApplicationHidden);
-    if (visible)
+    if (visible) {
         handleExpose();
+        onWindowSizeChanged(nullptr, nullptr);
+    }
     return S_OK;
 }
 
 HRESULT QWinRTScreen::onOrientationChanged(IDisplayInformation *, IInspectable *)
 {
     Q_D(QWinRTScreen);
-
+    qCDebug(lcQpaWindows) << __FUNCTION__;
     DisplayOrientations displayOrientation;
     HRESULT hr = d->displayInformation->get_CurrentOrientation(&displayOrientation);
     RETURN_OK_IF_FAILED("Failed to get current orientations.");
@@ -1108,9 +1188,8 @@ HRESULT QWinRTScreen::onOrientationChanged(IDisplayInformation *, IInspectable *
     Qt::ScreenOrientation newOrientation = static_cast<Qt::ScreenOrientation>(static_cast<int>(qtOrientationsFromNative(displayOrientation)));
     if (d->orientation != newOrientation) {
         d->orientation = newOrientation;
-#ifdef Q_OS_WINPHONE
-        onSizeChanged(nullptr, nullptr);
-#endif
+        qCDebug(lcQpaWindows) << "  New orientation:" << newOrientation;
+        onWindowSizeChanged(nullptr, nullptr);
         QWindowSystemInterface::handleScreenOrientationChange(screen(), d->orientation);
         handleExpose(); // Clean broken frames caused by race between Qt and ANGLE
     }
@@ -1132,6 +1211,8 @@ HRESULT QWinRTScreen::onDpiChanged(IDisplayInformation *, IInspectable *)
     hr = d->displayInformation->get_ResolutionScale(&resolutionScale);
     d->scaleFactor = qreal(resolutionScale) / 100;
 #endif
+    qCDebug(lcQpaWindows) << __FUNCTION__ << "Scale Factor:" << d->scaleFactor;
+
     RETURN_OK_IF_FAILED("Failed to get scale factor");
 
     FLOAT dpi;
@@ -1146,22 +1227,41 @@ HRESULT QWinRTScreen::onDpiChanged(IDisplayInformation *, IInspectable *)
     hr = d->displayInformation->get_RawDpiY(&dpi);
     RETURN_OK_IF_FAILED("Failed to get y raw DPI.");
     d->physicalDpi.second = dpi ? dpi : 96.0;
+    qCDebug(lcQpaWindows) << __FUNCTION__ << "Logical DPI:" << d->logicalDpi
+                          << "Physical DPI:" << d->physicalDpi;
 
     return S_OK;
 }
 
-#ifdef Q_OS_WINPHONE
-HRESULT QWinRTScreen::onStatusBarShowing(IStatusBar *, IInspectable *)
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+HRESULT QWinRTScreen::onWindowSizeChanged(IApplicationView *, IInspectable *)
+#else
+HRESULT QWinRTScreen::onWindowSizeChanged(ICoreWindow *, IWindowSizeChangedEventArgs *)
+#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
 {
-    onSizeChanged(nullptr, nullptr);
-    return S_OK;
-}
+    Q_D(QWinRTScreen);
 
-HRESULT QWinRTScreen::onStatusBarHiding(IStatusBar *, IInspectable *)
-{
-    onSizeChanged(nullptr, nullptr);
+    HRESULT hr;
+    Rect windowSize;
+
+    hr = d->coreWindow->get_Bounds(&windowSize);
+    RETURN_OK_IF_FAILED("Failed to get window bounds");
+    d->logicalRect = QRectF(windowSize.X, windowSize.Y, windowSize.Width, windowSize.Height);
+
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+    Rect visibleRect;
+    hr = d->view2->get_VisibleBounds(&visibleRect);
+    RETURN_OK_IF_FAILED("Failed to get window visible bounds");
+    d->visibleRect = QRectF(visibleRect.X, visibleRect.Y, visibleRect.Width, visibleRect.Height);
+#else
+    d->visibleRect = QRectF(windowSize.X, windowSize.Y, windowSize.Width, windowSize.Height);
+#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_PHONE_APP)
+
+    qCDebug(lcQpaWindows) << __FUNCTION__ << d->logicalRect;
+    QWindowSystemInterface::handleScreenGeometryChange(screen(), geometry(), availableGeometry());
+    QPlatformScreen::resizeMaximizedWindows();
+    handleExpose();
     return S_OK;
 }
-#endif //Q_OS_WINPHONE
 
 QT_END_NAMESPACE

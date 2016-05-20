@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Windows main function of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -140,6 +150,8 @@ public:
 
         hr = applicationFactory->CreateInstance(this, &base, &core);
         RETURN_VOID_IF_FAILED("Failed to create application container instance");
+
+        pidFile = INVALID_HANDLE_VALUE;
     }
 
     ~AppContainer()
@@ -156,7 +168,16 @@ public:
             AppContainer *app = reinterpret_cast<AppContainer *>(param);
             int argc = app->args.count();
             char **argv = app->args.data();
-            return main(argc, argv);
+            const int res = main(argc, argv);
+            if (app->pidFile != INVALID_HANDLE_VALUE) {
+                const QByteArray resString = QByteArray::number(res);
+                WriteFile(app->pidFile, reinterpret_cast<LPCVOID>(resString.constData()),
+                          resString.size(), NULL, NULL);
+                FlushFileBuffers(app->pidFile);
+                CloseHandle(app->pidFile);
+            }
+            app->core->Exit();
+            return res;
         }, this, CREATE_SUSPENDED, nullptr);
 
         HRESULT hr;
@@ -169,23 +190,64 @@ public:
         }).Get());
         Q_ASSERT_SUCCEEDED(hr);
 
+        WaitForSingleObjectEx(mainThread, INFINITE, FALSE);
         DWORD exitCode;
         GetExitCodeThread(mainThread, &exitCode);
         return exitCode;
     }
 
 private:
+    HRESULT activatedLaunch(IInspectable *activateArgs) {
+        QCoreApplication *app = QCoreApplication::instance();
+
+        // Check whether the app already runs
+        if (!app) {
+#if _MSC_VER >= 1900
+            // I*EventArgs have no launch arguments, hence we
+            // need to prepend the application binary manually
+            wchar_t fn[513];
+            DWORD res = GetModuleFileName(0, fn, 512);
+
+            if (SUCCEEDED(res))
+                args.prepend(QString::fromWCharArray(fn, res).toUtf8().data());
+#endif _MSC_VER >= 1900
+
+            ResumeThread(mainThread);
+
+            // We give main() a max of 100ms to create an application object.
+            // No eventhandling needs to happen at that point, all we want is
+            // append our activation event
+            int iterations = 0;
+            while (true) {
+                app = QCoreApplication::instance();
+                if (app || iterations++ > 10)
+                    break;
+                Sleep(10);
+            }
+        }
+
+        if (app)
+            QCoreApplication::postEvent(app, new QActivationEvent(activateArgs));
+        return S_OK;
+    }
+
     HRESULT __stdcall OnActivated(IActivatedEventArgs *args) Q_DECL_OVERRIDE
     {
-        QAbstractEventDispatcher *dispatcher = QCoreApplication::eventDispatcher();
-        if (dispatcher)
-            QCoreApplication::postEvent(dispatcher, new QActivationEvent(args));
-        return S_OK;
+        return activatedLaunch(args);
     }
 
     HRESULT __stdcall OnLaunched(ILaunchActivatedEventArgs *launchArgs) Q_DECL_OVERRIDE
     {
 #if _MSC_VER >= 1900
+        ComPtr<IPrelaunchActivatedEventArgs> preArgs;
+        HRESULT hr = launchArgs->QueryInterface(preArgs.GetAddressOf());
+        if (SUCCEEDED(hr)) {
+            boolean prelaunched;
+            preArgs->get_PrelaunchActivated(&prelaunched);
+            if (prelaunched)
+                return S_OK;
+        }
+
         commandLine = QString::fromWCharArray(GetCommandLine()).toUtf8();
 #endif
         HString launchCommandLine;
@@ -231,6 +293,9 @@ private:
             }
         }
 
+        if (args.count() >= 2 && strncmp(args.at(1), "-ServerName:", 12) == 0)
+            args.remove(1);
+
         bool develMode = false;
         bool debugWait = false;
         foreach (const char *arg, args) {
@@ -245,11 +310,10 @@ private:
                     .absoluteFilePath(QString::number(uint(GetCurrentProcessId())) + QStringLiteral(".pid"));
             CREATEFILE2_EXTENDED_PARAMETERS params = {
                 sizeof(CREATEFILE2_EXTENDED_PARAMETERS),
-                FILE_ATTRIBUTE_NORMAL, FILE_FLAG_DELETE_ON_CLOSE
+                FILE_ATTRIBUTE_NORMAL
             };
-            // (Unused) handle will automatically be closed when the app exits
-            CreateFile2(reinterpret_cast<LPCWSTR>(pidFileName.utf16()),
-                        0, FILE_SHARE_READ|FILE_SHARE_DELETE, CREATE_ALWAYS, &params);
+            pidFile = CreateFile2(reinterpret_cast<LPCWSTR>(pidFileName.utf16()),
+                        GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS, &params);
             // Install the develMode message handler
 #ifndef Q_OS_WINPHONE
             defaultMessageHandler = qInstallMessageHandler(devMessageHandler);
@@ -267,8 +331,7 @@ private:
 
     HRESULT __stdcall OnFileActivated(IFileActivatedEventArgs *args) Q_DECL_OVERRIDE
     {
-        Q_UNUSED(args);
-        return S_OK;
+        return activatedLaunch(args);
     }
 
     HRESULT __stdcall OnSearchActivated(ISearchActivatedEventArgs *args) Q_DECL_OVERRIDE
@@ -279,8 +342,7 @@ private:
 
     HRESULT __stdcall OnShareTargetActivated(IShareTargetActivatedEventArgs *args) Q_DECL_OVERRIDE
     {
-        Q_UNUSED(args);
-        return S_OK;
+        return activatedLaunch(args);
     }
 
     HRESULT __stdcall OnFileOpenPickerActivated(IFileOpenPickerActivatedEventArgs *args) Q_DECL_OVERRIDE
@@ -311,7 +373,8 @@ private:
     ComPtr<Xaml::IApplication> core;
     QByteArray commandLine;
     QVarLengthArray<char *> args;
-    HANDLE mainThread;
+    HANDLE mainThread{0};
+    HANDLE pidFile;
 };
 
 // Main entry point for Appx containers

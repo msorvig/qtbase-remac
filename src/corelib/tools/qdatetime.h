@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,11 +46,9 @@
 
 #include <limits>
 
-#ifdef Q_OS_MAC
+#if defined(Q_OS_MAC)
 Q_FORWARD_DECLARE_CF_TYPE(CFDate);
-#  ifdef __OBJC__
 Q_FORWARD_DECLARE_OBJC_CLASS(NSDate);
-#  endif
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -93,7 +97,10 @@ QT_DEPRECATED inline bool setYMD(int y, int m, int d)
 
     bool setDate(int year, int month, int day);
 
-    void getDate(int *year, int *month, int *day);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    void getDate(int *year, int *month, int *day); // ### Qt 6: remove
+#endif // < Qt 6
+    void getDate(int *year, int *month, int *day) const;
 
     QDate addDays(qint64 days) const Q_REQUIRED_RESULT;
     QDate addMonths(int months) const Q_REQUIRED_RESULT;
@@ -139,15 +146,9 @@ Q_DECLARE_TYPEINFO(QDate, Q_MOVABLE_TYPE);
 class Q_CORE_EXPORT QTime
 {
     explicit Q_DECL_CONSTEXPR QTime(int ms) : mds(ms)
-#if defined(Q_OS_WINCE)
-        , startTick(NullTime)
-#endif
     {}
 public:
     Q_DECL_CONSTEXPR QTime(): mds(NullTime)
-#if defined(Q_OS_WINCE)
-        , startTick(NullTime)
-#endif
     {}
     QTime(int h, int m, int s = 0, int ms = 0);
 
@@ -193,9 +194,6 @@ private:
     enum TimeFlag { NullTime = -1 };
     Q_DECL_CONSTEXPR inline int ds() const { return mds == -1 ? 0 : mds; }
     int mds;
-#if defined(Q_OS_WINCE)
-    int startTick;
-#endif
 
     friend class QDateTime;
     friend class QDateTimePrivate;
@@ -316,10 +314,8 @@ public:
 #if defined(Q_OS_MAC) || defined(Q_QDOC)
     static QDateTime fromCFDate(CFDateRef date);
     CFDateRef toCFDate() const Q_DECL_CF_RETURNS_RETAINED;
-#  if defined(__OBJC__) || defined(Q_QDOC)
     static QDateTime fromNSDate(const NSDate *date);
     NSDate *toNSDate() const Q_DECL_NS_RETURNS_AUTORELEASED;
-#  endif
 #endif
 
 private:

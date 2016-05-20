@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2014 Intel Corporation.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,6 +45,7 @@
 #include "qlist.h"
 #include "qlocale.h"
 #include "qlocale_p.h"
+#include "qlocale_tools_p.h"
 #include "qstringalgorithms_p.h"
 #include "qscopedpointer.h"
 #include "qbytearray_p.h"
@@ -578,8 +585,8 @@ QByteArray qUncompress(const uchar* data, int nbytes)
             qWarning("qUncompress: Input data is corrupted");
         return QByteArray();
     }
-    ulong expectedSize = (data[0] << 24) | (data[1] << 16) |
-                       (data[2] <<  8) | (data[3]      );
+    ulong expectedSize = uint((data[0] << 24) | (data[1] << 16) |
+                              (data[2] <<  8) | (data[3]      ));
     ulong len = qMax(expectedSize, 1ul);
     QScopedPointer<QByteArray::Data, QScopedPointerPodDeleter> d;
 
@@ -2929,9 +2936,9 @@ QByteArray QByteArray::toUpper_helper(QByteArray &a)
 
 /*! \fn void QByteArray::clear()
 
-    Clears the contents of the byte array and makes it empty.
+    Clears the contents of the byte array and makes it null.
 
-    \sa resize(), isEmpty()
+    \sa resize(), isNull()
 */
 
 void QByteArray::clear()
@@ -3694,7 +3701,13 @@ ushort QByteArray::toUShort(bool *ok, int base) const
 
 double QByteArray::toDouble(bool *ok) const
 {
-    return QLocaleData::bytearrayToDouble(nulTerminated().constData(), ok);
+    QByteArray nulled = nulTerminated();
+    bool nonNullOk = false;
+    int processed = 0;
+    double d = asciiToDouble(nulled.constData(), nulled.length(), nonNullOk, processed);
+    if (ok)
+        *ok = nonNullOk;
+    return d;
 }
 
 /*!
@@ -3923,10 +3936,10 @@ QByteArray &QByteArray::setNum(qulonglong n, int base)
 QByteArray &QByteArray::setNum(double n, char f, int prec)
 {
     QLocaleData::DoubleForm form = QLocaleData::DFDecimal;
-    uint flags = 0;
+    uint flags = QLocaleData::ZeroPadExponent;
 
     if (qIsUpper(f))
-        flags = QLocaleData::CapitalEorX;
+        flags |= QLocaleData::CapitalEorX;
     f = qToLower(f);
 
     switch (f) {
@@ -4360,91 +4373,6 @@ QByteArray QByteArray::fromPercentEncoding(const QByteArray &input, char percent
     that accepts a std::string object.
 
     \sa fromStdString(), QString::toStdString()
-*/
-
-/*! \fn QByteArray QByteArray::fromCFData(CFDataRef data)
-    \since 5.3
-
-    Constructs a new QByteArray containing a copy of the CFData \a data.
-
-    \sa fromRawCFData(), fromRawData(), toRawCFData(), toCFData()
-*/
-
-/*! \fn QByteArray QByteArray::fromRawCFData(CFDataRef data)
-    \since 5.3
-
-    Constructs a QByteArray that uses the bytes of the CFData \a data.
-
-    The \a data's bytes are not copied.
-
-    The caller guarantees that the CFData will not be deleted
-    or modified as long as this QByteArray object exists.
-
-    \sa fromCFData(), fromRawData(), toRawCFData(), toCFData()
-*/
-
-/*! \fn CFDataRef QByteArray::toCFData() const
-    \since 5.3
-
-    Creates a CFData from a QByteArray. The caller owns the CFData object
-    and is responsible for releasing it.
-
-    \sa toRawCFData(), fromCFData(), fromRawCFData(), fromRawData()
-*/
-
-/*! \fn CFDataRef QByteArray::toRawCFData() const
-    \since 5.3
-
-    Constructs a CFData that uses the bytes of the QByteArray.
-
-    The QByteArray's bytes are not copied.
-
-    The caller guarantees that the QByteArray will not be deleted
-    or modified as long as this CFData object exists.
-
-    \sa toCFData(), fromRawCFData(), fromCFData(), fromRawData()
-*/
-
-/*! \fn QByteArray QByteArray::fromNSData(const NSData *data)
-    \since 5.3
-
-    Constructs a new QByteArray containing a copy of the NSData \a data.
-
-    \sa fromRawNSData(), fromRawData(), toNSData(), toRawNSData()
-*/
-
-/*! \fn QByteArray QByteArray::fromRawNSData(const NSData *data)
-    \since 5.3
-
-    Constructs a QByteArray that uses the bytes of the NSData \a data.
-
-    The \a data's bytes are not copied.
-
-    The caller guarantees that the NSData will not be deleted
-    or modified as long as this QByteArray object exists.
-
-    \sa fromNSData(), fromRawData(), toRawNSData(), toNSData()
-*/
-
-/*! \fn NSData QByteArray::toNSData() const
-    \since 5.3
-
-    Creates a NSData from a QByteArray. The NSData object is autoreleased.
-
-    \sa fromNSData(), fromRawNSData(), fromRawData(), toRawNSData()
-*/
-
-/*! \fn NSData QByteArray::toRawNSData() const
-    \since 5.3
-
-    Constructs a NSData that uses the bytes of the QByteArray.
-
-    The QByteArray's bytes are not copied.
-
-    The caller guarantees that the QByteArray will not be deleted
-    or modified as long as this NSData object exists.
-
-    \sa fromRawNSData(), fromNSData(), fromRawData(), toNSData()
 */
 
 static inline bool q_strchr(const char str[], char chr)

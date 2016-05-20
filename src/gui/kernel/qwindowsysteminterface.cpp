@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -41,12 +47,14 @@
 #include <qpa/qplatformintegration.h>
 #include <qdebug.h>
 #include "qhighdpiscaling_p.h"
+#include <QtCore/qscopedvaluerollback.h>
 
 QT_BEGIN_NAMESPACE
 
 
 QElapsedTimer QWindowSystemInterfacePrivate::eventTime;
 bool QWindowSystemInterfacePrivate::synchronousWindowSystemEvents = false;
+bool QWindowSystemInterfacePrivate::TabletEvent::platformSynthesizesMouse = true;
 QWaitCondition QWindowSystemInterfacePrivate::eventsFlushed;
 QMutex QWindowSystemInterfacePrivate::flushEventMutex;
 QAtomicInt QWindowSystemInterfacePrivate::eventAccepted;
@@ -191,113 +199,50 @@ void QWindowSystemInterface::handleFrameStrutMouseEvent(QWindow *w, ulong timest
     QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
 }
 
-bool QWindowSystemInterface::tryHandleShortcutEvent(QWindow *w, int k, Qt::KeyboardModifiers mods,
-                                                               const QString & text, bool autorep, ushort count)
-{
-    unsigned long timestamp = QWindowSystemInterfacePrivate::eventTime.elapsed();
-    return tryHandleShortcutEvent(w, timestamp, k, mods, text, autorep, count);
-}
-
-bool QWindowSystemInterface::tryHandleShortcutEvent(QWindow *w, ulong timestamp, int k, Qt::KeyboardModifiers mods,
-                                                               const QString & text, bool autorep, ushort count)
+bool QWindowSystemInterface::handleShortcutEvent(QWindow *window, ulong timestamp, int keyCode, Qt::KeyboardModifiers modifiers, quint32 nativeScanCode,
+                                      quint32 nativeVirtualKey, quint32 nativeModifiers, const QString &text, bool autorepeat, ushort count)
 {
 #ifndef QT_NO_SHORTCUT
-    QGuiApplicationPrivate::modifier_buttons = mods;
+    if (!window)
+        window = QGuiApplication::focusWindow();
 
-    if (!w)
-        w = QGuiApplication::focusWindow();
-    if (!w)
-        return false;
+    QShortcutMap &shortcutMap = QGuiApplicationPrivate::instance()->shortcutMap;
+    if (shortcutMap.state() == QKeySequence::NoMatch) {
+        // Check if the shortcut is overridden by some object in the event delivery path (typically the focus object).
+        // If so, we should not look up the shortcut in the shortcut map, but instead deliver the event as a regular
+        // key event, so that the target that accepted the shortcut override event can handle it. Note that we only
+        // do this if the shortcut map hasn't found a partial shortcut match yet. If it has, the shortcut can not be
+        // overridden.
+        QWindowSystemInterfacePrivate::KeyEvent *shortcutOverrideEvent = new QWindowSystemInterfacePrivate::KeyEvent(window, timestamp,
+            QEvent::ShortcutOverride, keyCode, modifiers, nativeScanCode, nativeVirtualKey, nativeModifiers, text, autorepeat, count);
 
-    QObject *focus = w->focusObject();
-    if (!focus)
-        focus = w;
+        {
+            // FIXME: Template handleWindowSystemEvent to support both sync and async delivery
+            QScopedValueRollback<bool> syncRollback(QWindowSystemInterfacePrivate::synchronousWindowSystemEvents);
+            QWindowSystemInterfacePrivate::synchronousWindowSystemEvents = true;
 
-    QKeyEvent qevent(QEvent::ShortcutOverride, k, mods, text, autorep, count);
-    qevent.setTimestamp(timestamp);
-    return QGuiApplicationPrivate::instance()->shortcutMap.tryShortcutEvent(focus, &qevent);
+            if (QWindowSystemInterfacePrivate::handleWindowSystemEvent(shortcutOverrideEvent))
+                return false;
+        }
+    }
+
+    // The shortcut event is dispatched as a QShortcutEvent, not a QKeyEvent, but we use
+    // the QKeyEvent as a container for the various properties that the shortcut map needs
+    // to inspect to determine if a shortcut matched the keys that were pressed.
+    QKeyEvent keyEvent(QEvent::ShortcutOverride, keyCode, modifiers, nativeScanCode,
+        nativeVirtualKey, nativeModifiers, text, autorepeat, count);
+
+    return shortcutMap.tryShortcut(&keyEvent);
 #else
-    Q_UNUSED(w)
+    Q_UNUSED(window)
     Q_UNUSED(timestamp)
-    Q_UNUSED(k)
-    Q_UNUSED(mods)
-    Q_UNUSED(text)
-    Q_UNUSED(autorep)
-    Q_UNUSED(count)
-    return false;
-#endif
-}
-
-bool QWindowSystemInterface::tryHandleShortcutOverrideEvent(QWindow *w, QKeyEvent *ev)
-{
-#ifndef QT_NO_SHORTCUT
-    Q_ASSERT(ev->type() == QKeyEvent::ShortcutOverride);
-
-    QObject *focus = w->focusObject();
-    if (!focus)
-        focus = w;
-    return QGuiApplicationPrivate::instance()->shortcutMap.tryShortcutEvent(focus, ev);
-#else
-    Q_UNUSED(w)
-    Q_UNUSED(ev)
-    return false;
-#endif
-}
-
-// used by QTestLib to directly send shortcuts to objects
-bool QWindowSystemInterface::tryHandleShortcutEventToObject(QObject *o, ulong timestamp, int k, Qt::KeyboardModifiers mods,
-                                   const QString &text, bool autorep, ushort count)
-{
-#ifndef QT_NO_SHORTCUT
-    QGuiApplicationPrivate::modifier_buttons = mods;
-
-    QKeyEvent qevent(QEvent::ShortcutOverride, k, mods, text, autorep, count);
-    qevent.setTimestamp(timestamp);
-    return QGuiApplicationPrivate::instance()->shortcutMap.tryShortcutEvent(o, &qevent);
-#else
-    Q_UNUSED(w)
-    Q_UNUSED(timestamp)
-    Q_UNUSED(k)
-    Q_UNUSED(mods)
-    Q_UNUSED(text)
-    Q_UNUSED(autorep)
-    Q_UNUSED(count)
-    return false;
-#endif
-}
-
-bool QWindowSystemInterface::tryHandleExtendedShortcutEvent(QWindow *w, int k, Qt::KeyboardModifiers mods,
-                                                                       quint32 nativeScanCode, quint32 nativeVirtualKey, quint32 nativeModifiers,
-                                                                       const QString &text, bool autorep, ushort count)
-{
-    unsigned long timestamp = QWindowSystemInterfacePrivate::eventTime.elapsed();
-    return tryHandleExtendedShortcutEvent(w, timestamp, k, mods, nativeScanCode, nativeVirtualKey, nativeModifiers, text, autorep, count);
-}
-
-bool QWindowSystemInterface::tryHandleExtendedShortcutEvent(QWindow *w, ulong timestamp, int k, Qt::KeyboardModifiers mods,
-                                                                       quint32 nativeScanCode, quint32 nativeVirtualKey, quint32 nativeModifiers,
-                                                                       const QString &text, bool autorep, ushort count)
-{
-#ifndef QT_NO_SHORTCUT
-    QGuiApplicationPrivate::modifier_buttons = mods;
-
-    QObject *focus = w->focusObject();
-    if (!focus)
-        focus = w;
-
-    QKeyEvent qevent(QEvent::ShortcutOverride, k, mods, nativeScanCode, nativeVirtualKey, nativeModifiers, text, autorep, count);
-    qevent.setTimestamp(timestamp);
-    return QGuiApplicationPrivate::instance()->shortcutMap.tryShortcutEvent(focus, &qevent);
-#else
-    Q_UNUSED(w)
-    Q_UNUSED(timestamp)
-    Q_UNUSED(k)
-    Q_UNUSED(mods)
+    Q_UNUSED(key)
+    Q_UNUSED(modifiers)
     Q_UNUSED(nativeScanCode)
     Q_UNUSED(nativeVirtualKey)
     Q_UNUSED(nativeModifiers)
     Q_UNUSED(text)
-    Q_UNUSED(autorep)
+    Q_UNUSED(autorepeat)
     Q_UNUSED(count)
     return false;
 #endif
@@ -311,13 +256,10 @@ bool QWindowSystemInterface::handleKeyEvent(QWindow *w, QEvent::Type t, int k, Q
 
 bool QWindowSystemInterface::handleKeyEvent(QWindow *tlw, ulong timestamp, QEvent::Type t, int k, Qt::KeyboardModifiers mods, const QString & text, bool autorep, ushort count)
 {
-    // This is special handling needed for OS X which eventually will call sendEvent(), on other platforms
-    // this might not be safe, e.g., on Android. See: QGuiApplicationPrivate::processKeyEvent() for
-    // shortcut overriding on other platforms.
 #if defined(Q_OS_OSX)
-    if (t == QEvent::KeyPress && QWindowSystemInterface::tryHandleShortcutEvent(tlw, timestamp, k, mods, text))
+    if (t == QEvent::KeyPress && QWindowSystemInterface::handleShortcutEvent(tlw, timestamp, k, mods, 0, 0, 0, text, autorep, count))
         return true;
-#endif // Q_OS_OSX
+#endif
 
     QWindowSystemInterfacePrivate::KeyEvent * e =
             new QWindowSystemInterfacePrivate::KeyEvent(tlw, timestamp, t, k, mods, text, autorep, count);
@@ -328,11 +270,11 @@ bool QWindowSystemInterface::handleExtendedKeyEvent(QWindow *w, QEvent::Type typ
                                                     quint32 nativeScanCode, quint32 nativeVirtualKey,
                                                     quint32 nativeModifiers,
                                                     const QString& text, bool autorep,
-                                                    ushort count)
+                                                    ushort count, bool tryShortcutOverride)
 {
     unsigned long time = QWindowSystemInterfacePrivate::eventTime.elapsed();
     return handleExtendedKeyEvent(w, time, type, key, modifiers, nativeScanCode, nativeVirtualKey, nativeModifiers,
-                           text, autorep, count);
+                           text, autorep, count, tryShortcutOverride);
 }
 
 bool QWindowSystemInterface::handleExtendedKeyEvent(QWindow *tlw, ulong timestamp, QEvent::Type type, int key,
@@ -342,7 +284,15 @@ bool QWindowSystemInterface::handleExtendedKeyEvent(QWindow *tlw, ulong timestam
                                                     const QString& text, bool autorep,
                                                     ushort count, bool tryShortcutOverride)
 {
+#if defined(Q_OS_OSX)
+    if (tryShortcutOverride && type == QEvent::KeyPress && QWindowSystemInterface::handleShortcutEvent(tlw,
+            timestamp, key, modifiers, nativeScanCode, nativeVirtualKey, nativeModifiers, text, autorep, count)) {
+        return true;
+    }
+#else
     Q_UNUSED(tryShortcutOverride)
+#endif
+
     QWindowSystemInterfacePrivate::KeyEvent * e =
             new QWindowSystemInterfacePrivate::KeyEvent(tlw, timestamp, type, key, modifiers,
                 nativeScanCode, nativeVirtualKey, nativeModifiers, text, autorep, count);
@@ -366,7 +316,8 @@ void QWindowSystemInterface::handleWheelEvent(QWindow *w, const QPointF & local,
     handleWheelEvent(w, time, local, global, pixelDelta, angleDelta, mods, phase, source);
 }
 
-void QWindowSystemInterface::handleWheelEvent(QWindow *tlw, ulong timestamp, const QPointF & local, const QPointF & global, QPoint pixelDelta, QPoint angleDelta, Qt::KeyboardModifiers mods, Qt::ScrollPhase phase, Qt::MouseEventSource source)
+void QWindowSystemInterface::handleWheelEvent(QWindow *tlw, ulong timestamp, const QPointF & local, const QPointF & global, QPoint pixelDelta, QPoint angleDelta, Qt::KeyboardModifiers mods, Qt::ScrollPhase phase,
+                                              Qt::MouseEventSource source, bool invertedScrolling)
 {
     // Qt 4 sends two separate wheel events for horizontal and vertical
     // deltas. For Qt 5 we want to send the deltas in one event, but at the
@@ -384,14 +335,15 @@ void QWindowSystemInterface::handleWheelEvent(QWindow *tlw, ulong timestamp, con
 
     // Simple case: vertical deltas only:
     if (angleDelta.y() != 0 && angleDelta.x() == 0) {
-        e = new QWindowSystemInterfacePrivate::WheelEvent(tlw, timestamp, QHighDpi::fromNativeLocalPosition(local, tlw), QHighDpi::fromNativePixels(global, tlw), pixelDelta, angleDelta, angleDelta.y(), Qt::Vertical, mods, phase, source);
+        e = new QWindowSystemInterfacePrivate::WheelEvent(tlw, timestamp, QHighDpi::fromNativeLocalPosition(local, tlw), QHighDpi::fromNativePixels(global, tlw), pixelDelta, angleDelta, angleDelta.y(), Qt::Vertical,
+                                                          mods, phase, source, invertedScrolling);
         QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
         return;
     }
 
     // Simple case: horizontal deltas only:
     if (angleDelta.y() == 0 && angleDelta.x() != 0) {
-        e = new QWindowSystemInterfacePrivate::WheelEvent(tlw, timestamp, QHighDpi::fromNativeLocalPosition(local, tlw), QHighDpi::fromNativePixels(global, tlw), pixelDelta, angleDelta, angleDelta.x(), Qt::Horizontal, mods, phase, source);
+        e = new QWindowSystemInterfacePrivate::WheelEvent(tlw, timestamp, QHighDpi::fromNativeLocalPosition(local, tlw), QHighDpi::fromNativePixels(global, tlw), pixelDelta, angleDelta, angleDelta.x(), Qt::Horizontal, mods, phase, source, invertedScrolling);
         QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
         return;
     }
@@ -399,12 +351,12 @@ void QWindowSystemInterface::handleWheelEvent(QWindow *tlw, ulong timestamp, con
     // Both horizontal and vertical deltas: Send two wheel events.
     // The first event contains the Qt 5 pixel and angle delta as points,
     // and in addition the Qt 4 compatibility vertical angle delta.
-    e = new QWindowSystemInterfacePrivate::WheelEvent(tlw, timestamp, QHighDpi::fromNativeLocalPosition(local, tlw), QHighDpi::fromNativePixels(global, tlw), pixelDelta, angleDelta, angleDelta.y(), Qt::Vertical, mods, phase, source);
+    e = new QWindowSystemInterfacePrivate::WheelEvent(tlw, timestamp, QHighDpi::fromNativeLocalPosition(local, tlw), QHighDpi::fromNativePixels(global, tlw), pixelDelta, angleDelta, angleDelta.y(), Qt::Vertical, mods, phase, source, invertedScrolling);
     QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
 
     // The second event contains null pixel and angle points and the
     // Qt 4 compatibility horizontal angle delta.
-    e = new QWindowSystemInterfacePrivate::WheelEvent(tlw, timestamp, QHighDpi::fromNativeLocalPosition(local, tlw), QHighDpi::fromNativePixels(global, tlw), QPoint(), QPoint(), angleDelta.x(), Qt::Horizontal, mods, phase, source);
+    e = new QWindowSystemInterfacePrivate::WheelEvent(tlw, timestamp, QHighDpi::fromNativeLocalPosition(local, tlw), QHighDpi::fromNativePixels(global, tlw), QPoint(), QPoint(), angleDelta.x(), Qt::Horizontal, mods, phase, source, invertedScrolling);
     QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
 }
 
@@ -517,7 +469,10 @@ QList<QTouchEvent::TouchPoint>
     QList<QWindowSystemInterface::TouchPoint>::const_iterator end = points.constEnd();
     while (point != end) {
         p.setId(point->id);
+        if (point->uniqueId >= 0)
+            p.setUniqueId(point->uniqueId);
         p.setPressure(point->pressure);
+        p.setRotation(point->rotation);
         states |= point->state;
         p.setState(point->state);
 
@@ -555,7 +510,7 @@ QList<QWindowSystemInterface::TouchPoint>
 {
     QList<QWindowSystemInterface::TouchPoint> newList;
     newList.reserve(pointList.size());
-    foreach (const QTouchEvent::TouchPoint &pt, pointList) {
+    for (const QTouchEvent::TouchPoint &pt : pointList) {
         QWindowSystemInterface::TouchPoint p;
         p.id = pt.id();
         p.flags = pt.flags();
@@ -639,7 +594,8 @@ void QWindowSystemInterface::handleThemeChange(QWindow *tlw)
 
 void QWindowSystemInterface::handleExposeEvent(QWindow *tlw, const QRegion &region)
 {
-    QWindowSystemInterfacePrivate::ExposeEvent *e = new QWindowSystemInterfacePrivate::ExposeEvent(tlw, QHighDpi::fromNativeLocalRegion(region, tlw));
+    QWindowSystemInterfacePrivate::ExposeEvent *e =
+        new QWindowSystemInterfacePrivate::ExposeEvent(tlw, QHighDpi::fromNativeLocalExposedRegion(region, tlw));
     QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
 }
 
@@ -913,7 +869,9 @@ Q_GUI_EXPORT void qt_handleMouseEvent(QWindow *w, const QPointF &local, const QP
 {
     bool wasSynchronous = QWindowSystemInterfacePrivate::synchronousWindowSystemEvents;
     QWindowSystemInterface::setSynchronousWindowSystemEvents(true);
-    QWindowSystemInterface::handleMouseEvent(w, timestamp, local, global, b, mods);
+    const qreal factor = QHighDpiScaling::factor(w);
+    QWindowSystemInterface::handleMouseEvent(w, timestamp, local * factor,
+                                             global * factor, b, mods);
     QWindowSystemInterface::setSynchronousWindowSystemEvents(wasSynchronous);
 }
 
@@ -927,30 +885,39 @@ Q_GUI_EXPORT void qt_handleKeyEvent(QWindow *w, QEvent::Type t, int k, Qt::Keybo
 
 Q_GUI_EXPORT bool qt_sendShortcutOverrideEvent(QObject *o, ulong timestamp, int k, Qt::KeyboardModifiers mods, const QString &text = QString(), bool autorep = false, ushort count = 1)
 {
-    return QWindowSystemInterface::tryHandleShortcutEventToObject(o, timestamp, k, mods, text, autorep, count);
-}
+#ifndef QT_NO_SHORTCUT
 
-static QWindowSystemInterface::TouchPoint touchPoint(const QTouchEvent::TouchPoint& pt)
-{
-    QWindowSystemInterface::TouchPoint p;
-    p.id = pt.id();
-    p.flags = pt.flags();
-    p.normalPosition = pt.normalizedPos();
-    p.area = pt.screenRect();
-    p.pressure = pt.pressure();
-    p.state = pt.state();
-    p.velocity = pt.velocity();
-    p.rawPositions = pt.rawScreenPositions();
-    return p;
-}
-static QList<struct QWindowSystemInterface::TouchPoint> touchPointList(const QList<QTouchEvent::TouchPoint>& pointList)
-{
-    QList<struct QWindowSystemInterface::TouchPoint> newList;
+    // FIXME: This method should not allow targeting a specific object, but should
+    // instead forward the event to a window, which then takes care of normal event
+    // propagation. We need to fix a lot of tests before we can refactor this (the
+    // window needs to be exposed and active and have a focus object), so we leave
+    // it as is for now. See QTBUG-48577.
 
-    Q_FOREACH (QTouchEvent::TouchPoint p, pointList)
-        newList.append(touchPoint(p));
+    QGuiApplicationPrivate::modifier_buttons = mods;
 
-    return newList;
+    QKeyEvent qevent(QEvent::ShortcutOverride, k, mods, text, autorep, count);
+    qevent.setTimestamp(timestamp);
+
+    QShortcutMap &shortcutMap = QGuiApplicationPrivate::instance()->shortcutMap;
+    if (shortcutMap.state() == QKeySequence::NoMatch) {
+        // Try sending as QKeyEvent::ShortcutOverride first
+        QCoreApplication::sendEvent(o, &qevent);
+        if (qevent.isAccepted())
+            return false;
+    }
+
+    // Then as QShortcutEvent
+    return shortcutMap.tryShortcut(&qevent);
+#else
+    Q_UNUSED(o)
+    Q_UNUSED(timestamp)
+    Q_UNUSED(k)
+    Q_UNUSED(mods)
+    Q_UNUSED(text)
+    Q_UNUSED(autorep)
+    Q_UNUSED(count)
+    return false;
+#endif
 }
 
 Q_GUI_EXPORT void qt_handleTouchEvent(QWindow *w, QTouchDevice *device,
@@ -959,7 +926,8 @@ Q_GUI_EXPORT void qt_handleTouchEvent(QWindow *w, QTouchDevice *device,
 {
     bool wasSynchronous = QWindowSystemInterfacePrivate::synchronousWindowSystemEvents;
     QWindowSystemInterface::setSynchronousWindowSystemEvents(true);
-    QWindowSystemInterface::handleTouchEvent(w, device, touchPointList(points), mods);
+    QWindowSystemInterface::handleTouchEvent(w, device,
+                                             QWindowSystemInterfacePrivate::toNativeTouchPoints(points, w), mods);
     QWindowSystemInterface::setSynchronousWindowSystemEvents(wasSynchronous);
 }
 
@@ -974,5 +942,16 @@ bool QWindowSystemEventHandler::sendEvent(QWindowSystemInterfacePrivate::WindowS
     return true;
 }
 
+QWindowSystemInterfacePrivate::WheelEvent::WheelEvent(QWindow *w, ulong time, const QPointF &local, const QPointF &global, QPoint pixelD,
+        QPoint angleD, int qt4D, Qt::Orientation qt4O, Qt::KeyboardModifiers mods, Qt::ScrollPhase phase, Qt::MouseEventSource src, bool inverted)
+    : InputEvent(w, time, Wheel, mods), pixelDelta(pixelD), angleDelta(angleD), qt4Delta(qt4D),
+      qt4Orientation(qt4O), localPos(local), globalPos(global), phase(phase), source(src), inverted(inverted)
+{
+}
+
+void QWindowSystemInterfacePrivate::TabletEvent::setPlatformSynthesizesMouse(bool v)
+{
+    platformSynthesizesMouse = v;
+}
 
 QT_END_NAMESPACE

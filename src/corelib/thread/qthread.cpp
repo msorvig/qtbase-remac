@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -49,7 +56,7 @@ QT_BEGIN_NAMESPACE
 */
 
 QThreadData::QThreadData(int initialRefCount)
-    : _ref(initialRefCount), loopLevel(0), thread(0), threadId(0),
+    : _ref(initialRefCount), loopLevel(0), scopeLevel(0), thread(0), threadId(0),
       eventDispatcher(0),
       quitNow(false), canWait(true), isAdopted(false), requiresCoreApplication(true)
 {
@@ -142,16 +149,12 @@ QThreadPrivate::QThreadPrivate(QThreadData *d)
       exited(false), returnCode(-1),
       stackSize(0), priority(QThread::InheritPriority), data(d)
 {
-#if defined (Q_OS_UNIX)
-    thread_id = 0;
-#elif defined (Q_OS_WIN)
+#if defined (Q_OS_WIN)
     handle = 0;
 #  ifndef Q_OS_WINRT
     id = 0;
 #  endif
     waiters = 0;
-#endif
-#if defined (Q_OS_WIN)
     terminationEnabled = true;
     terminatePending = false;
 #endif
@@ -303,8 +306,9 @@ QThreadPrivate::~QThreadPrivate()
     The effect of the \a priority parameter is dependent on the
     operating system's scheduling policy. In particular, the \a priority
     will be ignored on systems that do not support thread priorities
-    (such as on Linux, see http://linux.die.net/man/2/sched_setscheduler
-    for more details).
+    (such as on Linux, see the
+    \l {http://linux.die.net/man/2/sched_setscheduler}{sched_setscheduler}
+    documentation for more details).
 
     \sa run(), terminate()
 */
@@ -876,16 +880,12 @@ bool QThread::isInterruptionRequested() const
 
     Note: don't try to deliver events from the started() signal.
 */
-static void setThreadDoesNotRequireCoreApplication()
-{
-    QThreadData::current()->requiresCoreApplication = false;
-}
-
 QDaemonThread::QDaemonThread(QObject *parent)
     : QThread(parent)
 {
     // QThread::started() is emitted from the thread we start
-    connect(this, &QThread::started, setThreadDoesNotRequireCoreApplication);
+    connect(this, &QThread::started,
+            [](){ QThreadData::current()->requiresCoreApplication = false; });
 }
 
 QDaemonThread::~QDaemonThread()

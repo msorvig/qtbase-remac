@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 Klaralvdalens Datakonsult AB (KDAB).
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -75,7 +81,8 @@ QOpenGLTexturePrivate::QOpenGLTexturePrivate(QOpenGLTexture::Target textureTarge
       textureView(false),
       autoGenerateMipMaps(true),
       storageAllocated(false),
-      texFuncs(0)
+      texFuncs(0),
+      functions(0)
 {
     dimensions[0] = dimensions[1] = dimensions[2] = 1;
 
@@ -97,9 +104,11 @@ QOpenGLTexturePrivate::QOpenGLTexturePrivate(QOpenGLTexture::Target textureTarge
         break;
     case QOpenGLTexture::TargetCubeMap:
         bindingTarget = QOpenGLTexture::BindingTargetCubeMap;
+        faces = 6;
         break;
     case QOpenGLTexture::TargetCubeMapArray:
         bindingTarget = QOpenGLTexture::BindingTargetCubeMapArray;
+        faces = 6;
         break;
     case QOpenGLTexture::Target2DMultisample:
         bindingTarget = QOpenGLTexture::BindingTarget2DMultisample;
@@ -157,6 +166,7 @@ bool QOpenGLTexturePrivate::create()
         return false;
     }
     context = ctx;
+    functions = ctx->functions();
 
     // Resolve any functions we will need based upon context version and create the texture
     initializeOpenGLFunctions();
@@ -169,13 +179,13 @@ bool QOpenGLTexturePrivate::create()
         feature = static_cast<QOpenGLTexture::Feature>(feature << 1);
     }
 
-    texFuncs->glGenTextures(1, &textureId);
+    functions->glGenTextures(1, &textureId);
     return textureId != 0;
 }
 
 void QOpenGLTexturePrivate::destroy()
 {
-    if (!context) {
+    if (!textureId) {
         // not created or already destroyed
         return;
     }
@@ -186,9 +196,10 @@ void QOpenGLTexturePrivate::destroy()
         return;
     }
 
-    texFuncs->glDeleteTextures(1, &textureId);
+    functions->glDeleteTextures(1, &textureId);
 
     context = 0;
+    functions = 0;
     textureId = 0;
     format = QOpenGLTexture::NoFormat;
     formatClass = QOpenGLTexture::NoFormatClass;
@@ -223,17 +234,17 @@ void QOpenGLTexturePrivate::destroy()
 
 void QOpenGLTexturePrivate::bind()
 {
-    texFuncs->glBindTexture(target, textureId);
+    functions->glBindTexture(target, textureId);
 }
 
 void QOpenGLTexturePrivate::bind(uint unit, QOpenGLTexture::TextureUnitReset reset)
 {
     GLint oldTextureUnit = 0;
     if (reset == QOpenGLTexture::ResetTextureUnit)
-        texFuncs->glGetIntegerv(GL_ACTIVE_TEXTURE, &oldTextureUnit);
+        functions->glGetIntegerv(GL_ACTIVE_TEXTURE, &oldTextureUnit);
 
     texFuncs->glActiveTexture(GL_TEXTURE0 + unit);
-    texFuncs->glBindTexture(target, textureId);
+    functions->glBindTexture(target, textureId);
 
     if (reset == QOpenGLTexture::ResetTextureUnit)
         texFuncs->glActiveTexture(GL_TEXTURE0 + oldTextureUnit);
@@ -241,17 +252,17 @@ void QOpenGLTexturePrivate::bind(uint unit, QOpenGLTexture::TextureUnitReset res
 
 void QOpenGLTexturePrivate::release()
 {
-    texFuncs->glBindTexture(target, 0);
+    functions->glBindTexture(target, 0);
 }
 
 void QOpenGLTexturePrivate::release(uint unit, QOpenGLTexture::TextureUnitReset reset)
 {
     GLint oldTextureUnit = 0;
     if (reset == QOpenGLTexture::ResetTextureUnit)
-        texFuncs->glGetIntegerv(GL_ACTIVE_TEXTURE, &oldTextureUnit);
+        functions->glGetIntegerv(GL_ACTIVE_TEXTURE, &oldTextureUnit);
 
     texFuncs->glActiveTexture(GL_TEXTURE0 + unit);
-    texFuncs->glBindTexture(target, 0);
+    functions->glBindTexture(target, 0);
 
     if (reset == QOpenGLTexture::ResetTextureUnit)
         texFuncs->glActiveTexture(GL_TEXTURE0 + oldTextureUnit);
@@ -260,18 +271,18 @@ void QOpenGLTexturePrivate::release(uint unit, QOpenGLTexture::TextureUnitReset 
 bool QOpenGLTexturePrivate::isBound() const
 {
     GLint boundTextureId = 0;
-    texFuncs->glGetIntegerv(bindingTarget, &boundTextureId);
+    functions->glGetIntegerv(bindingTarget, &boundTextureId);
     return (static_cast<GLuint>(boundTextureId) == textureId);
 }
 
 bool QOpenGLTexturePrivate::isBound(uint unit) const
 {
     GLint oldTextureUnit = 0;
-    texFuncs->glGetIntegerv(GL_ACTIVE_TEXTURE, &oldTextureUnit);
+    functions->glGetIntegerv(GL_ACTIVE_TEXTURE, &oldTextureUnit);
 
     GLint boundTextureId = 0;
     texFuncs->glActiveTexture(GL_TEXTURE0 + unit);
-    texFuncs->glGetIntegerv(bindingTarget, &boundTextureId);
+    functions->glGetIntegerv(bindingTarget, &boundTextureId);
     bool result = (static_cast<GLuint>(boundTextureId) == textureId);
 
     texFuncs->glActiveTexture(GL_TEXTURE0 + oldTextureUnit);
@@ -2205,7 +2216,7 @@ QOpenGLTexture::QOpenGLTexture(Target target)
     OpenGL context.
 */
 QOpenGLTexture::QOpenGLTexture(const QImage& image, MipMapGeneration genMipMaps)
-    : d_ptr(new QOpenGLTexturePrivate(QOpenGLTexture::Target2D, this))
+    : QOpenGLTexture(QOpenGLTexture::Target2D)
 {
     setData(image, genMipMaps);
 }
@@ -3220,6 +3231,12 @@ void QOpenGLTexture::setData(const QImage& image, MipMapGeneration genMipMaps)
         qWarning("QOpenGLTexture::setData() requires a valid current context");
         return;
     }
+
+    if (image.isNull()) {
+        qWarning("QOpenGLTexture::setData() tried to set a null image");
+        return;
+    }
+
     if (context->isOpenGLES() && context->format().majorVersion() < 3)
         setFormat(QOpenGLTexture::RGBAFormat);
     else
@@ -4093,27 +4110,8 @@ QOpenGLTexture::WrapMode QOpenGLTexture::wrapMode(QOpenGLTexture::CoordinateDire
 */
 void QOpenGLTexture::setBorderColor(QColor color)
 {
-#if !defined(QT_OPENGL_ES_2)
-    if (!QOpenGLContext::currentContext()->isOpenGLES()) {
-        Q_D(QOpenGLTexture);
-        d->create();
-        Q_ASSERT(d->texFuncs);
-        Q_ASSERT(d->textureId);
-        float values[4];
-        values[0] = color.redF();
-        values[1] = color.greenF();
-        values[2] = color.blueF();
-        values[3] = color.alphaF();
-        d->borderColor.clear();
-        for (int i = 0; i < 4; ++i)
-            d->borderColor.append(QVariant(values[i]));
-        d->texFuncs->glTextureParameterfv(d->textureId, d->target, d->bindingTarget, GL_TEXTURE_BORDER_COLOR, values);
-        return;
-    }
-#else
-    Q_UNUSED(color);
-#endif
-    qWarning("QOpenGLTexture: Border color is not supported");
+    setBorderColor(static_cast<float>(color.redF()), static_cast<float>(color.greenF()),
+                   static_cast<float>(color.blueF()), static_cast<float>(color.alphaF()));
 }
 
 /*!

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -193,8 +188,11 @@ protected:
         Bar space[1];
         space[0].~Bar();
 
+        const QByteArray postFix =  '_'
+            + QByteArray::number(reinterpret_cast<quintptr>(QThread::currentThreadId()));
+
         for (int i = 0; i < 1000; ++i) {
-            const QByteArray name = QString("Bar%1_%2").arg(i).arg((size_t)QThread::currentThreadId()).toLatin1();
+            const QByteArray name = "Bar" + QByteArray::number(i) + postFix;
             const char *nm = name.constData();
             int tp = qRegisterMetaType<Bar>(nm);
 #if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
@@ -369,40 +367,40 @@ void tst_QMetaType::normalizedTypes()
 }
 
 #define TYPENAME_DATA(MetaTypeName, MetaTypeId, RealType)\
-    QTest::newRow(#RealType) << QMetaType::MetaTypeName << #RealType;
+    QTest::newRow(#RealType) << int(QMetaType::MetaTypeName) << #RealType;
 
 void tst_QMetaType::typeName_data()
 {
-    QTest::addColumn<QMetaType::Type>("aType");
+    QTest::addColumn<int>("aType");
     QTest::addColumn<QString>("aTypeName");
 
     QT_FOR_EACH_STATIC_TYPE(TYPENAME_DATA)
-    QTest::newRow("QMetaType::UnknownType") << QMetaType::UnknownType << static_cast<const char*>(0);
+    QTest::newRow("QMetaType::UnknownType") << int(QMetaType::UnknownType) << static_cast<const char*>(0);
 
-    QTest::newRow("Whity<double>") << static_cast<QMetaType::Type>(::qMetaTypeId<Whity<double> >()) << QString::fromLatin1("Whity<double>");
-    QTest::newRow("Whity<int>") << static_cast<QMetaType::Type>(::qMetaTypeId<Whity<int> >()) << QString::fromLatin1("Whity<int>");
-    QTest::newRow("Testspace::Foo") << static_cast<QMetaType::Type>(::qMetaTypeId<TestSpace::Foo>()) << QString::fromLatin1("TestSpace::Foo");
+    QTest::newRow("Whity<double>") << ::qMetaTypeId<Whity<double> >() << QString::fromLatin1("Whity<double>");
+    QTest::newRow("Whity<int>") << ::qMetaTypeId<Whity<int> >() << QString::fromLatin1("Whity<int>");
+    QTest::newRow("Testspace::Foo") << ::qMetaTypeId<TestSpace::Foo>() << QString::fromLatin1("TestSpace::Foo");
 
-    QTest::newRow("-1") << QMetaType::Type(-1) << QString();
-    QTest::newRow("-124125534") << QMetaType::Type(-124125534) << QString();
-    QTest::newRow("124125534") << QMetaType::Type(124125534) << QString();
+    QTest::newRow("-1") << -1 << QString();
+    QTest::newRow("-124125534") << -124125534 << QString();
+    QTest::newRow("124125534") << 124125534 << QString();
 
     // automatic registration
-    QTest::newRow("QList<int>") << static_cast<QMetaType::Type>(::qMetaTypeId<QList<int> >()) << QString::fromLatin1("QList<int>");
-    QTest::newRow("QHash<int,int>") << static_cast<QMetaType::Type>(::qMetaTypeId<QHash<int, int> >()) << QString::fromLatin1("QHash<int,int>");
-    QTest::newRow("QMap<int,int>") << static_cast<QMetaType::Type>(::qMetaTypeId<QMap<int, int> >()) << QString::fromLatin1("QMap<int,int>");
-    QTest::newRow("QVector<QList<int>>") << static_cast<QMetaType::Type>(::qMetaTypeId<QVector<QList<int> > >()) << QString::fromLatin1("QVector<QList<int> >");
-    QTest::newRow("QVector<QMap<int,int>>") << static_cast<QMetaType::Type>(::qMetaTypeId<QVector<QMap<int, int> > >()) << QString::fromLatin1("QVector<QMap<int,int> >");
+    QTest::newRow("QList<int>") << ::qMetaTypeId<QList<int> >() << QString::fromLatin1("QList<int>");
+    QTest::newRow("QHash<int,int>") << ::qMetaTypeId<QHash<int, int> >() << QString::fromLatin1("QHash<int,int>");
+    QTest::newRow("QMap<int,int>") << ::qMetaTypeId<QMap<int, int> >() << QString::fromLatin1("QMap<int,int>");
+    QTest::newRow("QVector<QList<int>>") << ::qMetaTypeId<QVector<QList<int> > >() << QString::fromLatin1("QVector<QList<int> >");
+    QTest::newRow("QVector<QMap<int,int>>") << ::qMetaTypeId<QVector<QMap<int, int> > >() << QString::fromLatin1("QVector<QMap<int,int> >");
 
-    QTest::newRow("CustomQObject*") << static_cast<QMetaType::Type>(::qMetaTypeId<CustomQObject*>()) << QString::fromLatin1("CustomQObject*");
-    QTest::newRow("CustomGadget") << static_cast<QMetaType::Type>(::qMetaTypeId<CustomGadget>()) << QString::fromLatin1("CustomGadget");
-    QTest::newRow("CustomQObject::CustomQEnum") << static_cast<QMetaType::Type>(::qMetaTypeId<CustomQObject::CustomQEnum>()) << QString::fromLatin1("CustomQObject::CustomQEnum");
-    QTest::newRow("Qt::ArrowType") << static_cast<QMetaType::Type>(::qMetaTypeId<Qt::ArrowType>()) << QString::fromLatin1("Qt::ArrowType");
+    QTest::newRow("CustomQObject*") << ::qMetaTypeId<CustomQObject*>() << QString::fromLatin1("CustomQObject*");
+    QTest::newRow("CustomGadget") << ::qMetaTypeId<CustomGadget>() << QString::fromLatin1("CustomGadget");
+    QTest::newRow("CustomQObject::CustomQEnum") << ::qMetaTypeId<CustomQObject::CustomQEnum>() << QString::fromLatin1("CustomQObject::CustomQEnum");
+    QTest::newRow("Qt::ArrowType") << ::qMetaTypeId<Qt::ArrowType>() << QString::fromLatin1("Qt::ArrowType");
 }
 
 void tst_QMetaType::typeName()
 {
-    QFETCH(QMetaType::Type, aType);
+    QFETCH(int, aType);
     QFETCH(QString, aTypeName);
 
     QString name = QString::fromLatin1(QMetaType::typeName(aType));
@@ -413,15 +411,15 @@ void tst_QMetaType::typeName()
 
 void tst_QMetaType::type_data()
 {
-    QTest::addColumn<QMetaType::Type>("aType");
+    QTest::addColumn<int>("aType");
     QTest::addColumn<QByteArray>("aTypeName");
 
 #define TST_QMETATYPE_TYPE_DATA(MetaTypeName, MetaTypeId, RealType)\
-    QTest::newRow(#RealType) << QMetaType::MetaTypeName << QByteArray( #RealType );
+    QTest::newRow(#RealType) << int(QMetaType::MetaTypeName) << QByteArray( #RealType );
 #define TST_QMETATYPE_TYPE_DATA_ALIAS(MetaTypeName, MetaTypeId, AliasType, RealTypeString)\
-    QTest::newRow(RealTypeString) << QMetaType::MetaTypeName << QByteArray( #AliasType );
+    QTest::newRow(RealTypeString) << int(QMetaType::MetaTypeName) << QByteArray( #AliasType );
 
-    QTest::newRow("empty") << QMetaType::UnknownType << QByteArray();
+    QTest::newRow("empty") << int(QMetaType::UnknownType) << QByteArray();
 
     QT_FOR_EACH_STATIC_TYPE(TST_QMETATYPE_TYPE_DATA)
     QT_FOR_EACH_STATIC_ALIAS_TYPE(TST_QMETATYPE_TYPE_DATA_ALIAS)
@@ -432,13 +430,13 @@ void tst_QMetaType::type_data()
 
 void tst_QMetaType::type()
 {
-    QFETCH(QMetaType::Type, aType);
+    QFETCH(int, aType);
     QFETCH(QByteArray, aTypeName);
 
     // QMetaType::type(QByteArray)
-    QCOMPARE(QMetaType::type(aTypeName), int(aType));
+    QCOMPARE(QMetaType::type(aTypeName), aType);
     // QMetaType::type(const char *)
-    QCOMPARE(QMetaType::type(aTypeName.constData()), int(aType));
+    QCOMPARE(QMetaType::type(aTypeName.constData()), aType);
 }
 
 void tst_QMetaType::type_fromSubString_data()
@@ -727,9 +725,9 @@ template<> struct TestValueFactory<QMetaType::QVariant> {
 
 void tst_QMetaType::create_data()
 {
-    QTest::addColumn<QMetaType::Type>("type");
+    QTest::addColumn<int>("type");
 #define ADD_METATYPE_TEST_ROW(MetaTypeName, MetaTypeId, RealType) \
-    QTest::newRow(QMetaType::typeName(QMetaType::MetaTypeName)) << QMetaType::MetaTypeName;
+    QTest::newRow(QMetaType::typeName(QMetaType::MetaTypeName)) << int(QMetaType::MetaTypeName);
 FOR_EACH_CORE_METATYPE(ADD_METATYPE_TEST_ROW)
 #undef ADD_METATYPE_TEST_ROW
 }
@@ -781,7 +779,7 @@ FOR_EACH_CORE_METATYPE(RETURN_CREATE_FUNCTION)
         }
     };
 
-    QFETCH(QMetaType::Type, type);
+    QFETCH(int, type);
     TypeTestFunctionGetter::get(type)();
 }
 
@@ -832,33 +830,33 @@ FOR_EACH_CORE_METATYPE(RETURN_CREATE_COPY_FUNCTION)
         }
     };
 
-    QFETCH(QMetaType::Type, type);
+    QFETCH(int, type);
     TypeTestFunctionGetter::get(type)();
 }
 
 void tst_QMetaType::sizeOf_data()
 {
-    QTest::addColumn<QMetaType::Type>("type");
+    QTest::addColumn<int>("type");
     QTest::addColumn<size_t>("size");
 
-    QTest::newRow("QMetaType::UnknownType") << QMetaType::UnknownType << size_t(0);
+    QTest::newRow("QMetaType::UnknownType") << int(QMetaType::UnknownType) << size_t(0);
 #define ADD_METATYPE_TEST_ROW(MetaTypeName, MetaTypeId, RealType) \
-    QTest::newRow(#RealType) << QMetaType::MetaTypeName << size_t(QTypeInfo<RealType>::sizeOf);
+    QTest::newRow(#RealType) << int(QMetaType::MetaTypeName) << size_t(QTypeInfo<RealType>::sizeOf);
 FOR_EACH_CORE_METATYPE(ADD_METATYPE_TEST_ROW)
 #undef ADD_METATYPE_TEST_ROW
 
-    QTest::newRow("Whity<double>") << static_cast<QMetaType::Type>(::qMetaTypeId<Whity<double> >()) << sizeof(Whity<double>);
-QTest::newRow("Whity<int>") << static_cast<QMetaType::Type>(::qMetaTypeId<Whity<int> >()) << sizeof(Whity<int>);
-    QTest::newRow("Testspace::Foo") << static_cast<QMetaType::Type>(::qMetaTypeId<TestSpace::Foo>()) << sizeof(TestSpace::Foo);
+    QTest::newRow("Whity<double>") << ::qMetaTypeId<Whity<double> >() << sizeof(Whity<double>);
+    QTest::newRow("Whity<int>") << ::qMetaTypeId<Whity<int> >() << sizeof(Whity<int>);
+    QTest::newRow("Testspace::Foo") << ::qMetaTypeId<TestSpace::Foo>() << sizeof(TestSpace::Foo);
 
-    QTest::newRow("-1") << QMetaType::Type(-1) << size_t(0);
-    QTest::newRow("-124125534") << QMetaType::Type(-124125534) << size_t(0);
-    QTest::newRow("124125534") << QMetaType::Type(124125534) << size_t(0);
+    QTest::newRow("-1") << -1 << size_t(0);
+    QTest::newRow("-124125534") << -124125534 << size_t(0);
+    QTest::newRow("124125534") << 124125534 << size_t(0);
 }
 
 void tst_QMetaType::sizeOf()
 {
-    QFETCH(QMetaType::Type, type);
+    QFETCH(int, type);
     QFETCH(size_t, size);
     QCOMPARE(size_t(QMetaType::sizeOf(type)), size);
 }
@@ -870,7 +868,7 @@ void tst_QMetaType::sizeOfStaticLess_data()
 
 void tst_QMetaType::sizeOfStaticLess()
 {
-    QFETCH(QMetaType::Type, type);
+    QFETCH(int, type);
     QFETCH(size_t, size);
     QCOMPARE(size_t(QMetaType(type).sizeOf()), size);
 }
@@ -1126,7 +1124,7 @@ FOR_EACH_CORE_METATYPE(RETURN_CONSTRUCT_FUNCTION)
         }
     };
 
-    QFETCH(QMetaType::Type, type);
+    QFETCH(int, type);
     TypeTestFunctionGetter::get(type)();
 }
 
@@ -1194,7 +1192,7 @@ FOR_EACH_CORE_METATYPE(RETURN_CONSTRUCT_COPY_FUNCTION)
         }
     };
 
-    QFETCH(QMetaType::Type, type);
+    QFETCH(int, type);
     TypeTestFunctionGetter::get(type)();
 }
 
@@ -1475,7 +1473,7 @@ static QByteArray createTypeName(const char *begin, const char *va)
     }
     if (tn.endsWith('>'))
         tn += ' ';
-        tn += ">";
+    tn += '>';
     return tn;
 }
 #endif

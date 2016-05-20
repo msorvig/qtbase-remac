@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -99,7 +105,7 @@ static Window createDummyWindow(Display *dpy, XVisualInfo *visualInfo, int scree
 static Window createDummyWindow(Display *dpy, GLXFBConfig config, int screenNumber, Window rootWin)
 {
     XVisualInfo *visualInfo = glXGetVisualFromFBConfig(dpy, config);
-    if (!visualInfo)
+    if (Q_UNLIKELY(!visualInfo))
         qFatal("Could not initialize GLX");
     Window window = createDummyWindow(dpy, visualInfo, screenNumber, rootWin);
     XFree(visualInfo);
@@ -175,7 +181,11 @@ QGLXContext::QGLXContext(QXcbScreen *screen, const QSurfaceFormat &format, QPlat
 void QGLXContext::init(QXcbScreen *screen, QPlatformOpenGLContext *share)
 {
     if (m_format.renderableType() == QSurfaceFormat::DefaultRenderableType)
+#if defined(QT_OPENGL_ES_2)
+        m_format.setRenderableType(QSurfaceFormat::OpenGLES);
+#else
         m_format.setRenderableType(QSurfaceFormat::OpenGL);
+#endif
     if (m_format.renderableType() != QSurfaceFormat::OpenGL && m_format.renderableType() != QSurfaceFormat::OpenGLES)
         return;
 
@@ -301,7 +311,7 @@ void QGLXContext::init(QXcbScreen *screen, QPlatformOpenGLContext *share)
 
         // Note that m_format gets updated with the used surface format
         visualInfo = qglx_findVisualInfo(m_display, screen->screenNumber(), &m_format);
-        if (!visualInfo)
+        if (Q_UNLIKELY(!visualInfo))
             qFatal("Could not initialize GLX");
         m_context = glXCreateContext(m_display, visualInfo, m_shareContext, true);
         if (!m_context && m_shareContext) {
@@ -540,10 +550,10 @@ void QGLXContext::swapBuffers(QPlatformSurface *surface)
     }
 }
 
-void (*QGLXContext::getProcAddress(const QByteArray &procName)) ()
+QFunctionPointer QGLXContext::getProcAddress(const char *procName)
 {
 #ifdef QT_STATIC
-    return glXGetProcAddressARB(reinterpret_cast<const GLubyte *>(procName.constData()));
+    return glXGetProcAddressARB(reinterpret_cast<const GLubyte *>(procName));
 #else
     typedef void *(*qt_glXGetProcAddressARB)(const GLubyte *);
     static qt_glXGetProcAddressARB glXGetProcAddressARB = 0;
@@ -575,7 +585,7 @@ void (*QGLXContext::getProcAddress(const QByteArray &procName)) ()
     }
     if (!glXGetProcAddressARB)
         return 0;
-    return (void (*)())glXGetProcAddressARB(reinterpret_cast<const GLubyte *>(procName.constData()));
+    return (void (*)())glXGetProcAddressARB(reinterpret_cast<const GLubyte *>(procName));
 #endif
 }
 
@@ -648,7 +658,13 @@ void QGLXContext::queryDummyContext()
         oldSurface = oldContext->surface();
 
     QScopedPointer<QSurface> surface;
-    const char *glxvendor = glXGetClientString(glXGetCurrentDisplay(), GLX_VENDOR);
+    Display *display = glXGetCurrentDisplay();
+    if (!display) {
+        // FIXME: Since Qt 5.6 we don't need to check whether primary screen is NULL
+        if (QScreen *screen = QGuiApplication::primaryScreen())
+            display = DISPLAY_FROM_XCB(static_cast<QXcbScreen *>(screen->handle()));
+    }
+    const char *glxvendor = glXGetClientString(display, GLX_VENDOR);
     if (glxvendor && !strcmp(glxvendor, "ATI")) {
         QWindow *window = new QWindow;
         window->resize(64, 64);
@@ -699,8 +715,8 @@ bool QGLXContext::supportsThreading()
 
 QGLXPbuffer::QGLXPbuffer(QOffscreenSurface *offscreenSurface)
     : QPlatformOffscreenSurface(offscreenSurface)
-    , m_format(offscreenSurface->requestedFormat())
     , m_screen(static_cast<QXcbScreen *>(offscreenSurface->screen()->handle()))
+    , m_format(m_screen->surfaceFormatFor(offscreenSurface->requestedFormat()))
     , m_pbuffer(0)
 {
     GLXFBConfig config = qglx_findConfig(DISPLAY_FROM_XCB(m_screen), m_screen->screenNumber(), m_format);

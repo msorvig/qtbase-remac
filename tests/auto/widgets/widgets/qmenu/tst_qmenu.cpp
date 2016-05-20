@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -86,22 +81,19 @@ private slots:
     void overrideMenuAction();
     void statusTip();
     void widgetActionFocus();
-#ifndef Q_OS_WINCE
     void mouseActivation();
-#endif
     void tearOff();
     void layoutDirection();
 
     void task208001_stylesheet();
     void activeSubMenuPosition();
+    void activeSubMenuPositionExec();
     void task242454_sizeHint();
     void task176201_clear();
     void task250673_activeMultiColumnSubMenuPosition();
     void task256918_setFont();
     void menuSizeHint();
-#ifndef Q_OS_WINCE
     void task258920_mouseBorder();
-#endif
     void setFixedWidth();
     void deleteActionInTriggered();
     void pushButtonPopulateOnAboutToShow();
@@ -109,6 +101,9 @@ private slots:
     void QTBUG7411_submenus_activate();
     void QTBUG30595_rtl_submenu();
     void QTBUG20403_nested_popup_on_shortcut_trigger();
+#ifndef QT_NO_CURSOR
+    void QTBUG47515_widgetActionEnterLeave();
+#endif
     void QTBUG_10735_crashWithDialog();
 #ifdef Q_OS_MAC
     void QTBUG_37933_ampersands_data();
@@ -293,8 +288,6 @@ void tst_QMenu::addActionsConnect()
 #endif // !QT_NO_SHORTCUT
 }
 
-// We have a separate mouseActivation test for Windows mobile
-#ifndef Q_OS_WINCE
 void tst_QMenu::mouseActivation()
 {
     QWidget topLevel;
@@ -334,7 +327,6 @@ void tst_QMenu::mouseActivation()
     QVERIFY(submenu.isVisible());
 #endif
 }
-#endif
 
 void tst_QMenu::keyboardNavigation_data()
 {
@@ -451,6 +443,7 @@ void tst_QMenu::overrideMenuAction()
     //test the override menu action by first creating an action to which we set its menu
     QMainWindow w;
     w.resize(300, 200);
+    w.menuBar()->setNativeMenuBar(false);
     centerOnScreen(&w);
 
     QAction *aFileMenu = new QAction("&File", &w);
@@ -464,7 +457,7 @@ void tst_QMenu::overrideMenuAction()
 
     // On Mac and Windows CE, we need to create native key events to test menu
     // action activation, so skip this part of the test.
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
     QAction *aQuit = new QAction("Quit", &w);
     aQuit->setShortcut(QKeySequence("Ctrl+X"));
     m->addAction(aQuit);
@@ -554,7 +547,7 @@ void tst_QMenu::widgetActionFocus()
     QMenu m;
     QListWidget *l = new QListWidget(&m);
     for (int i = 1; i<3 ; i++)
-        l->addItem(QString("item%1").arg(i));
+        l->addItem(QStringLiteral("item" ) + QString::number(i));
     QWidgetAction *wa = new QWidgetAction(&m);
     wa->setDefaultWidget(l);
     m.addAction(wa);
@@ -591,10 +584,19 @@ void tst_QMenu::widgetActionFocus()
     QCOMPARE(m.activeAction(), (QAction *)wa);
 }
 
+static QMenu *getTornOffMenu()
+{
+    foreach (QWidget *w, QApplication::allWidgets()) {
+        if (w->isVisible() && w->inherits("QTornOffMenu"))
+            return static_cast<QMenu *>(w);
+    }
+    return Q_NULLPTR;
+}
+
 void tst_QMenu::tearOff()
 {
     QWidget widget;
-    QMenu *menu = new QMenu(&widget);
+    QScopedPointer<QMenu> menu(new QMenu(&widget));
     QVERIFY(!menu->isTearOffEnabled()); //default value
     menu->setTearOffEnabled(true);
     menu->addAction("aaa");
@@ -607,24 +609,43 @@ void tst_QMenu::tearOff()
     widget.activateWindow();
     QVERIFY(QTest::qWaitForWindowActive(&widget));
     menu->popup(widget.geometry().topRight() + QPoint(50, 0));
-    QVERIFY(QTest::qWaitForWindowActive(menu));
+    QVERIFY(QTest::qWaitForWindowActive(menu.data()));
     QVERIFY(!menu->isTearOffMenuVisible());
 
-    QTest::mouseClick(menu, Qt::LeftButton, 0, QPoint(3, 3), 10);
+    QTest::mouseClick(menu.data(), Qt::LeftButton, 0, QPoint(3, 3), 10);
     QTRY_VERIFY(menu->isTearOffMenuVisible());
-    QPointer<QMenu> torn = 0;
-    foreach (QWidget *w, QApplication::allWidgets()) {
-        if (w->inherits("QTornOffMenu")) {
-            torn = static_cast<QMenu *>(w);
-            break;
-        }
-    }
+    QPointer<QMenu> torn = getTornOffMenu();
     QVERIFY(torn);
     QVERIFY(torn->isVisible());
 
     menu->hideTearOffMenu();
     QVERIFY(!menu->isTearOffMenuVisible());
     QVERIFY(!torn->isVisible());
+
+#ifndef QT_NO_CURSOR
+    // Test under-mouse positioning
+    menu->showTearOffMenu();
+    torn = getTornOffMenu();
+    QVERIFY(torn);
+    QVERIFY(torn->isVisible());
+    QVERIFY(menu->isTearOffMenuVisible());
+    // Some platforms include the window title bar in its geometry.
+    QTRY_COMPARE(torn->windowHandle()->position(), QCursor::pos());
+
+    menu->hideTearOffMenu();
+    QVERIFY(!menu->isTearOffMenuVisible());
+    QVERIFY(!torn->isVisible());
+
+    // Test custom positioning
+    const QPoint &pos = QCursor::pos() / 2 + QPoint(10, 10);
+    menu->showTearOffMenu(pos);
+    torn = getTornOffMenu();
+    QVERIFY(torn);
+    QVERIFY(torn->isVisible());
+    QVERIFY(menu->isTearOffMenuVisible());
+    // Some platforms include the window title bar in its geometry.
+    QTRY_COMPARE(torn->windowHandle()->position(), pos);
+#endif // QT_NO_CURSOR
 }
 
 void tst_QMenu::layoutDirection()
@@ -688,10 +709,61 @@ void tst_QMenu::activeSubMenuPosition()
     QVERIFY(sub->pos() != QPoint(0,0));
     // well, it's enough to check the pos is not (0,0) but it's more safe
     // to check that submenu is to the right of the main menu too.
-#ifndef Q_OS_WINCE_WM
     QVERIFY(sub->pos().x() > main->pos().x());
     QCOMPARE(sub->activeAction(), subAction);
-#endif
+}
+
+// QTBUG-49588, QTBUG-48396: activeSubMenuPositionExec() is the same as
+// activeSubMenuPosition(), but uses QMenu::exec(), which produces a different
+// sequence of events. Verify that the sub menu is positioned to the right of the
+// main menu.
+class SubMenuPositionExecMenu : public QMenu
+{
+    Q_OBJECT
+public:
+    SubMenuPositionExecMenu() : QMenu("Menu-Title"), m_timerId(-1), m_timerTick(0)
+    {
+        addAction("Item 1");
+        m_subMenu = addMenu("Submenu");
+        m_subAction = m_subMenu->addAction("Sub-Item1");
+        setActiveAction(m_subMenu->menuAction());
+    }
+
+protected:
+    void showEvent(QShowEvent *e) Q_DECL_OVERRIDE
+    {
+        QVERIFY(m_subMenu->isVisible());
+        QVERIFY2(m_subMenu->x() > x(),
+                 (QByteArray::number(m_subMenu->x()) + ' ' + QByteArray::number(x())).constData());
+        m_timerId = startTimer(50);
+        QMenu::showEvent(e);
+    }
+
+    void timerEvent(QTimerEvent *e) Q_DECL_OVERRIDE
+    {
+        if (e->timerId() == m_timerId) {
+            switch (m_timerTick++) {
+            case 0:
+                m_subMenu->close();
+                break;
+            case 1:
+                close();
+                break;
+            }
+        }
+    }
+
+private:
+    int m_timerId;
+    int m_timerTick;
+    QMenu *m_subMenu;
+    QAction *m_subAction;
+};
+
+void tst_QMenu::activeSubMenuPositionExec()
+{
+    SubMenuPositionExecMenu menu;
+    menu.exec(QGuiApplication::primaryScreen()->availableGeometry().center());
 }
 
 void tst_QMenu::task242454_sizeHint()
@@ -747,7 +819,7 @@ void tst_QMenu::task250673_activeMultiColumnSubMenuPosition()
 
     uint i = 2;
     while (main.columnCount() < 2) {
-        main.addAction(QString("Item %1").arg(i));
+        main.addAction(QLatin1String("Item ") + QString::number(i));
         ++i;
         QVERIFY(i<1000);
     }
@@ -825,7 +897,6 @@ public:
 };
 
 // Mouse move related signals for Windows Mobile unavailable
-#ifndef Q_OS_WINCE
 void tst_QMenu::task258920_mouseBorder()
 {
     Menu258920 menu;
@@ -854,7 +925,6 @@ void tst_QMenu::task258920_mouseBorder()
     QTRY_COMPARE(static_cast<QAction*>(0), menu.activeAction());
     QTRY_VERIFY(menu.painted);
 }
-#endif
 
 void tst_QMenu::setFixedWidth()
 {
@@ -1014,6 +1084,112 @@ void tst_QMenu::QTBUG20403_nested_popup_on_shortcut_trigger()
     QVERIFY(!subsub1.isVisible());
 }
 
+class MyWidget : public QWidget
+{
+public:
+    MyWidget(QWidget *parent) :
+        QWidget(parent),
+        move(0), enter(0), leave(0)
+    {
+        setMinimumSize(100, 100);
+        setMouseTracking(true);
+    }
+
+    bool event(QEvent *e) Q_DECL_OVERRIDE
+    {
+        switch (e->type()) {
+        case QEvent::MouseMove:
+            ++move;
+            break;
+        case QEvent::Enter:
+            ++enter;
+            break;
+        case QEvent::Leave:
+            ++leave;
+            break;
+        default:
+            break;
+        }
+        return QWidget::event(e);
+    }
+
+    int move, enter, leave;
+};
+
+#ifndef QT_NO_CURSOR
+void tst_QMenu::QTBUG47515_widgetActionEnterLeave()
+{
+    if (QGuiApplication::platformName() == QLatin1String("cocoa"))
+        QSKIP("This test fails on OS X on CI");
+
+    const QPoint center = QGuiApplication::primaryScreen()->availableGeometry().center();
+    const QPoint cursorPos = center - QPoint(100, 100);
+
+    QScopedPointer<QMenu> menu1(new QMenu("Menu1"));
+    QScopedPointer<QMenu> menu2(new QMenu("Menu2"));
+
+    QWidgetAction *wA1 = new QWidgetAction(menu1.data());
+    MyWidget *w1 = new MyWidget(menu1.data());
+    wA1->setDefaultWidget(w1);
+
+    QWidgetAction *wA2 = new QWidgetAction(menu2.data());
+    MyWidget *w2 = new MyWidget(menu2.data());
+    wA2->setDefaultWidget(w2);
+
+    QAction *nextMenuAct = menu1->addMenu(menu2.data());
+
+    menu1->addAction(wA1);
+    menu2->addAction(wA2);
+
+    // Root menu
+    {
+        QCursor::setPos(cursorPos);
+        QCoreApplication::processEvents();
+
+        menu1->popup(center);
+        QVERIFY(QTest::qWaitForWindowExposed(menu1.data()));
+
+        QCursor::setPos(w1->mapToGlobal(w1->rect().center()));
+        QVERIFY(w1->isVisible());
+        QTRY_COMPARE(w1->leave, 0);
+        QTRY_COMPARE(w1->enter, 1);
+
+        // Check whether leave event is not delivered on mouse move
+        w1->move = 0;
+        QCursor::setPos(w1->mapToGlobal(w1->rect().center()) + QPoint(1, 1));
+        QTRY_COMPARE(w1->move, 1);
+        QTRY_COMPARE(w1->leave, 0);
+        QTRY_COMPARE(w1->enter, 1);
+
+        QCursor::setPos(cursorPos);
+        QTRY_COMPARE(w1->leave, 1);
+        QTRY_COMPARE(w1->enter, 1);
+    }
+
+    // Submenu
+    {
+        menu1->setActiveAction(nextMenuAct);
+        QVERIFY(QTest::qWaitForWindowExposed(menu2.data()));
+
+        QCursor::setPos(w2->mapToGlobal(w2->rect().center()));
+        QVERIFY(w2->isVisible());
+        QTRY_COMPARE(w2->leave, 0);
+        QTRY_COMPARE(w2->enter, 1);
+
+        // Check whether leave event is not delivered on mouse move
+        w2->move = 0;
+        QCursor::setPos(w2->mapToGlobal(w2->rect().center()) + QPoint(1, 1));
+        QTRY_COMPARE(w2->move, 1);
+        QTRY_COMPARE(w2->leave, 0);
+        QTRY_COMPARE(w2->enter, 1);
+
+        QCursor::setPos(cursorPos);
+        QTRY_COMPARE(w2->leave, 1);
+        QTRY_COMPARE(w2->enter, 1);
+    }
+}
+#endif // !QT_NO_CURSOR
+
 class MyMenu : public QMenu
 {
     Q_OBJECT
@@ -1021,7 +1197,7 @@ public:
     MyMenu() : m_currentIndex(0)
     {
         for (int i = 0; i < 2; ++i)
-            dialogActions[i] = addAction( QString("dialog %1").arg(i), dialogs + i, SLOT(exec()));
+            dialogActions[i] = addAction(QLatin1String("dialog ") + QString::number(i), dialogs + i, SLOT(exec()));
     }
 
     void activateAction(int index)

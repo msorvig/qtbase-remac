@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -92,13 +98,6 @@ Q_GUI_EXPORT QImage qt_imageForBrush(int brushStyle, bool invert);
 QOpenGL2PaintEngineExPrivate::~QOpenGL2PaintEngineExPrivate()
 {
     delete shaderManager;
-
-    while (pathCaches.size()) {
-        QVectorPath::CacheEntry *e = *(pathCaches.constBegin());
-        e->cleanup(e->engine, e->data);
-        e->data = 0;
-        e->engine = 0;
-    }
 
     if (elementIndicesVBOId != 0) {
         funcs.glDeleteBuffers(1, &elementIndicesVBOId);
@@ -292,8 +291,6 @@ void QOpenGL2PaintEngineExPrivate::updateBrushTexture()
         }
 
         updateTexture(QT_BRUSH_TEXTURE_UNIT, currentBrushImage, wrapMode, filterMode, ForceUpdate);
-
-        textureInvertedY = false;
     }
     brushTextureDirty = false;
 }
@@ -409,11 +406,7 @@ void QOpenGL2PaintEngineExPrivate::updateBrushUniforms()
             dy = 0;
         }
         QTransform gl_to_qt(1, 0, 0, m22, 0, dy);
-        QTransform inv_matrix;
-        if (style == Qt::TexturePattern && textureInvertedY == -1)
-            inv_matrix = gl_to_qt * (QTransform(1, 0, 0, -1, 0, currentBrush.texture().height()) * brushQTransform * matrix).inverted() * translate;
-        else
-            inv_matrix = gl_to_qt * (brushQTransform * matrix).inverted() * translate;
+        QTransform inv_matrix = gl_to_qt * (brushQTransform * matrix).inverted() * translate;
 
         shaderManager->currentProgram()->setUniformValue(location(QOpenGLEngineShaderManager::BrushTransform), inv_matrix);
         shaderManager->currentProgram()->setUniformValue(location(QOpenGLEngineShaderManager::BrushTexture), QT_BRUSH_TEXTURE_UNIT);
@@ -1019,11 +1012,11 @@ void QOpenGL2PaintEngineExPrivate::fillStencilWithVertexArray(const float *data,
     funcs.glStencilMask(0xff); // Enable stencil writes
 
     if (dirtyStencilRegion.intersects(currentScissorBounds)) {
-        QVector<QRect> clearRegion = dirtyStencilRegion.intersected(currentScissorBounds).rects();
+        const QRegion clearRegion = dirtyStencilRegion.intersected(currentScissorBounds);
         funcs.glClearStencil(0); // Clear to zero
-        for (int i = 0; i < clearRegion.size(); ++i) {
+        for (const QRect &rect : clearRegion) {
 #ifndef QT_GL_NO_SCISSOR_TEST
-            setScissor(clearRegion.at(i));
+            setScissor(rect);
 #endif
             funcs.glClear(GL_STENCIL_BUFFER_BIT);
         }
@@ -2076,7 +2069,7 @@ bool QOpenGL2PaintEngineEx::begin(QPaintDevice *pdev)
 
     d->device->ensureActiveTarget();
 
-    if (d->device->context() != QOpenGLContext::currentContext()) {
+    if (d->device->context() != QOpenGLContext::currentContext() || !d->device->context()) {
         qWarning("QPainter::begin(): QOpenGLPaintDevice's context needs to be current");
         return false;
     }

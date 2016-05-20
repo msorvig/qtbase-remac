@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -58,15 +64,15 @@ static DATE QDateTimeToDATE(const QDateTime &dt)
     QDate date = dt.date();
     QTime time = dt.time();
     if (date.isValid() && !date.isNull()) {
-        stime.wDay = date.day();
-        stime.wMonth = date.month();
-        stime.wYear = date.year();
+        stime.wDay = WORD(date.day());
+        stime.wMonth = WORD(date.month());
+        stime.wYear = WORD(date.year());
     }
     if (time.isValid() && !time.isNull()) {
-        stime.wMilliseconds = time.msec();
-        stime.wSecond = time.second();
-        stime.wMinute = time.minute();
-        stime.wHour = time.hour();
+        stime.wMilliseconds = WORD(time.msec());
+        stime.wSecond = WORD(time.second());
+        stime.wMinute = WORD(time.minute());
+        stime.wHour = WORD(time.hour());
     }
 
     double vtime;
@@ -92,8 +98,8 @@ bool QVariant2VARIANT(const QVariant &var, VARIANT &arg, const QByteArray &typeN
             proptype = QVariant::Double;
     }
     if (proptype != QVariant::Invalid && proptype != QVariant::UserType && proptype != qvar.type()) {
-        if (qvar.canConvert(proptype))
-            qvar.convert(proptype);
+        if (qvar.canConvert(int(proptype)))
+            qvar.convert(int(proptype));
         else
             qvar = QVariant(proptype);
     }
@@ -164,7 +170,6 @@ bool QVariant2VARIANT(const QVariant &var, VARIANT &arg, const QByteArray &typeN
     case QVariant::LongLong:
         if (out && arg.vt == (VT_CY|VT_BYREF)) {
             arg.pcyVal->int64 = qvar.toLongLong();
-#if !defined(Q_OS_WINCE) && defined(_MSC_VER) && _MSC_VER >= 1400
         } else if (out && arg.vt == (VT_I8|VT_BYREF)) {
             *arg.pllVal = qvar.toLongLong();
         } else {
@@ -175,22 +180,11 @@ bool QVariant2VARIANT(const QVariant &var, VARIANT &arg, const QByteArray &typeN
                 arg.vt |= VT_BYREF;
             }
         }
-#else
-        } else {
-            arg.vt = VT_CY;
-            arg.cyVal.int64 = qvar.toLongLong();
-            if (out) {
-                arg.pcyVal = new CY(arg.cyVal);
-                arg.vt |= VT_BYREF;
-            }
-        }
-#endif
         break;
 
     case QVariant::ULongLong:
         if (out && arg.vt == (VT_CY|VT_BYREF)) {
             arg.pcyVal->int64 = qvar.toULongLong();
-#if !defined(Q_OS_WINCE) && defined(_MSC_VER) && _MSC_VER >= 1400
         } else if (out && arg.vt == (VT_UI8|VT_BYREF)) {
             *arg.pullVal = qvar.toULongLong();
         } else {
@@ -201,18 +195,6 @@ bool QVariant2VARIANT(const QVariant &var, VARIANT &arg, const QByteArray &typeN
                 arg.vt |= VT_BYREF;
             }
         }
-#else
-        } else {
-            arg.vt = VT_CY;
-            arg.cyVal.int64 = qvar.toULongLong();
-            if (out) {
-                arg.pcyVal = new CY(arg.cyVal);
-                arg.vt |= VT_BYREF;
-            }
-        }
-
-#endif
-
         break;
 
     case QVariant::Bool:
@@ -272,348 +254,6 @@ bool QVariant2VARIANT(const QVariant &var, VARIANT &arg, const QByteArray &typeN
             }
         }
         break;
-#if 0   // not a value with min/max semantics
-    case QVariant::Font:
-        if (out && arg.vt == (VT_DISPATCH|VT_BYREF)) {
-            if (*arg.ppdispVal)
-                (*arg.ppdispVal)->Release();
-            *arg.ppdispVal = QFontToIFont(qvariant_cast<QFont>(qvar));
-        } else {
-            arg.vt = VT_DISPATCH;
-            arg.pdispVal = QFontToIFont(qvariant_cast<QFont>(qvar));
-            if (out) {
-                arg.ppdispVal = new IDispatch*(arg.pdispVal);
-                arg.vt |= VT_BYREF;
-            }
-        }
-        break;
-    case QVariant::Pixmap:
-        if (out && arg.vt == (VT_DISPATCH|VT_BYREF)) {
-            if (*arg.ppdispVal)
-                (*arg.ppdispVal)->Release();
-            *arg.ppdispVal = QPixmapToIPicture(qvariant_cast<QPixmap>(qvar));
-        } else {
-            arg.vt = VT_DISPATCH;
-            arg.pdispVal = QPixmapToIPicture(qvariant_cast<QPixmap>(qvar));
-            if (out) {
-                arg.ppdispVal = new IDispatch*(arg.pdispVal);
-                arg.vt |= VT_BYREF;
-            }
-        }
-        break;
-    case QVariant::Cursor:
-        {
-#ifndef QT_NO_CURSOR
-            int shape = qvariant_cast<QCursor>(qvar).shape();
-            if (out && (arg.vt & VT_BYREF)) {
-                switch (arg.vt & ~VT_BYREF) {
-                case VT_I4:
-                    *arg.plVal = shape;
-                    break;
-                case VT_I2:
-                    *arg.piVal = shape;
-                    break;
-                case VT_UI4:
-                    *arg.pulVal = shape;
-                    break;
-                case VT_UI2:
-                    *arg.puiVal = shape;
-                    break;
-                case VT_INT:
-                    *arg.pintVal = shape;
-                    break;
-                case VT_UINT:
-                    *arg.puintVal = shape;
-                    break;
-                }
-            } else {
-                arg.vt = VT_I4;
-                arg.lVal = shape;
-                if (out) {
-                    arg.plVal = new long(arg.lVal);
-                    arg.vt |= VT_BYREF;
-                }
-            }
-#endif
-        }
-        break;
-
-    case QVariant::List:
-        {
-            const QList<QVariant> list = qvar.toList();
-            const int count = list.count();
-            VARTYPE vt = VT_VARIANT;
-            QVariant::Type listType = QVariant::LastType; // == QVariant
-            if (!typeName.isEmpty() && typeName.startsWith("QList<")) {
-                const QByteArray listTypeName = typeName.mid(6, typeName.length() - 7); // QList<int> -> int
-                listType = QVariant::nameToType(listTypeName);
-            }
-
-            VARIANT variant;
-            void *pElement = &variant;
-            switch (listType) {
-            case QVariant::Int:
-                vt = VT_I4;
-                pElement = &variant.lVal;
-                break;
-            case QVariant::Double:
-                vt = VT_R8;
-                pElement = &variant.dblVal;
-                break;
-            case QVariant::DateTime:
-                vt = VT_DATE;
-                pElement = &variant.date;
-                break;
-            case QVariant::Bool:
-                vt = VT_BOOL;
-                pElement = &variant.boolVal;
-                break;
-            case QVariant::LongLong:
-#if !defined(Q_OS_WINCE) && defined(_MSC_VER) && _MSC_VER >= 1400
-                vt = VT_I8;
-                pElement = &variant.llVal;
-#else
-                vt = VT_CY;
-                pElement = &variant.cyVal;
-#endif
-                break;
-            default:
-                break;
-            }
-            SAFEARRAY *array = 0;
-            bool is2D = false;
-            // If the first element in the array is a list the whole list is
-            // treated as a 2D array. The column count is taken from the 1st element.
-            if (count) {
-                QVariantList col = list.at(0).toList();
-                int maxColumns = col.count();
-                if (maxColumns) {
-                    is2D = true;
-                    SAFEARRAYBOUND rgsabound[2] = { {0} };
-                    rgsabound[0].cElements = count;
-                    rgsabound[1].cElements = maxColumns;
-                    array = SafeArrayCreate(VT_VARIANT, 2, rgsabound);
-                    LONG rgIndices[2];
-                    for (LONG i = 0; i < count; ++i) {
-                        rgIndices[0] = i;
-                        QVariantList columns = list.at(i).toList();
-                        int columnCount = qMin(maxColumns, columns.count());
-                        for (LONG j = 0;  j < columnCount; ++j) {
-                            QVariant elem = columns.at(j);
-                            VariantInit(&variant);
-                            QVariant2VARIANT(elem, variant, elem.typeName());
-                            rgIndices[1] = j;
-                            SafeArrayPutElement(array, rgIndices, pElement);
-                            clearVARIANT(&variant);
-                        }
-                    }
-
-                }
-            }
-            if (!is2D) {
-                array = SafeArrayCreateVector(vt, 0, count);
-                for (LONG index = 0; index < count; ++index) {
-                    QVariant elem = list.at(index);
-                    if (listType != QVariant::LastType)
-                        elem.convert(listType);
-                    VariantInit(&variant);
-                    QVariant2VARIANT(elem, variant, elem.typeName());
-                    SafeArrayPutElement(array, &index, pElement);
-                    clearVARIANT(&variant);
-                }
-            }
-            if (out && arg.vt == (VT_ARRAY|vt|VT_BYREF)) {
-                if (*arg.pparray)
-                    SafeArrayDestroy(*arg.pparray);
-                *arg.pparray = array;
-            } else {
-                arg.vt = VT_ARRAY|vt;
-                arg.parray = array;
-                if (out) {
-                    arg.pparray = new SAFEARRAY*(arg.parray);
-                    arg.vt |= VT_BYREF;
-                }
-            }
-        }
-        break;
-
-    case QVariant::StringList:
-        {
-            const QStringList list = qvar.toStringList();
-            const int count = list.count();
-            SAFEARRAY *array = SafeArrayCreateVector(VT_BSTR, 0, count);
-            for (LONG index = 0; index < count; ++index) {
-                QString elem = list.at(index);
-                BSTR bstr = QStringToBSTR(elem);
-                SafeArrayPutElement(array, &index, bstr);
-                SysFreeString(bstr);
-            }
-
-            if (out && arg.vt == (VT_ARRAY|VT_BSTR|VT_BYREF)) {
-                if (*arg.pparray)
-                    SafeArrayDestroy(*arg.pparray);
-                *arg.pparray = array;
-            } else {
-                arg.vt = VT_ARRAY|VT_BSTR;
-                arg.parray = array;
-                if (out) {
-                    arg.pparray = new SAFEARRAY*(arg.parray);
-                    arg.vt |= VT_BYREF;
-                }
-            }
-        }
-        break;
-
-    case QVariant::ByteArray:
-        {
-            const QByteArray bytes = qvar.toByteArray();
-            const uint count = bytes.count();
-            SAFEARRAY *array = SafeArrayCreateVector(VT_UI1, 0, count);
-            if (count) {
-                const char *data = bytes.constData();
-                char *dest;
-                SafeArrayAccessData(array, (void **)&dest);
-                memcpy(dest, data, count);
-                SafeArrayUnaccessData(array);
-            }
-
-            if (out && arg.vt == (VT_ARRAY|VT_UI1|VT_BYREF)) {
-                if (*arg.pparray)
-                    SafeArrayDestroy(*arg.pparray);
-                *arg.pparray = array;
-            } else {
-                arg.vt = VT_ARRAY|VT_UI1;
-                arg.parray = array;
-                if (out) {
-                    arg.pparray = new SAFEARRAY*(arg.parray);
-                    arg.vt |= VT_BYREF;
-                }
-            }
-        }
-        break;
-
-#ifdef QAX_SERVER
-    case QVariant::Rect:
-    case QVariant::Size:
-    case QVariant::Point:
-        {
-            typedef HRESULT(WINAPI* PGetRecordInfoFromTypeInfo)(ITypeInfo *, IRecordInfo **);
-            static PGetRecordInfoFromTypeInfo pGetRecordInfoFromTypeInfo = 0;
-            static bool resolved = false;
-            if (!resolved) {
-                QSystemLibrary oleaut32(QLatin1String("oleaut32"));
-                pGetRecordInfoFromTypeInfo = (PGetRecordInfoFromTypeInfo)oleaut32.resolve("GetRecordInfoFromTypeInfo");
-                resolved = true;
-            }
-            if (!pGetRecordInfoFromTypeInfo)
-                break;
-
-            ITypeInfo *typeInfo = 0;
-            IRecordInfo *recordInfo = 0;
-            CLSID clsid = qvar.type() == QVariant::Rect ? CLSID_QRect
-                :qvar.type() == QVariant::Size ? CLSID_QSize
-                :CLSID_QPoint;
-            qAxTypeLibrary->GetTypeInfoOfGuid(clsid, &typeInfo);
-            if (!typeInfo)
-                break;
-            pGetRecordInfoFromTypeInfo(typeInfo, &recordInfo);
-            typeInfo->Release();
-            if (!recordInfo)
-                break;
-
-            void *record = 0;
-            switch (qvar.type()) {
-            case QVariant::Rect:
-                {
-                    QRect qrect(qvar.toRect());
-                    recordInfo->RecordCreateCopy(&qrect, &record);
-                }
-                break;
-            case QVariant::Size:
-                {
-                    QSize qsize(qvar.toSize());
-                    recordInfo->RecordCreateCopy(&qsize, &record);
-                }
-                break;
-            case QVariant::Point:
-                {
-                    QPoint qpoint(qvar.toPoint());
-                    recordInfo->RecordCreateCopy(&qpoint, &record);
-                }
-                break;
-            }
-
-            arg.vt = VT_RECORD;
-            arg.pRecInfo = recordInfo,
-            arg.pvRecord = record;
-            if (out) {
-                qWarning("QVariant2VARIANT: out-parameter not supported for records");
-                return false;
-           }
-        }
-        break;
-#endif // QAX_SERVER
-    case QVariant::UserType:
-        {
-            QByteArray subType = qvar.typeName();
-#ifdef QAX_SERVER
-            if (subType.endsWith('*'))
-                subType.truncate(subType.length() - 1);
-#endif
-            if (!qstrcmp(qvar.typeName(), "IDispatch*")) {
-                arg.vt = VT_DISPATCH;
-                arg.pdispVal = *(IDispatch**)qvar.data();
-                if (arg.pdispVal)
-                    arg.pdispVal->AddRef();
-                if (out) {
-                    qWarning("QVariant2VARIANT: out-parameter not supported for IDispatch");
-                    return false;
-                }
-            } else if (!qstrcmp(qvar.typeName(), "IDispatch**")) {
-                arg.vt = VT_DISPATCH;
-                arg.ppdispVal = *(IDispatch***)qvar.data();
-                if (out)
-                    arg.vt |= VT_BYREF;
-            } else if (!qstrcmp(qvar.typeName(), "IUnknown*")) {
-                arg.vt = VT_UNKNOWN;
-                arg.punkVal = *(IUnknown**)qvar.data();
-                if (arg.punkVal)
-                    arg.punkVal->AddRef();
-                if (out) {
-                    qWarning("QVariant2VARIANT: out-parameter not supported for IUnknown");
-                    return false;
-                }
-#ifdef QAX_SERVER
-            } else if (qAxFactory()->metaObject(QString::fromLatin1(subType.constData()))) {
-                arg.vt = VT_DISPATCH;
-                void *user = *(void**)qvar.constData();
-//                qVariantGet(qvar, user, qvar.typeName());
-                if (!user) {
-                    arg.pdispVal = 0;
-                } else {
-                    qAxFactory()->createObjectWrapper(static_cast<QObject*>(user), &arg.pdispVal);
-                }
-                if (out) {
-                    qWarning("QVariant2VARIANT: out-parameter not supported for subtype");
-                    return false;
-                }
-#else
-            } else if (QMetaType::type(subType)) {
-                QAxObject *object = *(QAxObject**)qvar.constData();
-//                qVariantGet(qvar, object, subType);
-                arg.vt = VT_DISPATCH;
-                object->queryInterface(IID_IDispatch, (void**)&arg.pdispVal);
-                if (out) {
-                    qWarning("QVariant2VARIANT: out-parameter not supported for subtype");
-                    return false;
-                }
-#endif
-            } else {
-                return false;
-            }
-        }
-        break;
-#endif
 
     case QVariant::Invalid: // default-parameters not set
         if (out && arg.vt == (VT_ERROR|VT_BYREF)) {

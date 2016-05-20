@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 Intel Corporation
+** Copyright (C) 2016 Intel Corporation.
 **
 ** Permission is hereby granted, free of charge, to any person obtaining a copy
 ** of this software and associated documentation files (the "Software"), to deal
@@ -29,7 +29,7 @@
 #include <stdint.h>
 #include <unistd.h> // to get the POSIX flags
 
-#ifdef _POSIX_SPAWN
+#if _POSIX_SPAWN > 0
 #  include <spawn.h>
 #endif
 
@@ -51,7 +51,7 @@ int forkfd(int flags, pid_t *ppid);
 int forkfd_wait(int ffd, forkfd_info *info, struct rusage *rusage);
 int forkfd_close(int ffd);
 
-#ifdef _POSIX_SPAWN
+#if _POSIX_SPAWN > 0
 /* only for spawnfd: */
 #  define FFD_SPAWN_SEARCH_PATH   O_RDWR
 

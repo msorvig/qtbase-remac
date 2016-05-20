@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,7 +44,7 @@
 #if defined(Q_OS_OSX)
 #import <AppKit/AppKit.h>
 #import <IOKit/graphics/IOGraphicsLib.h>
-#elif defined(Q_OS_IOS)
+#elif defined(QT_PLATFORM_UIKIT)
 #import <UIKit/UIFont.h>
 #endif
 
@@ -185,7 +191,7 @@ static CFArrayRef availableFamilyNames()
 {
 #if defined(Q_OS_OSX)
     return CTFontManagerCopyAvailableFontFamilyNames();
-#elif defined(Q_OS_IOS)
+#elif defined(QT_PLATFORM_UIKIT)
     return (CFArrayRef) [[UIFont familyNames] retain];
 #endif
 }
@@ -518,9 +524,6 @@ QStringList QCoreTextFontDatabase::fallbacksForFamily(const QString &family, QFo
         if (&CTFontCopyDefaultCascadeListForLanguages)
   #endif
         {
-            if (fallbackLists.contains(family))
-                return fallbackLists.value(family);
-
             QCFType<CFMutableDictionaryRef> attributes = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
             CFDictionaryAddValue(attributes, kCTFontFamilyNameAttribute, QCFString(family));
             if (QCFType<CTFontDescriptorRef> fontDescriptor = CTFontDescriptorCreateWithAttributes(attributes)) {
@@ -548,12 +551,9 @@ QStringList QCoreTextFontDatabase::fallbacksForFamily(const QString &family, QFo
                             fallbackList.append(QStringLiteral("Arial Unicode MS"));
 #endif
 
-                        fallbackLists[family] = fallbackList;
+                        return fallbackList;
                     }
                 }
-
-                if (fallbackLists.contains(family))
-                    return fallbackLists.value(family);
             }
         }
 #endif
@@ -638,7 +638,7 @@ static CFArrayRef createDescriptorArrayForFont(CTFontRef font, const QString &fi
             // QUrl::fromLocalFile() doesn't accept qrc pseudo-paths like ":/fonts/myfont.ttf".
             // Therefore construct from QString with the qrc:// scheme -> "qrc:///fonts/myfont.ttf".
             fontURL = QUrl(QStringLiteral("qrc://") + fileName.mid(1)).toCFURL();
-        } else if (!fileName.isEmpty()) {
+        } else {
             // At this point we hope that filename is in a format that QUrl can handle.
             fontURL = QUrl::fromLocalFile(fileName).toCFURL();
         }
@@ -847,7 +847,7 @@ static CTFontUIFontType fontTypeFromTheme(QPlatformTheme::Font f)
 
 static CTFontDescriptorRef fontDescriptorFromTheme(QPlatformTheme::Font f)
 {
-#ifdef Q_OS_IOS
+#if defined(QT_PLATFORM_UIKIT)
     if (QSysInfo::MacintoshVersion >= QSysInfo::MV_IOS_7_0) {
         // Use Dynamic Type to resolve theme fonts if possible, to get
         // correct font sizes and style based on user configuration.
@@ -881,7 +881,7 @@ static CTFontDescriptorRef fontDescriptorFromTheme(QPlatformTheme::Font f)
             return static_cast<CTFontDescriptorRef>(CFBridgingRetain(desc));
         }
     }
-#endif // Q_OS_IOS
+#endif // Q_OS_IOS, Q_OS_TVOS
 
     // OSX default case and iOS fallback case
     CTFontUIFontType fontType = fontTypeFromTheme(f);
@@ -997,7 +997,7 @@ QFontEngine *QCoreTextFontDatabase::freeTypeFontEngine(const QFontDef &fontDef, 
     }
 
     if (!engine->init(faceId, antialias, format, fontData) || engine->invalid()) {
-        qWarning() << "QCoreTextFontDatabase::freeTypefontEngine Failed to create engine";
+        qWarning("QCoreTextFontDatabase::freeTypefontEngine Failed to create engine");
         return Q_NULLPTR;
     }
     engine->setQtDefaultHintStyle(static_cast<QFont::HintingPreference>(fontDef.hintingPreference));

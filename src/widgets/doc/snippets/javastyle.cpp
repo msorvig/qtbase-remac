@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -236,15 +246,13 @@ void JavaStyle::drawControl(ControlElement control, const QStyleOption *option,
             break;
         }
         case CE_DockWidgetTitle: {
-            const QStyleOptionDockWidgetV2 *docker =
-                new QStyleOptionDockWidgetV2(
-                *qstyleoption_cast<const QStyleOptionDockWidget *>(option));
+            const QStyleOptionDockWidget *docker =
+                qstyleoption_cast<const QStyleOptionDockWidget *>(option);
 
             QRect rect = docker->rect;
             QRect titleRect = rect;
             if (docker->verticalTitleBar) {
-                QRect r = rect;
-                r.setSize(r.size().transposed());
+                QRect r = rect.transposed();
 
                 titleRect = QRect(r.left() + rect.bottom()
                                 - titleRect.bottom(),
@@ -366,10 +374,8 @@ void JavaStyle::drawControl(ControlElement control, const QStyleOption *option,
             break;
         }
         case CE_ProgressBar: {
-            const QStyleOptionProgressBar *bar1 =
+            const QStyleOptionProgressBar *bar =
                 qstyleoption_cast<const QStyleOptionProgressBar *>(option);
-
-            QStyleOptionProgressBarV2 *bar = new QStyleOptionProgressBarV2(*bar1);
 
             QRect rect = bar->rect;
             if (bar->orientation == Qt::Vertical) {
@@ -416,7 +422,6 @@ void JavaStyle::drawControl(ControlElement control, const QStyleOption *option,
             if (bar->textVisible)
                 drawControl(CE_ProgressBarLabel, &subBar, painter, widget);
 
-            delete bar;
             break;
         }
         case CE_ProgressBarGroove: {
@@ -2366,18 +2371,17 @@ void JavaStyle::drawPrimitive(PrimitiveElement element,
         case PE_FrameLineEdit: {
             const QStyleOptionFrame *frame =
                 qstyleoption_cast<const QStyleOptionFrame *>(option);
-            const QStyleOptionFrameV2 frameV2(*frame);
 
             painter->setPen(frame->palette.color(QPalette::Mid));
-            painter->drawRect(frameV2.rect.adjusted(0, 0, -2, -2));
+            painter->drawRect(frame->rect.adjusted(0, 0, -2, -2));
             painter->setPen(Qt::white);
-            painter->drawRect(frameV2.rect.adjusted(1, 1, -1, -1));
-            painter->setPen(frameV2.palette.color(QPalette::Active,
+            painter->drawRect(frame->rect.adjusted(1, 1, -1, -1));
+            painter->setPen(frame->palette.color(QPalette::Active,
                                                   QPalette::Background));
-            painter->drawLine(frameV2.rect.bottomLeft(),
-            frameV2.rect.bottomLeft() + QPoint(1, -1));
-            painter->drawLine(frameV2.rect.topRight(),
-            frameV2.rect.topRight() + QPoint(-1, 1));
+            painter->drawLine(frame->rect.bottomLeft(),
+            frame->rect.bottomLeft() + QPoint(1, -1));
+            painter->drawLine(frame->rect.topRight(),
+            frame->rect.topRight() + QPoint(-1, 1));
             break;
         }
         case PE_FrameFocusRect: {

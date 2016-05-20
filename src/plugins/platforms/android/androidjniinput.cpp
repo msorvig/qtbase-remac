@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 BogDan Vatra <bogdan@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -51,6 +57,7 @@ namespace QtAndroidInput
 
     static bool m_ignoreMouseEvents = false;
     static bool m_softwareKeyboardVisible = false;
+    static QRect m_softwareKeyboardRect;
 
     static QList<QWindowSystemInterface::TouchPoint> m_touchPoints;
 
@@ -91,7 +98,7 @@ namespace QtAndroidInput
     {
         QJNIObjectPrivate::callStaticMethod<void>(applicationClass(), "resetSoftwareKeyboard");
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-        qDebug() << "@@@ RESETSOFTWAREKEYBOARD";
+        qDebug("@@@ RESETSOFTWAREKEYBOARD");
 #endif
     }
 
@@ -99,13 +106,18 @@ namespace QtAndroidInput
     {
         QJNIObjectPrivate::callStaticMethod<void>(applicationClass(), "hideSoftwareKeyboard");
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-        qDebug() << "@@@ HIDESOFTWAREKEYBOARD";
+        qDebug("@@@ HIDESOFTWAREKEYBOARD");
 #endif
     }
 
     bool isSoftwareKeyboardVisible()
     {
         return m_softwareKeyboardVisible;
+    }
+
+    QRect softwareKeyboardRect()
+    {
+        return m_softwareKeyboardRect;
     }
 
 
@@ -278,7 +290,7 @@ namespace QtAndroidInput
         }
 
 #ifdef QT_DEBUG_ANDROID_STYLUS
-        qDebug() << action << pointerType << buttonState << "@" << x << y << "pressure" << pressure << ": buttons" << buttons;
+        qDebug() << action << pointerType << buttonState << '@' << x << y << "pressure" << pressure << ": buttons" << buttons;
 #endif
 
         QWindowSystemInterface::handleTabletEvent(tlw, ulong(time),
@@ -681,7 +693,7 @@ namespace QtAndroidInput
             return Qt::Key_AudioCycleTrack;
 
         default:
-            qWarning() << "Unhandled key code " << key << "!";
+            qWarning() << "Unhandled key code " << key << '!';
             return 0;
         }
     }
@@ -734,11 +746,32 @@ namespace QtAndroidInput
     static void keyboardVisibilityChanged(JNIEnv */*env*/, jobject /*thiz*/, jboolean visibility)
     {
         m_softwareKeyboardVisible = visibility;
+        if (!visibility)
+            m_softwareKeyboardRect = QRect();
+
         QAndroidInputContext *inputContext = QAndroidInputContext::androidInputContext();
-        if (inputContext && qGuiApp)
+        if (inputContext && qGuiApp) {
             inputContext->emitInputPanelVisibleChanged();
+            if (!visibility)
+                inputContext->emitKeyboardRectChanged();
+        }
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
         qDebug() << "@@@ KEYBOARDVISIBILITYCHANGED" << inputContext;
+#endif
+    }
+
+    static void keyboardGeometryChanged(JNIEnv */*env*/, jobject /*thiz*/, jint x, jint y, jint w, jint h)
+    {
+        QRect r = QRect(x, y, w, h);
+        if (r == m_softwareKeyboardRect)
+            return;
+        m_softwareKeyboardRect = r;
+        QAndroidInputContext *inputContext = QAndroidInputContext::androidInputContext();
+        if (inputContext && qGuiApp)
+            inputContext->emitKeyboardRectChanged();
+
+#ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
+        qDebug() << "@@@ KEYBOARDRECTCHANGED" << m_softwareKeyboardRect;
 #endif
     }
 
@@ -753,7 +786,8 @@ namespace QtAndroidInput
         {"tabletEvent", "(IIJIIIFFF)V", (void *)tabletEvent},
         {"keyDown", "(IIIZ)V", (void *)keyDown},
         {"keyUp", "(IIIZ)V", (void *)keyUp},
-        {"keyboardVisibilityChanged", "(Z)V", (void *)keyboardVisibilityChanged}
+        {"keyboardVisibilityChanged", "(Z)V", (void *)keyboardVisibilityChanged},
+        {"keyboardGeometryChanged", "(IIII)V", (void *)keyboardGeometryChanged}
     };
 
     bool registerNatives(JNIEnv *env)

@@ -1,41 +1,41 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-
-//#define WINVER 0x0500
-#if !defined(WINAPI_FAMILY) && (_WIN32_WINNT < 0x0400)
-#define _WIN32_WINNT 0x0400
-#endif
-
 
 #include "qthread.h"
 #include "qthread_p.h"
@@ -55,19 +55,38 @@
 #include <qt_windows.h>
 
 #ifndef Q_OS_WINRT
-#ifndef Q_OS_WINCE
-#ifndef _MT
-#define _MT
-#endif // _MT
-#include <process.h>
-#else   // !Q_OS_WINCE
-#include "qfunctions_wince.h"
-#endif // Q_OS_WINCE
-#else // !Q_OS_WINRT
+#  ifndef _MT
+#    define _MT
+#  endif // _MT
+#  include <process.h>
 #endif // Q_OS_WINRT
 
 #ifndef QT_NO_THREAD
 QT_BEGIN_NAMESPACE
+
+#ifdef Q_OS_WINRT
+inline DWORD qWinRTTlsAlloc() {
+    return FlsAlloc(0);
+}
+
+inline bool qWinRTTlsFree(DWORD dwTlsIndex) {
+    return FlsFree(dwTlsIndex);
+}
+
+inline LPVOID qWinRTTlsGetValue(DWORD dwTlsIndex) {
+    return FlsGetValue(dwTlsIndex);
+}
+
+inline bool qWinRTTlsSetValue(DWORD dwTlsIndex, LPVOID lpTlsValue) {
+    return FlsSetValue(dwTlsIndex, lpTlsValue);
+}
+
+#define TlsAlloc qWinRTTlsAlloc
+#define TlsFree qWinRTTlsFree
+#define TlsSetValue qWinRTTlsSetValue
+#define TlsGetValue qWinRTTlsGetValue
+
+#endif // Q_OS_WINRT
 
 void qt_watch_adopted_thread(const HANDLE adoptedThreadHandle, QThread *qthread);
 DWORD WINAPI qt_adopted_thread_watcher_function(LPVOID);
@@ -121,12 +140,11 @@ QThreadData *QThreadData::current(bool createIfNecessary)
         threadData->threadId = reinterpret_cast<Qt::HANDLE>(quintptr(GetCurrentThreadId()));
 
         if (!QCoreApplicationPrivate::theMainThread) {
-            QCoreApplicationPrivate::theMainThread = threadData->thread;
+            QCoreApplicationPrivate::theMainThread = threadData->thread.load();
             // TODO: is there a way to reflect the branch's behavior using
             // WinRT API?
         } else {
             HANDLE realHandle = INVALID_HANDLE_VALUE;
-#if !defined(Q_OS_WINCE) || (defined(_WIN32_WCE) && (_WIN32_WCE>=0x600))
             DuplicateHandle(GetCurrentProcess(),
                     GetCurrentThread(),
                     GetCurrentProcess(),
@@ -134,9 +152,6 @@ QThreadData *QThreadData::current(bool createIfNecessary)
                     0,
                     FALSE,
                     DUPLICATE_SAME_ACCESS);
-#else
-                        realHandle = reinterpret_cast<HANDLE>(GetCurrentThreadId());
-#endif
             qt_watch_adopted_thread(realHandle, threadData->thread);
         }
     }
@@ -166,9 +181,7 @@ void qt_watch_adopted_thread(const HANDLE adoptedThreadHandle, QThread *qthread)
     QMutexLocker lock(&qt_adopted_thread_watcher_mutex);
 
     if (GetCurrentThreadId() == qt_adopted_thread_watcher_id) {
-#if !defined(Q_OS_WINCE) || (defined(_WIN32_WCE) && (_WIN32_WCE>=0x600))
         CloseHandle(adoptedThreadHandle);
-#endif
         return;
     }
 
@@ -267,9 +280,7 @@ DWORD WINAPI qt_adopted_thread_watcher_function(LPVOID)
             data->deref();
 
             QMutexLocker lock(&qt_adopted_thread_watcher_mutex);
-#if !defined(Q_OS_WINCE) || (defined(_WIN32_WCE) && (_WIN32_WCE>=0x600))
             CloseHandle(qt_adopted_thread_handles.at(handleIndex));
-#endif
             qt_adopted_thread_handles.remove(handleIndex);
             qt_adopted_qthreads.remove(qthreadIndex);
         }
@@ -282,7 +293,7 @@ DWORD WINAPI qt_adopted_thread_watcher_function(LPVOID)
     return 0;
 }
 
-#if !defined(QT_NO_DEBUG) && defined(Q_CC_MSVC) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if !defined(QT_NO_DEBUG) && defined(Q_CC_MSVC) && !defined(Q_OS_WINRT)
 
 #ifndef Q_OS_WIN64
 #  define ULONG_PTR DWORD
@@ -312,7 +323,7 @@ void qt_set_thread_name(HANDLE threadId, LPCSTR threadName)
     {
     }
 }
-#endif // !QT_NO_DEBUG && Q_CC_MSVC && !Q_OS_WINCE && !Q_OS_WINRT
+#endif // !QT_NO_DEBUG && Q_CC_MSVC && !Q_OS_WINRT
 
 /**************************************************************************
  ** QThreadPrivate
@@ -354,7 +365,7 @@ unsigned int __stdcall QT_ENSURE_STACK_ALIGNED_FOR_SSE QThreadPrivate::start(voi
     else
         createEventDispatcher(data);
 
-#if !defined(QT_NO_DEBUG) && defined(Q_CC_MSVC) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if !defined(QT_NO_DEBUG) && defined(Q_CC_MSVC) && !defined(Q_OS_WINRT)
     // sets the name of the current thread.
     QByteArray objectName = thr->objectName().toLocal8Bit();
     qt_set_thread_name((HANDLE)-1,
@@ -429,7 +440,7 @@ int QThread::idealThreadCount() Q_DECL_NOTHROW
 
 void QThread::yieldCurrentThread()
 {
-#if !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if !defined(Q_OS_WINRT)
     SwitchToThread();
 #else
     ::Sleep(0);

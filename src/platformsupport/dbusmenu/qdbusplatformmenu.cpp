@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -41,22 +47,26 @@ QT_BEGIN_NAMESPACE
 Q_LOGGING_CATEGORY(qLcMenu, "qt.qpa.menu")
 
 static int nextDBusID = 1;
-QHash<int, QDBusPlatformMenu *> menusByID;
 QHash<int, QDBusPlatformMenuItem *> menuItemsByID;
-QList<QDBusPlatformMenu *> QDBusPlatformMenu::m_topLevelMenus;
 
 QDBusPlatformMenuItem::QDBusPlatformMenuItem(quintptr tag)
     : m_tag(tag ? tag : reinterpret_cast<quintptr>(this)) // QMenu will overwrite this later
     , m_subMenu(Q_NULLPTR)
     , m_role(NoRole)
-    , m_isEnabled(false)
+    , m_isEnabled(true)
     , m_isVisible(true)
     , m_isSeparator(false)
     , m_isCheckable(false)
     , m_isChecked(false)
     , m_dbusID(nextDBusID++)
+    , m_hasExclusiveGroup(false)
 {
     menuItemsByID.insert(m_dbusID, this);
+}
+
+QDBusPlatformMenuItem::~QDBusPlatformMenuItem()
+{
+    menuItemsByID.remove(m_dbusID);
 }
 
 void QDBusPlatformMenuItem::setTag(quintptr tag)
@@ -80,7 +90,11 @@ void QDBusPlatformMenuItem::setIcon(const QIcon &icon)
 */
 void QDBusPlatformMenuItem::setMenu(QPlatformMenu *menu)
 {
-    m_subMenu = static_cast<QDBusPlatformMenu *>(menu);
+    if (m_subMenu)
+        static_cast<QDBusPlatformMenu *>(m_subMenu)->setContainingMenuItem(Q_NULLPTR);
+    m_subMenu = menu;
+    if (menu)
+        static_cast<QDBusPlatformMenu *>(menu)->setContainingMenuItem(this);
 }
 
 void QDBusPlatformMenuItem::setEnabled(bool enabled)
@@ -113,6 +127,11 @@ void QDBusPlatformMenuItem::setChecked(bool isChecked)
     m_isChecked = isChecked;
 }
 
+void QDBusPlatformMenuItem::setHasExclusiveGroup(bool hasExclusiveGroup)
+{
+    m_hasExclusiveGroup = hasExclusiveGroup;
+}
+
 void QDBusPlatformMenuItem::setShortcut(const QKeySequence &shortcut)
 {
     m_shortcut = shortcut;
@@ -125,7 +144,11 @@ void QDBusPlatformMenuItem::trigger()
 
 QDBusPlatformMenuItem *QDBusPlatformMenuItem::byId(int id)
 {
-    return menuItemsByID[id];
+    // We need to check contains because otherwise QHash would insert
+    // a default-constructed nullptr value into menuItemsByID
+    if (menuItemsByID.contains(id))
+        return menuItemsByID[id];
+    return Q_NULLPTR;
 }
 
 QList<const QDBusPlatformMenuItem *> QDBusPlatformMenuItem::byIds(const QList<int> &ids)
@@ -141,20 +164,16 @@ QList<const QDBusPlatformMenuItem *> QDBusPlatformMenuItem::byIds(const QList<in
 
 QDBusPlatformMenu::QDBusPlatformMenu(quintptr tag)
     : m_tag(tag ? tag : reinterpret_cast<quintptr>(this))
-    , m_isEnabled(false)
+    , m_isEnabled(true)
     , m_isVisible(true)
     , m_isSeparator(false)
-    , m_dbusID(nextDBusID++)
-    , m_revision(0)
+    , m_revision(1)
+    , m_containingMenuItem(Q_NULLPTR)
 {
-    menusByID.insert(m_dbusID, this);
-    // Assume it's top-level until we find out otherwise
-    m_topLevelMenus << this;
 }
 
 QDBusPlatformMenu::~QDBusPlatformMenu()
 {
-    menusByID.remove(m_dbusID);
 }
 
 void QDBusPlatformMenu::insertMenuItem(QPlatformMenuItem *menuItem, QPlatformMenuItem *before)
@@ -168,38 +187,59 @@ void QDBusPlatformMenu::insertMenuItem(QPlatformMenuItem *menuItem, QPlatformMen
     else
         m_items.insert(idx, item);
     m_itemsByTag.insert(item->tag(), item);
-    // If a menu is found as a submenu under an item, we know that it's not a top-level menu.
     if (item->menu())
-        m_topLevelMenus.removeOne(const_cast<QDBusPlatformMenu *>(static_cast<const QDBusPlatformMenu *>(item->menu())));
+        syncSubMenu(static_cast<const QDBusPlatformMenu *>(item->menu()));
+    emitUpdated();
 }
 
 void QDBusPlatformMenu::removeMenuItem(QPlatformMenuItem *menuItem)
 {
-    m_items.removeAll(static_cast<QDBusPlatformMenuItem *>(menuItem));
+    QDBusPlatformMenuItem *item = static_cast<QDBusPlatformMenuItem *>(menuItem);
+    m_items.removeAll(item);
     m_itemsByTag.remove(menuItem->tag());
+    if (item->menu()) {
+        // disconnect from the signals we connected to in syncSubMenu()
+        const QDBusPlatformMenu *menu = static_cast<const QDBusPlatformMenu *>(item->menu());
+        disconnect(menu, &QDBusPlatformMenu::propertiesUpdated,
+                   this, &QDBusPlatformMenu::propertiesUpdated);
+        disconnect(menu, &QDBusPlatformMenu::updated,
+                   this, &QDBusPlatformMenu::updated);
+    }
+    emitUpdated();
+}
+
+void QDBusPlatformMenu::syncSubMenu(const QDBusPlatformMenu *menu)
+{
+    // The adaptor is only connected to the propertiesUpdated signal of the top-level
+    // menu, so the submenus should transfer their signals to their parents.
+    connect(menu, &QDBusPlatformMenu::propertiesUpdated,
+            this, &QDBusPlatformMenu::propertiesUpdated, Qt::UniqueConnection);
+    connect(menu, &QDBusPlatformMenu::updated,
+            this, &QDBusPlatformMenu::updated, Qt::UniqueConnection);
 }
 
 void QDBusPlatformMenu::syncMenuItem(QPlatformMenuItem *menuItem)
 {
+    QDBusPlatformMenuItem *item = static_cast<QDBusPlatformMenuItem *>(menuItem);
+    // if a submenu was added to this item, we need to connect to its signals
+    if (item->menu())
+        syncSubMenu(static_cast<const QDBusPlatformMenu *>(item->menu()));
     // TODO keep around copies of the QDBusMenuLayoutItems so they can be updated?
     // or eliminate them by putting dbus streaming operators in this class instead?
     // or somehow tell the dbusmenu client that something has changed, so it will ask for properties again
-    emitUpdated();
     QDBusMenuItemList updated;
     QDBusMenuItemKeysList removed;
-    updated << QDBusMenuItem(static_cast<QDBusPlatformMenuItem *>(menuItem));
+    updated << QDBusMenuItem(item);
     qCDebug(qLcMenu) << updated;
     emit propertiesUpdated(updated, removed);
 }
 
-QDBusPlatformMenu *QDBusPlatformMenu::byId(int id)
-{
-    return menusByID[id];
-}
-
 void QDBusPlatformMenu::emitUpdated()
 {
-    emit updated(++m_revision, m_dbusID);
+    if (m_containingMenuItem)
+        emit updated(++m_revision, m_containingMenuItem->dbusID());
+    else
+        emit updated(++m_revision, 0);
 }
 
 void QDBusPlatformMenu::setTag(quintptr tag)
@@ -227,9 +267,14 @@ void QDBusPlatformMenu::setVisible(bool isVisible)
     m_isVisible = isVisible;
 }
 
+void QDBusPlatformMenu::setContainingMenuItem(QDBusPlatformMenuItem *item)
+{
+    m_containingMenuItem = item;
+}
+
 QPlatformMenuItem *QDBusPlatformMenu::menuItemAt(int position) const
 {
-    return m_items.at(position);
+    return m_items.value(position);
 }
 
 QPlatformMenuItem *QDBusPlatformMenu::menuItemForTag(quintptr tag) const

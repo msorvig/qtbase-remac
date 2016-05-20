@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -110,12 +120,12 @@ void Arrow::paint(QPainter *painter, const QStyleOptionGraphicsItem *,
     QPointF intersectPoint;
     QLineF polyLine;
     for (int i = 1; i < endPolygon.count(); ++i) {
-    p2 = endPolygon.at(i) + myEndItem->pos();
-    polyLine = QLineF(p1, p2);
-    QLineF::IntersectType intersectType =
-        polyLine.intersect(centerLine, &intersectPoint);
-    if (intersectType == QLineF::BoundedIntersection)
-        break;
+        p2 = endPolygon.at(i) + myEndItem->pos();
+        polyLine = QLineF(p1, p2);
+        QLineF::IntersectType intersectType =
+            polyLine.intersect(centerLine, &intersectPoint);
+        if (intersectType == QLineF::BoundedIntersection)
+            break;
         p1 = p2;
     }
 
@@ -126,18 +136,18 @@ void Arrow::paint(QPainter *painter, const QStyleOptionGraphicsItem *,
     if (line().dy() >= 0)
         angle = (Pi * 2) - angle;
 
-        QPointF arrowP1 = line().p1() + QPointF(sin(angle + Pi / 3) * arrowSize,
-                                        cos(angle + Pi / 3) * arrowSize);
-        QPointF arrowP2 = line().p1() + QPointF(sin(angle + Pi - Pi / 3) * arrowSize,
-                                        cos(angle + Pi - Pi / 3) * arrowSize);
+    QPointF arrowP1 = line().p1() + QPointF(sin(angle + Pi / 3) * arrowSize,
+                                    cos(angle + Pi / 3) * arrowSize);
+    QPointF arrowP2 = line().p1() + QPointF(sin(angle + Pi - Pi / 3) * arrowSize,
+                                    cos(angle + Pi - Pi / 3) * arrowSize);
 
-        arrowHead.clear();
-        arrowHead << line().p1() << arrowP1 << arrowP2;
+    arrowHead.clear();
+    arrowHead << line().p1() << arrowP1 << arrowP2;
 //! [6] //! [7]
-        painter->drawLine(line());
-        painter->drawPolygon(arrowHead);
-        if (isSelected()) {
-            painter->setPen(QPen(myColor, 1, Qt::DashLine));
+    painter->drawLine(line());
+    painter->drawPolygon(arrowHead);
+    if (isSelected()) {
+        painter->setPen(QPen(myColor, 1, Qt::DashLine));
         QLineF myLine = line();
         myLine.translate(0, 4.0);
         painter->drawLine(myLine);

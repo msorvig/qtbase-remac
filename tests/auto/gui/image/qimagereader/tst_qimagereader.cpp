@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,7 +31,6 @@
 
 #include <QBuffer>
 #include <QDebug>
-#include <QFile>
 #include <QImage>
 #include <QImageReader>
 #include <QImageWriter>
@@ -46,12 +40,29 @@
 #include <QTcpServer>
 #include <QTimer>
 #include <QTemporaryDir>
+#include <QTemporaryFile>
 
 #include <algorithm>
 
 typedef QMap<QString, QString> QStringMap;
 typedef QList<int> QIntList;
 Q_DECLARE_METATYPE(QImage::Format)
+
+static QByteArray msgFileOpenWriteFailed(const QFile &file)
+{
+    const QString result = QLatin1String("Cannot open \"")
+        + QDir::toNativeSeparators(file.fileName())
+        + QLatin1String("\" for writing: ") + file.errorString();
+    return result.toLocal8Bit();
+}
+
+static QByteArray msgFileOpenReadFailed(const QFile &file)
+{
+    const QString result = QLatin1String("Cannot open \"")
+        + QDir::toNativeSeparators(file.fileName())
+        + QLatin1String("\" for reading: ") + file.errorString();
+    return result.toLocal8Bit();
+}
 
 class tst_QImageReader : public QObject
 {
@@ -158,7 +169,7 @@ private:
 // helper to skip an autotest when the given image format is not supported
 #define SKIP_IF_UNSUPPORTED(format) do {                                                          \
     if (!QByteArray(format).isEmpty() && !QImageReader::supportedImageFormats().contains(format)) \
-        QSKIP("\"" + QByteArray(format) + "\" images are not supported");             \
+        QSKIP('"' + QByteArray(format) + "\" images are not supported");             \
 } while (0)
 
 // Testing get/set functions
@@ -194,7 +205,7 @@ void tst_QImageReader::initTestCase()
     prefix = QFINDTESTDATA("images/");
     if (prefix.isEmpty())
         QFAIL("Can't find images directory!");
-   QVERIFY(m_temporaryDir.isValid());
+   QVERIFY2(m_temporaryDir.isValid(), qPrintable(m_temporaryDir.errorString()));
 }
 
 void tst_QImageReader::cleanupTestCase()
@@ -224,6 +235,7 @@ void tst_QImageReader::readImage_data()
     QTest::newRow("PPM: runners") << QString("runners.ppm") << true << QByteArray("ppm");
     QTest::newRow("PPM: test") << QString("test.ppm") << true << QByteArray("ppm");
     QTest::newRow("XBM: gnus") << QString("gnus.xbm") << true << QByteArray("xbm");
+    QTest::newRow("PGM: longcomment") << QString("longcomment.pgm") << true << QByteArray("pgm");
 
     QTest::newRow("JPEG: beavis") << QString("beavis.jpg") << true << QByteArray("jpeg");
     QTest::newRow("JPEG: qtbug13653") << QString("qtbug13653-no_eoi.jpg") << true << QByteArray("jpeg");
@@ -785,7 +797,7 @@ void tst_QImageReader::animatedGif()
     QVERIFY(!image.isNull());
     int i = 0;
     while(!image.isNull()){
-        QString frameName = QString(":images/qt%1.gif").arg(++i);
+        QString frameName = QLatin1String(":images/qt") + QString::number(++i) + QLatin1String(".gif");
         QCOMPARE(image, QImage(frameName));
         image = io.read();
     }
@@ -1050,7 +1062,7 @@ void tst_QImageReader::readFromDevice()
     const QString imageFileName = prefix + fileName;
     QImage expectedImage(imageFileName, format);
     QFile file(imageFileName);
-    QVERIFY(file.open(QFile::ReadOnly));
+    QVERIFY2(file.open(QFile::ReadOnly), msgFileOpenReadFailed(file).constData());
     QByteArray imageData = file.readAll();
     QVERIFY(!imageData.isEmpty());
     {
@@ -1128,12 +1140,11 @@ void tst_QImageReader::readFromFileAfterJunk()
 
     SKIP_IF_UNSUPPORTED(format);
 
-    QFile::remove("junk");
-    QFile junkFile("junk");
-    QVERIFY(junkFile.open(QFile::WriteOnly));
+    QTemporaryFile junkFile(m_temporaryDir.path() + QLatin1String("/junkXXXXXX"));
+    QVERIFY2(junkFile.open(), msgFileOpenWriteFailed(junkFile).constData());
 
     QFile imageFile(prefix + fileName);
-    QVERIFY(imageFile.open(QFile::ReadOnly));
+    QVERIFY2(imageFile.open(QFile::ReadOnly), msgFileOpenReadFailed(imageFile).constData());
     QByteArray imageData = imageFile.readAll();
     QVERIFY(!imageData.isNull());
 
@@ -1154,7 +1165,7 @@ void tst_QImageReader::readFromFileAfterJunk()
         }
     }
     junkFile.close();
-    junkFile.open(QFile::ReadOnly);
+    QVERIFY2(junkFile.open(), msgFileOpenReadFailed(junkFile).constData());
 
     for (int i = 0; i < iterations; ++i) {
         QByteArray ole = junkFile.read(9);
@@ -1204,7 +1215,7 @@ void tst_QImageReader::devicePosition()
     QVERIFY(!expected.isNull());
 
     QFile imageFile(prefix + fileName);
-    QVERIFY(imageFile.open(QFile::ReadOnly));
+    QVERIFY2(imageFile.open(QFile::ReadOnly), msgFileOpenReadFailed(imageFile).constData());
     QByteArray imageData = imageFile.readAll();
     QVERIFY(!imageData.isNull());
     int imageDataSize = imageData.size();
@@ -1466,6 +1477,7 @@ void tst_QImageReader::readCorruptImage_data()
     QTest::newRow("corrupt gif") << QString("corrupt.gif") << true << QString("") << QByteArray("gif");
     QTest::newRow("corrupt png") << QString("corrupt.png") << true << QString("") << QByteArray("png");
     QTest::newRow("corrupt bmp") << QString("corrupt.bmp") << true << QString("") << QByteArray("bmp");
+    QTest::newRow("corrupt bmp (clut)") << QString("corrupt_clut.bmp") << true << QString("") << QByteArray("bmp");
     QTest::newRow("corrupt xpm (colors)") << QString("corrupt-colors.xpm") << true
                                           << QString("QImage: XPM color specification is missing: bla9an.n#x")
                                           << QByteArray("xpm");
@@ -1637,14 +1649,14 @@ void tst_QImageReader::pixelCompareWithBaseline()
                                     // least one file succeeded we know that the plugin was built.
                                     // The other failures are then real failures.
     QImage icoImg;
-    const QString inputFileName(QString::fromLatin1("images/%1").arg(fileName));
+    const QString inputFileName(QLatin1String("images/") + fileName);
     QFileInfo fi(inputFileName);
 
     ++enteredCount;
     // might fail if the plugin does not exist, which is ok.
     if (icoImg.load(inputFileName)) {
         icoImg = icoImg.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-        const QString baselineFileName(QString::fromLatin1("baseline/%1.png").arg(fi.baseName()));
+        const QString baselineFileName(QLatin1String("baseline/") + fi.baseName() + QLatin1String(".png"));
 #if 0
         icoImg.save(baselineFileName);
 #else

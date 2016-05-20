@@ -1,31 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,9 +34,6 @@
 #include <qhash.h>
 #include <limits.h>
 #include <private/qtools_p.h>
-#if defined(Q_OS_WINCE)
-#include <qcoreapplication.h>
-#endif
 
 class tst_QByteArray : public QObject
 {
@@ -212,12 +205,12 @@ QByteArray verifyZeroTermination(const QByteArray &ba)
 
     const_cast<char *>(baData)[baSize] = 'x';
     if ('x' != ba.constData()[baSize]) {
-        return QString::fromLatin1("*** Failed to replace null-terminator in "
-                "result ('%1') ***").arg(QString::fromLatin1(ba)).toLatin1();
+        return "*** Failed to replace null-terminator in "
+                "result ('" + ba + "') ***";
     }
     if (ba != baCopy) {
-        return QString::fromLatin1( "*** Result ('%1') differs from its copy "
-                "after null-terminator was replaced ***").arg(QString::fromLatin1(ba)).toLatin1();
+        return  "*** Result ('" + ba + "') differs from its copy "
+                "after null-terminator was replaced ***";
     }
     const_cast<char *>(baData)[baSize] = '\0'; // Restore sanity
 
@@ -250,11 +243,7 @@ void tst_QByteArray::qCompress_data()
 {
     QTest::addColumn<QByteArray>("ba");
 
-#ifndef Q_OS_WINCE
     const int size1 = 1024*1024;
-#else
-    const int size1 = 1024;
-#endif
     QByteArray ba1( size1, 0 );
 
     QTest::newRow( "00" ) << QByteArray();
@@ -271,11 +260,6 @@ void tst_QByteArray::qCompress_data()
     ba1.fill( 'A' );
     QTest::newRow( "03" ) << ba1;
 
-#if defined(Q_OS_WINCE)
-    int tmpArgc = 0;
-    char** tmpArgv = 0;
-    QCoreApplication app(tmpArgc, tmpArgv);
-#endif
     QFile file( QFINDTESTDATA("rfc3252.txt") );
     QVERIFY( file.open(QIODevice::ReadOnly) );
     QTest::newRow( "04" ) << file.readAll();
@@ -732,7 +716,7 @@ void tst_QByteArray::qvsnprintf()
     memset(buf, 42, sizeof(buf));
 #ifdef Q_OS_WIN
     // VS 2005 uses the Qt implementation of vsnprintf.
-# if defined(_MSC_VER) && _MSC_VER >= 1400 && !defined(Q_OS_WINCE)
+# if defined(_MSC_VER)
     QCOMPARE(::qsnprintf(buf, 3, "%s", "bubu"), -1);
     QCOMPARE(static_cast<const char*>(buf), "bu");
 # else
@@ -1984,15 +1968,15 @@ void tst_QByteArray::movablity()
     QCOMPARE(array.isEmpty(), newIsEmpty);
     QCOMPARE(array.isNull(), newIsNull);
     QCOMPARE(array.capacity(), newCapacity);
-    QVERIFY(array.startsWith("a"));
-    QVERIFY(array.endsWith("b"));
+    QVERIFY(array.startsWith('a'));
+    QVERIFY(array.endsWith('b'));
 
     QCOMPARE(copy.size(), newSize);
     QCOMPARE(copy.isEmpty(), newIsEmpty);
     QCOMPARE(copy.isNull(), newIsNull);
     QCOMPARE(copy.capacity(), newCapacity);
-    QVERIFY(copy.startsWith("a"));
-    QVERIFY(copy.endsWith("b"));
+    QVERIFY(copy.startsWith('a'));
+    QVERIFY(copy.endsWith('b'));
 
     // try to not crash
     array.squeeze();

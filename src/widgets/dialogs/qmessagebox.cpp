@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -194,7 +200,7 @@ public:
 #endif
                            compatMode(false), autoAddOkButton(true),
                            detectedEscapeButton(0), informativeLabel(0),
-                           options(new QMessageDialogOptions) { }
+                           options(QMessageDialogOptions::create()) { }
 
     void init(const QString &title = QString(), const QString &text = QString());
     void setupLayout();
@@ -212,9 +218,6 @@ public:
     int layoutMinimumWidth();
     void retranslateStrings();
 
-#ifdef Q_OS_WINCE
-    void hideSpecial();
-#endif
     static int showOldMessageBox(QWidget *parent, QMessageBox::Icon icon,
                                  const QString &title, const QString &text,
                                  int button0, int button1, int button2);
@@ -356,24 +359,15 @@ void QMessageBoxPrivate::updateSize()
         return;
 
     QSize screenSize = QApplication::desktop()->availableGeometry(QCursor::pos()).size();
-#if defined(Q_OS_WINCE)
-    // the width of the screen, less the window border.
-    int hardLimit = screenSize.width() - (q->frameGeometry().width() - q->geometry().width());
-#else
     int hardLimit = qMin(screenSize.width() - 480, 1000); // can never get bigger than this
     // on small screens allows the messagebox be the same size as the screen
     if (screenSize.width() <= 1024)
         hardLimit = screenSize.width();
-#endif
 #ifdef Q_OS_MAC
     int softLimit = qMin(screenSize.width()/2, 420);
 #else
     // note: ideally on windows, hard and soft limits but it breaks compat
-#ifndef Q_OS_WINCE
     int softLimit = qMin(screenSize.width()/2, 500);
-#else
-    int softLimit = qMin(screenSize.width() * 3 / 4, 500);
-#endif //Q_OS_WINCE
 #endif
 
     if (informativeLabel)
@@ -429,28 +423,6 @@ void QMessageBoxPrivate::updateSize()
     q->setFixedSize(width, height);
     QCoreApplication::removePostedEvents(q, QEvent::LayoutRequest);
 }
-
-
-#ifdef Q_OS_WINCE
-/*!
-  \internal
-  Hides special buttons which are rather shown in the title bar
-  on WinCE, to conserve screen space.
-*/
-
-void QMessageBoxPrivate::hideSpecial()
-{
-    Q_Q(QMessageBox);
-    QList<QPushButton*> list = q->findChildren<QPushButton*>();
-        for (int i=0; i<list.size(); ++i) {
-            QPushButton *pb = list.at(i);
-            QString text = pb->text();
-            text.remove(QChar::fromLatin1('&'));
-            if (text == QApplication::translate("QMessageBox", "OK" ))
-                pb->setFixedSize(0,0);
-        }
-}
-#endif
 
 static int oldButton(int button)
 {
@@ -1047,26 +1019,26 @@ void QMessageBoxPrivate::detectEscapeButton()
     }
 
     // if the message box has one RejectRole button, make it the escape button
-    for (int i = 0; i < buttons.count(); i++) {
-        if (buttonBox->buttonRole(buttons.at(i)) == QDialogButtonBox::RejectRole) {
+    for (auto *button : buttons) {
+        if (buttonBox->buttonRole(button) == QDialogButtonBox::RejectRole) {
             if (detectedEscapeButton) { // already detected!
                 detectedEscapeButton = 0;
                 break;
             }
-            detectedEscapeButton = buttons.at(i);
+            detectedEscapeButton = button;
         }
     }
     if (detectedEscapeButton)
         return;
 
     // if the message box has one NoRole button, make it the escape button
-    for (int i = 0; i < buttons.count(); i++) {
-        if (buttonBox->buttonRole(buttons.at(i)) == QDialogButtonBox::NoRole) {
+    for (auto *button : buttons) {
+        if (buttonBox->buttonRole(button) == QDialogButtonBox::NoRole) {
             if (detectedEscapeButton) { // already detected!
                 detectedEscapeButton = 0;
                 break;
             }
-            detectedEscapeButton = buttons.at(i);
+            detectedEscapeButton = button;
         }
     }
 }
@@ -1362,24 +1334,6 @@ bool QMessageBox::event(QEvent *e)
         case QEvent::LanguageChange:
             d_func()->retranslateStrings();
             break;
-#ifdef Q_OS_WINCE
-        case QEvent::OkRequest:
-        case QEvent::HelpRequest: {
-          QString bName =
-              (e->type() == QEvent::OkRequest)
-              ? QApplication::translate("QMessageBox", "OK")
-              : QApplication::translate("QMessageBox", "Help");
-          QList<QPushButton*> list = findChildren<QPushButton*>();
-          for (int i=0; i<list.size(); ++i) {
-              QPushButton *pb = list.at(i);
-              if (pb->text() == bName) {
-                  if (pb->isEnabled())
-                      pb->click();
-                  return pb->isEnabled();
-              }
-          }
-        }
-#endif
         default:
             break;
     }
@@ -1448,11 +1402,8 @@ void QMessageBox::changeEvent(QEvent *ev)
 void QMessageBox::keyPressEvent(QKeyEvent *e)
 {
     Q_D(QMessageBox);
-    if (e->key() == Qt::Key_Escape
-#ifdef Q_OS_MAC
-        || (e->modifiers() == Qt::ControlModifier && e->key() == Qt::Key_Period)
-#endif
-        ) {
+
+        if (e->matches(QKeySequence::Cancel)) {
             if (d->detectedEscapeButton) {
 #ifdef Q_OS_MAC
                 d->detectedEscapeButton->animateClick();
@@ -1481,24 +1432,21 @@ void QMessageBox::keyPressEvent(QKeyEvent *e)
 
 #if defined(Q_OS_WIN)
         if (e == QKeySequence::Copy) {
-            QString separator = QString::fromLatin1("---------------------------\n");
-            QString textToCopy = separator;
-            separator.prepend(QLatin1Char('\n'));
-            textToCopy += windowTitle() + separator; // title
-            textToCopy += d->label->text() + separator; // text
+            const QLatin1String separator("---------------------------\n");
+            QString textToCopy;
+            textToCopy += separator + windowTitle() + QLatin1Char('\n') + separator // title
+                          + d->label->text() + QLatin1Char('\n') + separator;       // text
 
             if (d->informativeLabel)
-                textToCopy += d->informativeLabel->text() + separator;
+                textToCopy += d->informativeLabel->text() + QLatin1Char('\n') + separator;
 
-            QString buttonTexts;
-            QList<QAbstractButton *> buttons = d->buttonBox->buttons();
-            for (int i = 0; i < buttons.count(); i++) {
-                buttonTexts += buttons[i]->text() + QLatin1String("   ");
-            }
-            textToCopy += buttonTexts + separator;
+            const QList<QAbstractButton *> buttons = d->buttonBox->buttons();
+            for (const auto *button : buttons)
+                textToCopy += button->text() + QLatin1String("   ");
+            textToCopy += QLatin1Char('\n') + separator;
 #ifndef QT_NO_TEXTEDIT
             if (d->detailsText)
-                textToCopy += d->detailsText->text() + separator;
+                textToCopy += d->detailsText->text() + QLatin1Char('\n') + separator;
 #endif
             QApplication::clipboard()->setText(textToCopy);
             return;
@@ -1512,8 +1460,7 @@ void QMessageBox::keyPressEvent(QKeyEvent *e)
         int key = e->key() & ~Qt::MODIFIER_MASK;
         if (key) {
             const QList<QAbstractButton *> buttons = d->buttonBox->buttons();
-            for (int i = 0; i < buttons.count(); ++i) {
-                QAbstractButton *pb = buttons.at(i);
+            for (auto *pb : buttons) {
                 QKeySequence shortcut = pb->shortcut();
                 if (!shortcut.isEmpty() && key == int(shortcut[0] & ~Qt::MODIFIER_MASK)) {
                     pb->animateClick();
@@ -1525,20 +1472,6 @@ void QMessageBox::keyPressEvent(QKeyEvent *e)
 #endif
     QDialog::keyPressEvent(e);
 }
-
-#ifdef Q_OS_WINCE
-/*!
-    \reimp
-*/
-void QMessageBox::setVisible(bool visible)
-{
-    Q_D(QMessageBox);
-    if (visible)
-        d->hideSpecial();
-    QDialog::setVisible(visible);
-}
-#endif
-
 
 /*!
     \overload
@@ -1597,9 +1530,6 @@ void QMessageBox::showEvent(QShowEvent *e)
     Q_D(QMessageBox);
     if (d->autoAddOkButton) {
         addButton(Ok);
-#if defined(Q_OS_WINCE)
-        d->hideSpecial();
-#endif
     }
     if (d->detailsButton)
         addButton(d->detailsButton, QMessageBox::ActionRole);
@@ -1904,7 +1834,7 @@ void QMessageBox::aboutQt(QWidget *parent, const QString &title)
         "<p>Qt and the Qt logo are trademarks of The Qt Company Ltd.</p>"
         "<p>Qt is The Qt Company Ltd product developed as an open source "
         "project. See <a href=\"http://%3/\">%3</a> for more information.</p>"
-        ).arg(QStringLiteral("2015"),
+        ).arg(QStringLiteral("2016"),
               QStringLiteral("qt.io/licensing"),
               QStringLiteral("qt.io"));
     QMessageBox *msgBox = new QMessageBox(parent);
@@ -1916,9 +1846,6 @@ void QMessageBox::aboutQt(QWidget *parent, const QString &title)
     QPixmap pm(QLatin1String(":/qt-project.org/qmessagebox/images/qtlogo-64.png"));
     if (!pm.isNull())
         msgBox->setIconPixmap(pm);
-#if defined(Q_OS_WINCE)
-    msgBox->setDefaultButton(msgBox->addButton(QMessageBox::Ok));
-#endif
 
     // should perhaps be a style hint
 #ifdef Q_OS_MAC
@@ -2678,8 +2605,17 @@ QPixmap QMessageBoxPrivate::standardIcon(QMessageBox::Icon icon, QMessageBox *mb
     default:
         break;
     }
-    if (!tmpIcon.isNull())
-        return tmpIcon.pixmap(iconSize, iconSize);
+    if (!tmpIcon.isNull()) {
+        QWindow *window = Q_NULLPTR;
+        if (mb) {
+            window = mb->windowHandle();
+            if (!window) {
+                if (const QWidget *nativeParent = mb->nativeParentWidget())
+                    window = nativeParent->windowHandle();
+            }
+        }
+        return tmpIcon.pixmap(window, QSize(iconSize, iconSize));
+    }
     return QPixmap();
 }
 

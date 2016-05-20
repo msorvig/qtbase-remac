@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the qmake application of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -74,27 +69,8 @@ QT_BEGIN_NAMESPACE
 
 #define fL1S(s) QString::fromLatin1(s)
 
-namespace { // MSVC doesn't seem to know the semantics of "static" ...
-
-static struct {
-    QRegExp reg_variableName;
-} statics;
-
-}
-
-static void initStatics()
-{
-    if (!statics.reg_variableName.isEmpty())
-        return;
-
-    statics.reg_variableName.setPattern(QLatin1String("\\$\\(.*\\)"));
-    statics.reg_variableName.setMinimal(true);
-}
-
 QMakeGlobals::QMakeGlobals()
 {
-    initStatics();
-
     do_cache = true;
 
 #ifdef PROEVALUATOR_DEBUG
@@ -128,7 +104,7 @@ QString QMakeGlobals::cleanSpec(QMakeCmdLineParserState &state, const QString &s
 QMakeGlobals::ArgumentReturn QMakeGlobals::addCommandLineArguments(
         QMakeCmdLineParserState &state, QStringList &args, int *pos)
 {
-    enum { ArgNone, ArgConfig, ArgSpec, ArgXSpec, ArgTmpl, ArgTmplPfx, ArgCache } argState = ArgNone;
+    enum { ArgNone, ArgConfig, ArgSpec, ArgXSpec, ArgTmpl, ArgTmplPfx, ArgCache, ArgQtConf } argState = ArgNone;
     for (; *pos < args.count(); (*pos)++) {
         QString arg = args.at(*pos);
         switch (argState) {
@@ -153,8 +129,16 @@ QMakeGlobals::ArgumentReturn QMakeGlobals::addCommandLineArguments(
         case ArgCache:
             cachefile = args[*pos] = QDir::cleanPath(QDir(state.pwd).absoluteFilePath(arg));
             break;
+        case ArgQtConf:
+            qtconf = args[*pos] = QDir::cleanPath(QDir(state.pwd).absoluteFilePath(arg));
+            break;
         default:
             if (arg.startsWith(QLatin1Char('-'))) {
+                if (arg == QLatin1String("--")) {
+                    state.extraargs = args.mid(*pos + 1);
+                    *pos = args.size();
+                    return ArgumentsOk;
+                }
                 if (arg == QLatin1String("-after"))
                     state.after = true;
                 else if (arg == QLatin1String("-config"))
@@ -163,6 +147,8 @@ QMakeGlobals::ArgumentReturn QMakeGlobals::addCommandLineArguments(
                     do_cache = false;
                 else if (arg == QLatin1String("-cache"))
                     argState = ArgCache;
+                else if (arg == QLatin1String("-qtconf"))
+                    argState = ArgQtConf;
                 else if (arg == QLatin1String("-platform") || arg == QLatin1String("-spec"))
                     argState = ArgSpec;
                 else if (arg == QLatin1String("-xplatform") || arg == QLatin1String("-xspec"))
@@ -197,11 +183,17 @@ QMakeGlobals::ArgumentReturn QMakeGlobals::addCommandLineArguments(
 void QMakeGlobals::commitCommandLineArguments(QMakeCmdLineParserState &state)
 {
     if (!state.preconfigs.isEmpty())
-        state.precmds << (fL1S("CONFIG += ") + state.preconfigs.join(fL1S(" ")));
-    precmds = state.precmds.join(fL1S("\n"));
+        state.precmds << (fL1S("CONFIG += ") + state.preconfigs.join(QLatin1Char(' ')));
+    if (!state.extraargs.isEmpty()) {
+        QString extra = fL1S("QMAKE_EXTRA_ARGS =");
+        for (const QString &ea : qAsConst(state.extraargs))
+            extra += QLatin1Char(' ') + QMakeEvaluator::quoteValue(ProString(ea));
+        state.precmds << extra;
+    }
+    precmds = state.precmds.join(QLatin1Char('\n'));
     if (!state.postconfigs.isEmpty())
-        state.postcmds << (fL1S("CONFIG += ") + state.postconfigs.join(fL1S(" ")));
-    postcmds = state.postcmds.join(fL1S("\n"));
+        state.postcmds << (fL1S("CONFIG += ") + state.postconfigs.join(QLatin1Char(' ')));
+    postcmds = state.postcmds.join(QLatin1Char('\n'));
 
     if (xqmakespec.isEmpty())
         xqmakespec = qmakespec;
@@ -267,9 +259,9 @@ QStringList QMakeGlobals::splitPathList(const QString &val) const
     QStringList ret;
     if (!val.isEmpty()) {
         QDir bdir;
-        QStringList vals = val.split(dirlist_sep);
+        const QStringList vals = val.split(dirlist_sep);
         ret.reserve(vals.length());
-        foreach (const QString &it, vals)
+        for (const QString &it : vals)
             ret << QDir::cleanPath(bdir.absoluteFilePath(it));
     }
     return ret;
@@ -292,11 +284,24 @@ QStringList QMakeGlobals::getPathListEnv(const QString &var) const
 QString QMakeGlobals::expandEnvVars(const QString &str) const
 {
     QString string = str;
-    int rep;
-    QRegExp reg_variableName = statics.reg_variableName; // Copy for thread safety
-    while ((rep = reg_variableName.indexIn(string)) != -1)
-        string.replace(rep, reg_variableName.matchedLength(),
-                       getEnv(string.mid(rep + 2, reg_variableName.matchedLength() - 3)));
+    int startIndex = 0;
+    forever {
+        startIndex = string.indexOf(QLatin1Char('$'), startIndex);
+        if (startIndex < 0)
+            break;
+        if (string.length() < startIndex + 3)
+            break;
+        if (string.at(startIndex + 1) != QLatin1Char('(')) {
+            startIndex++;
+            continue;
+        }
+        int endIndex = string.indexOf(QLatin1Char(')'), startIndex + 2);
+        if (endIndex < 0)
+            break;
+        QString value = getEnv(string.mid(startIndex + 2, endIndex - startIndex - 2));
+        string.replace(startIndex, endIndex - startIndex + 1, value);
+        startIndex += value.length();
+    }
     return string;
 }
 
@@ -320,7 +325,8 @@ bool QMakeGlobals::initProperties()
         QT_PCLOSE(proc);
     }
 #endif
-    foreach (QByteArray line, data.split('\n')) {
+    const auto lines = data.split('\n');
+    for (QByteArray line : lines) {
         int off = line.indexOf(':');
         if (off < 0) // huh?
             continue;

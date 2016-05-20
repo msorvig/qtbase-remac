@@ -106,46 +106,43 @@ win32 {
         SOURCES += io/qfilesystemiterator_win.cpp
 
     !winrt {
-        SOURCES += io/qsettings_win.cpp
-        HEADERS += io/qwindowspipewriter_p.h
-        SOURCES += io/qwindowspipewriter.cpp
-        SOURCES += io/qstandardpaths_win.cpp
+        HEADERS += \
+            io/qwindowspipereader_p.h \
+            io/qwindowspipewriter_p.h \
+            io/qwinoverlappedionotifier_p.h
 
-        wince* {
-            SOURCES += io/qprocess_wince.cpp \
-                io/qstorageinfo_stub.cpp
-        } else {
-            HEADERS += \
-                io/qwinoverlappedionotifier_p.h \
-                io/qwindowspipereader_p.h
-            SOURCES += \
-                io/qprocess_win.cpp \
-                io/qwinoverlappedionotifier.cpp \
-                io/qwindowspipereader.cpp \
-                io/qstorageinfo_win.cpp
-            LIBS += -lmpr
-        }
+        SOURCES += \
+            io/qprocess_win.cpp \
+            io/qsettings_win.cpp \
+            io/qstandardpaths_win.cpp \
+            io/qstorageinfo_win.cpp \
+            io/qwindowspipereader.cpp \
+            io/qwindowspipewriter.cpp \
+            io/qwinoverlappedionotifier.cpp
+
+        LIBS += -lmpr
     } else {
         SOURCES += \
                 io/qstandardpaths_winrt.cpp \
                 io/qsettings_winrt.cpp \
                 io/qstorageinfo_stub.cpp
     }
-} else:unix|integrity {
+} else:unix {
         SOURCES += \
                 io/qfsfileengine_unix.cpp \
                 io/qfilesystemengine_unix.cpp \
                 io/qlockfile_unix.cpp \
                 io/qprocess_unix.cpp \
-                io/qfilesystemiterator_unix.cpp \
-                io/forkfd_qt.cpp
-        HEADERS += \
-                ../3rdparty/forkfd/forkfd.h
-        INCLUDEPATH += ../3rdparty/forkfd
+                io/qfilesystemiterator_unix.cpp
 
+        !integrity:!tvos {
+            SOURCES += io/forkfd_qt.cpp
+            HEADERS += \
+                     ../3rdparty/forkfd/forkfd.h
+            INCLUDEPATH += ../3rdparty/forkfd
+        }
         !nacl:mac: {
             SOURCES += io/qsettings_mac.cpp
-            OBJECTIVE_SOURCES += io/qurl_mac.mm
         }
         freebsd: LIBS_PRIVATE += -lutil         # qlockfile_unix.cpp requires this
         mac {
@@ -155,14 +152,10 @@ win32 {
                 OBJECTIVE_SOURCES += io/qfilesystemwatcher_fsevents.mm
                 HEADERS += io/qfilesystemwatcher_fsevents_p.h
                 LIBS += -framework DiskArbitration -framework IOKit
-            } else:ios {
+            } else {
                 LIBS += -framework MobileCoreServices
             }
-        } else:blackberry {
-            SOURCES += \
-                io/qstandardpaths_blackberry.cpp \
-                io/qstorageinfo_unix.cpp
-        } else:android:!android-no-sdk {
+        } else:android {
             SOURCES += \
                 io/qstandardpaths_android.cpp \
                 io/qstorageinfo_unix.cpp

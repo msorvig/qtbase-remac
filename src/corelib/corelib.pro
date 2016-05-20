@@ -7,6 +7,7 @@ MODULE_CONFIG = moc resources
 !isEmpty(QT_NAMESPACE): MODULE_DEFINES = QT_NAMESPACE=$$QT_NAMESPACE
 
 CONFIG += $$MODULE_CONFIG
+DEFINES += $$MODULE_DEFINES
 DEFINES   += QT_NO_USING_NAMESPACE
 win32-msvc*|win32-icc:QMAKE_LFLAGS += /BASE:0x67000000
 irix-cc*:QMAKE_CXXFLAGS += -no_prelink -ptused
@@ -16,18 +17,19 @@ CONFIG += optimize_full
 QMAKE_DOCS = $$PWD/doc/qtcore.qdocconf
 
 ANDROID_JAR_DEPENDENCIES = \
-    jar/QtAndroid.jar \
-    jar/QtAndroidAccessibility.jar
+    jar/QtAndroid.jar
 ANDROID_LIB_DEPENDENCIES = \
     plugins/platforms/android/libqtforandroid.so
 ANDROID_BUNDLED_JAR_DEPENDENCIES = \
-    jar/QtAndroid-bundled.jar \
-    jar/QtAndroidAccessibility-bundled.jar
+    jar/QtAndroid-bundled.jar
 ANDROID_PERMISSIONS = \
     android.permission.INTERNET \
     android.permission.WRITE_EXTERNAL_STORAGE
 
-load(qt_module)
+# QtCore can't be compiled with -Wl,-no-undefined because it uses the "environ"
+# variable and on FreeBSD, this variable is in the final executable itself
+freebsd: QMAKE_LFLAGS_NOUNDEF =
+
 load(qfeatures)
 
 include(animation/animation.pri)
@@ -45,19 +47,25 @@ include(statemachine/statemachine.pri)
 include(mimetypes/mimetypes.pri)
 include(xml/xml.pri)
 
-# otherwise mingw headers do not declare common functions like putenv
-mingw: CONFIG -= strict_c++
+win32 {
+    mingw {
+        # otherwise mingw headers do not declare common functions like putenv
+        CONFIG -= strict_c++
+        # Override MinGW's definition in _mingw.h
+        DEFINES += WINVER=0x600 _WIN32_WINNT=0x0600
+    }
 
-mac|darwin {
-    !ios {
+    !winrt: LIBS_PRIVATE += -lwinmm
+}
+
+darwin {
+    osx {
         LIBS_PRIVATE += -framework ApplicationServices
         LIBS_PRIVATE += -framework CoreServices
     }
     LIBS_PRIVATE += -framework CoreFoundation
     LIBS_PRIVATE += -framework Foundation
 }
-win32:DEFINES-=QT_NO_CAST_TO_ASCII
-DEFINES += $$MODULE_DEFINES
 
 QMAKE_LIBS += $$QMAKE_LIBS_CORE
 
@@ -73,6 +81,11 @@ qt_conf.name = qt_config
 qt_conf.variable = QT_CONFIG
 
 QMAKE_PKGCONFIG_VARIABLES += host_bins qt_conf
+
+load(qt_module)
+
+# Override qt_module, so the symbols are actually included into the library.
+win32: DEFINES -= QT_NO_CAST_TO_ASCII
 
 ctest_macros_file.input = $$PWD/Qt5CTestMacros.cmake
 ctest_macros_file.output = $$DESTDIR/cmake/Qt5Core/Qt5CTestMacros.cmake

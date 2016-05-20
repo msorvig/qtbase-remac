@@ -1,31 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -55,6 +51,7 @@ private slots:
     void initTestCase();
     void cleanupTestCase();
     void dump();
+    void consistencyCheck();
     void loopbackIPv4();
     void loopbackIPv6();
     void localAddress();
@@ -141,10 +138,28 @@ void tst_QNetworkInterface::dump()
             s.nospace() << ": " << qPrintable(e.ip().toString());
             if (!e.netmask().isNull())
                 s.nospace() << '/' << e.prefixLength()
-                            << " (" << qPrintable(e.netmask().toString()) << ")";
+                            << " (" << qPrintable(e.netmask().toString()) << ')';
             if (!e.broadcast().isNull())
                 s.nospace() << " broadcast " << qPrintable(e.broadcast().toString());
         }
+    }
+}
+
+void tst_QNetworkInterface::consistencyCheck()
+{
+    QList<QNetworkInterface> ifaces = QNetworkInterface::allInterfaces();
+    QSet<QString> interfaceNames;
+    QVector<int> interfaceIndexes;
+
+    foreach (const QNetworkInterface &iface, ifaces) {
+        QVERIFY2(!interfaceNames.contains(iface.name()),
+                 "duplicate name = " + iface.name().toLocal8Bit());
+        interfaceNames << iface.name();
+
+        QVERIFY2(!interfaceIndexes.contains(iface.index()),
+                 "duplicate index = " + QByteArray::number(iface.index()));
+        if (iface.index())
+            interfaceIndexes << iface.index();
     }
 }
 
@@ -203,6 +218,11 @@ void tst_QNetworkInterface::interfaceFromXXX()
     QFETCH(QNetworkInterface, iface);
 
     QVERIFY(QNetworkInterface::interfaceFromName(iface.name()).isValid());
+    if (int idx = iface.index()) {
+        QVERIFY(QNetworkInterface::interfaceFromIndex(idx).isValid());
+        QCOMPARE(QNetworkInterface::interfaceNameFromIndex(idx), iface.name());
+        QCOMPARE(QNetworkInterface::interfaceIndexFromName(iface.name()), idx);
+    }
     foreach (QNetworkAddressEntry entry, iface.addressEntries()) {
         QVERIFY(!entry.ip().isNull());
 
@@ -213,13 +233,6 @@ void tst_QNetworkInterface::interfaceFromXXX()
             // but only for IPv4 (there is no such thing as broadcast in IPv6)
             if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
                 QVERIFY(!entry.broadcast().isNull());
-
-                // verify that the broadcast address is correct
-                quint32 ip = entry.ip().toIPv4Address();
-                quint32 mask = entry.netmask().toIPv4Address();
-                quint32 bcast = entry.broadcast().toIPv4Address();
-
-                QCOMPARE(bcast, ip | ~mask);
             }
         }
 

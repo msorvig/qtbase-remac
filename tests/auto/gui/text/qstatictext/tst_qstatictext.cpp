@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,22 +34,28 @@
 #include <qstatictext.h>
 #include <qpaintengine.h>
 
+#ifdef QT_BUILD_INTERNAL
 #include <private/qstatictext_p.h>
+#endif
 
 // #define DEBUG_SAVE_IMAGE
+
+static inline QImage blankSquare()
+{
+    // a "blank" square; we compare against in our testfunctions to verify
+    // that we have actually painted something
+    QPixmap pm(1000, 1000);
+    pm.fill(Qt::white);
+    return pm.toImage();
+}
 
 class tst_QStaticText: public QObject
 {
     Q_OBJECT
 public:
-    tst_QStaticText() {}
+    tst_QStaticText() : m_whiteSquare(blankSquare()) {}
 
 private slots:
-    void initTestCase();
-
-    void init();
-    void cleanup();
-
     void constructionAndDestruction();
     void drawToPoint_data();
     void drawToPoint();
@@ -90,33 +91,18 @@ private slots:
 
     void unprintableCharacter_qtbug12614();
 
+#ifdef QT_BUILD_INTERNAL
     void underlinedColor_qtbug20159();
     void textDocumentColor();
+#endif
 
 private:
     bool supportsTransformations() const;
 
-    QImage const    m_whiteSquare;
+    const QImage m_whiteSquare;
 };
 
 Q_DECLARE_METATYPE(QImage::Format);
-
-void tst_QStaticText::initTestCase()
-{
-    // a "blank" square; we compare against in our testfunctions to verify
-    // that we have actually painted something
-    QPixmap pm(1000, 1000);
-    pm.fill(Qt::white);
-    const_cast<QImage&>(m_whiteSquare) = pm.toImage();
-}
-
-void tst_QStaticText::init()
-{
-}
-
-void tst_QStaticText::cleanup()
-{
-}
 
 void tst_QStaticText::constructionAndDestruction()
 {
@@ -610,6 +596,29 @@ void tst_QStaticText::plainTextVsRichText()
     QCOMPARE(imagePlainText, imageRichText);
 }
 
+static bool checkPixels(const QImage &image,
+                        Qt::GlobalColor expectedColor1, Qt::GlobalColor expectedColor2,
+                        QByteArray *errorMessage)
+{
+    const QRgb expectedRgb1 = QColor(expectedColor1).rgba();
+    const QRgb expectedRgb2 = QColor(expectedColor2).rgba();
+
+    for (int x = 0, w = image.width(); x < w; ++x) {
+        for (int y = 0, h = image.height(); y < h; ++y) {
+            const QRgb pixel = image.pixel(x, y);
+            if (pixel != expectedRgb1 && pixel != expectedRgb2) {
+                QString message;
+                QDebug(&message) << "Color mismatch in image" << image
+                    << "at" << x << ',' << y << ':' << showbase << hex << pixel
+                    << "(expected: " << expectedRgb1 << ',' << expectedRgb2 << ')';
+                *errorMessage = message.toLocal8Bit();
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 void tst_QStaticText::setPenPlainText_data()
 {
     QTest::addColumn<QImage::Format>("format");
@@ -640,13 +649,9 @@ void tst_QStaticText::setPenPlainText()
         p.drawStaticText(0, 0, staticText);
     }
 
-    for (int x=0; x<image.width(); ++x) {
-        for (int y=0; y<image.height(); ++y) {
-            QRgb pixel = image.pixel(x, y);
-            QVERIFY(pixel == QColor(Qt::white).rgba()
-                    || pixel == QColor(Qt::yellow).rgba());
-        }
-    }
+    QByteArray errorMessage;
+    QVERIFY2(checkPixels(image, Qt::yellow, Qt::white, &errorMessage),
+             errorMessage.constData());
 }
 
 void tst_QStaticText::setPenRichText()
@@ -668,14 +673,9 @@ void tst_QStaticText::setPenRichText()
         p.drawStaticText(0, 0, staticText);
     }
 
-    QImage img = image.toImage();
-    for (int x=0; x<img.width(); ++x) {
-        for (int y=0; y<img.height(); ++y) {
-            QRgb pixel = img.pixel(x, y);
-            QVERIFY(pixel == QColor(Qt::white).rgba()
-                    || pixel == QColor(Qt::green).rgba());
-        }
-    }
+    QByteArray errorMessage;
+    QVERIFY2(checkPixels(image.toImage(), Qt::green, Qt::white, &errorMessage),
+             errorMessage.constData());
 }
 
 void tst_QStaticText::richTextOverridesPen()
@@ -697,14 +697,9 @@ void tst_QStaticText::richTextOverridesPen()
         p.drawStaticText(0, 0, staticText);
     }
 
-    QImage img = image.toImage();
-    for (int x=0; x<img.width(); ++x) {
-        for (int y=0; y<img.height(); ++y) {
-            QRgb pixel = img.pixel(x, y);
-            QVERIFY(pixel == QColor(Qt::white).rgba()
-                    || pixel == QColor(Qt::red).rgba());
-        }
-    }
+    QByteArray errorMessage;
+    QVERIFY2(checkPixels(image.toImage(), Qt::red, Qt::white, &errorMessage),
+             errorMessage.constData());
 }
 
 void tst_QStaticText::drawStruckOutText()
@@ -820,6 +815,7 @@ void tst_QStaticText::unprintableCharacter_qtbug12614()
     QVERIFY(staticText.size().isValid()); // Force layout. Should not crash.
 }
 
+#ifdef QT_BUILD_INTERNAL
 void tst_QStaticText::underlinedColor_qtbug20159()
 {
     QString multiScriptText;
@@ -856,6 +852,7 @@ void tst_QStaticText::textDocumentColor()
 
     QCOMPARE(d->items[1].color, QColor(Qt::red));
 }
+#endif
 
 QTEST_MAIN(tst_QStaticText)
 #include "tst_qstatictext.moc"

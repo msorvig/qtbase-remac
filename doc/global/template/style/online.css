@@ -254,6 +254,13 @@
   line-height:1.4;
   font-size:0.875em
 }
+@media (min-width: 1320px) {
+  .context .flowListDiv dl.flowList {
+    -webkit-column-count:3;
+    -moz-column-count:3;
+    column-count:3
+  }
+}
 @media (min-width: 1120px) {
   #navbar.fixed,#navbar.shadow_bottom {
     -moz-box-shadow:0px 0px 8px rgba(0,0,0,0.2);
@@ -292,6 +299,11 @@
   }
   #navbar.fixed #mainmenu li.current-menu-item a {
     border-bottom:4px solid #80C342
+  }
+  .flowListDiv dl.flowList {
+    -webkit-column-count:2;
+    -moz-column-count:2;
+    column-count:2
   }
 }
 @media (max-width: 1120px) {
@@ -975,9 +987,23 @@ ol,ul {
   margin-top:0.75em;
   margin-left:20px
 }
-.mainContent ol>li {
-  list-style-type:decimal
+
+.context ol > li {
+  margin-left: 20px
 }
+
+.mainContent ol>li {
+  list-style-type: decimal;
+}
+
+.mainContent ol.a >li {
+  list-style-type: lower-alpha;
+}
+
+.mainContent ol.A >li {
+  list-style-type: upper-alpha;
+}
+
 blockquote,q {
   quotes:none
 }
@@ -1206,6 +1232,19 @@ li a.active {
 .flowList {
   padding:25px
 }
+.flowListDiv dl {
+  -webkit-column-count:1;
+  -moz-column-count:1;
+  column-count:1
+}
+.flowList dd {
+  display:inline-block;
+  margin-left:10px;
+  width:90%;
+  line-height:1.15em;
+  overflow-x:hidden;
+  text-overflow:ellipsis
+}
 .alphaChar {
   font-size:2em;
   position:absolute
@@ -1221,12 +1260,12 @@ li a.active {
 }
 .mainContent table p {
   margin:0px;
-  padding:0px
-}
-.mainContent table p {
-  margin:0px;
   padding:0px;
+  max-width:initial;
   min-height:2em
+}
+.mainContent table p.centerAlign {
+  text-align:center
 }
 .context h2 {
   font-size:2.1875em
@@ -1260,6 +1299,9 @@ table td,table th {
 }
 table.alignedsummary,table.propsummary {
   width:initial
+}
+table.valuelist td.tblval {
+  font-size:0.75em
 }
 div.main_index .row {
   border-bottom:1px solid #eee

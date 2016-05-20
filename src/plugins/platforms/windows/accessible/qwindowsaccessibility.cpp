@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -51,9 +57,9 @@
 
 #include "qwindowsaccessibility.h"
 #ifdef Q_CC_MINGW
-# include "qwindowsmsaaaccessible.h"
+#   include "qwindowsmsaaaccessible.h"
 #else
-# include "iaccessible2.h"
+#   include "iaccessible2.h"
 #endif
 #include "comutils.h"
 
@@ -66,9 +72,6 @@
 
 #include <winuser.h>
 #if !defined(WINABLEAPI)
-#  if defined(Q_OS_WINCE)
-#    include <bldver.h>
-#  endif
 #  include <winable.h>
 #endif
 
@@ -77,7 +80,7 @@
 #include <comdef.h>
 #endif
 
-#include "../qtwindows_additional.h"
+#include <QtCore/qt_windows.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -144,14 +147,10 @@ void QWindowsAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *event)
         }
     }
 
-#if defined(Q_OS_WINCE) // ### TODO: check for NotifyWinEvent in CE 6.0
-    // There is no user32.lib nor NotifyWinEvent for CE
-    return;
-#else
     // An event has to be associated with a window,
     // so find the first parent that is a widget and that has a WId
     QAccessibleInterface *iface = event->accessibleInterface();
-    if (!iface || !iface->isValid())
+    if (!isActive() || !iface || !iface->isValid())
         return;
     QWindow *window = QWindowsAccessibility::windowHelper(iface);
 
@@ -164,13 +163,12 @@ void QWindowsAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *event)
     QPlatformNativeInterface *platform = QGuiApplication::platformNativeInterface();
     if (!window->handle()) // Called before show(), no native window yet.
         return;
-    HWND hWnd = (HWND)platform->nativeResourceForWindow("handle", window);
+    const HWND hWnd = reinterpret_cast<HWND>(platform->nativeResourceForWindow("handle", window));
 
     if (event->type() != QAccessible::MenuCommand && // MenuCommand is faked
         event->type() != QAccessible::ObjectDestroyed) {
         ::NotifyWinEvent(event->type(), hWnd, OBJID_CLIENT, QAccessible::uniqueId(iface));
     }
-#endif // Q_OS_WINCE
 }
 
 QWindow *QWindowsAccessibility::windowHelper(const QAccessibleInterface *iface)
@@ -200,47 +198,27 @@ IAccessible *QWindowsAccessibility::wrap(QAccessibleInterface *acc)
     if (!QAccessible::uniqueId(acc))
         QAccessible::registerAccessibleInterface(acc);
 
-#ifdef Q_CC_MINGW
+# ifdef Q_CC_MINGW
     QWindowsMsaaAccessible *wacc = new QWindowsMsaaAccessible(acc);
-#else
+# else
     QWindowsIA2Accessible *wacc = new QWindowsIA2Accessible(acc);
-#endif
+# endif
     IAccessible *iacc = 0;
-    wacc->QueryInterface(IID_IAccessible, (void**)&iacc);
+    wacc->QueryInterface(IID_IAccessible, reinterpret_cast<void **>(&iacc));
     return iacc;
 }
-
-/*
-void QWindowsAccessibility::setRootObject(QObject *o)
-{
-
-}
-
-void QWindowsAccessibility::initialize()
-{
-
-}
-
-void QWindowsAccessibility::cleanup()
-{
-
-}
-
-*/
 
 bool QWindowsAccessibility::handleAccessibleObjectFromWindowRequest(HWND hwnd, WPARAM wParam, LPARAM lParam, LRESULT *lResult)
 {
     if (static_cast<long>(lParam) == static_cast<long>(UiaRootObjectId)) {
         /* For UI Automation */
-    } else if ((DWORD)lParam == DWORD(OBJID_CLIENT)) {
+    } else if (DWORD(lParam) == DWORD(OBJID_CLIENT)) {
         // Start handling accessibility internally
         QGuiApplicationPrivate::platformIntegration()->accessibility()->setActive(true);
-#if 1
         // Ignoring all requests while starting up
         // ### Maybe QPA takes care of this???
         if (QCoreApplication::startingUp() || QCoreApplication::closingDown())
             return false;
-#endif
 
         typedef LRESULT (WINAPI *PtrLresultFromObject)(REFIID, WPARAM, LPUNKNOWN);
         static PtrLresultFromObject ptrLresultFromObject = 0;
@@ -248,9 +226,7 @@ bool QWindowsAccessibility::handleAccessibleObjectFromWindowRequest(HWND hwnd, W
 
         if (!oleaccChecked) {
             oleaccChecked = true;
-#if !defined(Q_OS_WINCE)
-            ptrLresultFromObject = (PtrLresultFromObject)QSystemLibrary::resolve(QLatin1String("oleacc"), "LresultFromObject");
-#endif
+            ptrLresultFromObject = reinterpret_cast<PtrLresultFromObject>(QSystemLibrary::resolve(QLatin1String("oleacc"), "LresultFromObject"));
         }
 
         if (ptrLresultFromObject) {

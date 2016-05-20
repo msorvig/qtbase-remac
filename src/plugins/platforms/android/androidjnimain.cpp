@@ -1,32 +1,38 @@
 /****************************************************************************
 **
 ** Copyright (C) 2014 BogDan Vatra <bogdan@kde.org>
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -34,6 +40,7 @@
 
 #include <dlfcn.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <qplugin.h>
 #include <qdebug.h>
 
@@ -55,6 +62,7 @@
 #include <QtCore/private/qjnihelpers_p.h>
 #include <QtCore/private/qjni_p.h>
 #include <QtGui/private/qguiapplication_p.h>
+#include <QtGui/private/qhighdpiscaling_p.h>
 
 #include <qpa/qwindowsysteminterface.h>
 
@@ -70,6 +78,7 @@ static AAssetManager *m_assetManager = nullptr;
 static jobject m_resourcesObj = nullptr;
 static jobject m_activityObject = nullptr;
 static jmethodID m_createSurfaceMethodID = nullptr;
+static jobject m_serviceObject = nullptr;
 static jmethodID m_setSurfaceGeometryMethodID = nullptr;
 static jmethodID m_destroySurfaceMethodID = nullptr;
 
@@ -90,6 +99,8 @@ extern "C" typedef int (*Main)(int, char **); //use the standard main method to 
 static Main m_main = nullptr;
 static void *m_mainLibraryHnd = nullptr;
 static QList<QByteArray> m_applicationParams;
+pthread_t m_qtAppThread = 0;
+static sem_t m_exitSemaphore, m_terminateSemaphore;
 
 struct SurfaceData
 {
@@ -109,6 +120,7 @@ static QAndroidPlatformIntegration *m_androidPlatformIntegration = nullptr;
 static int m_desktopWidthPixels  = 0;
 static int m_desktopHeightPixels = 0;
 static double m_scaledDensity = 0;
+static double m_density = 1.0;
 
 static volatile bool m_pauseApplication;
 
@@ -157,6 +169,11 @@ namespace QtAndroid
         return m_scaledDensity;
     }
 
+    double pixelDensity()
+    {
+        return m_density;
+    }
+
     JavaVM *javaVM()
     {
         return m_javaVM;
@@ -175,6 +192,11 @@ namespace QtAndroid
     jobject activity()
     {
         return m_activityObject;
+    }
+
+    jobject service()
+    {
+        return m_serviceObject;
     }
 
     void showStatusBar()
@@ -292,7 +314,7 @@ namespace QtAndroid
         QString manufacturer = QJNIObjectPrivate::getStaticObjectField("android/os/Build", "MANUFACTURER", "Ljava/lang/String;").toString();
         QString model = QJNIObjectPrivate::getStaticObjectField("android/os/Build", "MODEL", "Ljava/lang/String;").toString();
 
-        return manufacturer + QStringLiteral(" ") + model;
+        return manufacturer + QLatin1Char(' ') + model;
     }
 
     int createSurface(AndroidSurfaceClient *client, const QRect &geometry, bool onTop, int imageDepth)
@@ -344,6 +366,15 @@ namespace QtAndroid
                                                   qMax(h, 1));
 
         return surfaceId;
+    }
+
+    void setViewVisibility(jobject view, bool visible)
+    {
+        QJNIObjectPrivate::callStaticMethod<void>(m_applicationClass,
+                                                  "setViewVisibility",
+                                                  "(Landroid/view/View;Z)V",
+                                                  view,
+                                                  visible);
     }
 
     void setSurfaceGeometry(int surfaceId, const QRect &geometry)
@@ -432,7 +463,6 @@ static void *startMainMethod(void */*data*/)
         params[i] = static_cast<const char *>(m_applicationParams[i].constData());
 
     int ret = m_main(m_applicationParams.length(), const_cast<char **>(params.data()));
-    Q_UNUSED(ret);
 
     if (m_mainLibraryHnd) {
         int res = dlclose(m_mainLibraryHnd);
@@ -448,6 +478,12 @@ static void *startMainMethod(void */*data*/)
     if (vm != 0)
         vm->DetachCurrentThread();
 
+    sem_post(&m_terminateSemaphore);
+    sem_wait(&m_exitSemaphore);
+    sem_destroy(&m_exitSemaphore);
+
+    // We must call exit() to ensure that all global objects will be destructed
+    exit(ret);
     return 0;
 }
 
@@ -458,7 +494,7 @@ static jboolean startQtApplication(JNIEnv *env, jobject /*object*/, jstring para
         const char *nativeString = env->GetStringUTFChars(environmentString, 0);
         const QList<QByteArray> envVars = QByteArray(nativeString).split('\t');
         env->ReleaseStringUTFChars(environmentString, nativeString);
-        foreach (const QByteArray &envVar, envVars) {
+        for (const QByteArray &envVar : envVars) {
             const QList<QByteArray> envVarPair = envVar.split('=');
             if (envVarPair.size() == 2 && ::setenv(envVarPair[0], envVarPair[1], 1) != 0)
                 qWarning() << "Can't set environment" << envVarPair;
@@ -479,26 +515,30 @@ static jboolean startQtApplication(JNIEnv *env, jobject /*object*/, jstring para
         // Obtain a handle to the main library (the library that contains the main() function).
         // This library should already be loaded, and calling dlopen() will just return a reference to it.
         m_mainLibraryHnd = dlopen(m_applicationParams.first().data(), 0);
-        if (m_mainLibraryHnd == nullptr) {
+        if (Q_UNLIKELY(!m_mainLibraryHnd)) {
             qCritical() << "dlopen failed:" << dlerror();
             return false;
         }
         m_main = (Main)dlsym(m_mainLibraryHnd, "main");
     } else {
-        qWarning() << "No main library was specified; searching entire process (this is slow!)";
+        qWarning("No main library was specified; searching entire process (this is slow!)");
         m_main = (Main)dlsym(RTLD_DEFAULT, "main");
     }
 
-    if (!m_main) {
-        qCritical() << "dlsym failed:" << dlerror();
-        qCritical() << "Could not find main method";
+    if (Q_UNLIKELY(!m_main)) {
+        qCritical() << "dlsym failed:" << dlerror() << endl
+                    << "Could not find main method";
         return false;
     }
 
-    pthread_t appThread;
-    return pthread_create(&appThread, nullptr, startMainMethod, nullptr) == 0;
-}
+    if (sem_init(&m_exitSemaphore, 0, 0) == -1)
+        return false;
 
+    if (sem_init(&m_terminateSemaphore, 0, 0) == -1)
+        return false;
+
+    return pthread_create(&m_qtAppThread, nullptr, startMainMethod, nullptr) == 0;
+}
 
 static void quitQtAndroidPlugin(JNIEnv *env, jclass /*clazz*/)
 {
@@ -510,12 +550,16 @@ static void quitQtAndroidPlugin(JNIEnv *env, jclass /*clazz*/)
 
 static void terminateQt(JNIEnv *env, jclass /*clazz*/)
 {
+    sem_wait(&m_terminateSemaphore);
+    sem_destroy(&m_terminateSemaphore);
     env->DeleteGlobalRef(m_applicationClass);
     env->DeleteGlobalRef(m_classLoaderObject);
     if (m_resourcesObj)
         env->DeleteGlobalRef(m_resourcesObj);
     if (m_activityObject)
         env->DeleteGlobalRef(m_activityObject);
+    if (m_serviceObject)
+        env->DeleteGlobalRef(m_serviceObject);
     if (m_bitmapClass)
         env->DeleteGlobalRef(m_bitmapClass);
     if (m_ARGB_8888_BitmapConfigValue)
@@ -527,6 +571,8 @@ static void terminateQt(JNIEnv *env, jclass /*clazz*/)
     m_androidPlatformIntegration = nullptr;
     delete m_androidAssetsFileEngineHandler;
     m_androidAssetsFileEngineHandler = nullptr;
+    sem_post(&m_exitSemaphore);
+    pthread_join(m_qtAppThread, nullptr);
 }
 
 static void setSurface(JNIEnv *env, jobject /*thiz*/, jint id, jobject jSurface, jint w, jint h)
@@ -546,7 +592,8 @@ static void setSurface(JNIEnv *env, jobject /*thiz*/, jint id, jobject jSurface,
 static void setDisplayMetrics(JNIEnv */*env*/, jclass /*clazz*/,
                             jint widthPixels, jint heightPixels,
                             jint desktopWidthPixels, jint desktopHeightPixels,
-                            jdouble xdpi, jdouble ydpi, jdouble scaledDensity)
+                            jdouble xdpi, jdouble ydpi,
+                            jdouble scaledDensity, jdouble density)
 {
     // Android does not give us the correct screen size for immersive mode, but
     // the surface does have the right size
@@ -557,6 +604,7 @@ static void setDisplayMetrics(JNIEnv */*env*/, jclass /*clazz*/,
     m_desktopWidthPixels = desktopWidthPixels;
     m_desktopHeightPixels = desktopHeightPixels;
     m_scaledDensity = scaledDensity;
+    m_density = density;
 
     if (!m_androidPlatformIntegration) {
         QAndroidPlatformIntegration::setDefaultDisplayMetrics(desktopWidthPixels,
@@ -579,7 +627,8 @@ static void updateWindow(JNIEnv */*env*/, jobject /*thiz*/)
         return;
 
     if (QGuiApplication::instance() != nullptr) {
-        foreach (QWindow *w, QGuiApplication::topLevelWindows()) {
+        const auto tlw = QGuiApplication::topLevelWindows();
+        for (QWindow *w : tlw) {
             QRect availableGeometry = w->screen()->availableGeometry();
             if (w->geometry().width() > 0 && w->geometry().height() > 0 && availableGeometry.width() > 0 && availableGeometry.height() > 0)
                 QWindowSystemInterface::handleExposeEvent(w, QRegion(QRect(QPoint(), w->geometry().size())));
@@ -682,7 +731,7 @@ static JNINativeMethod methods[] = {
     {"startQtApplication", "(Ljava/lang/String;Ljava/lang/String;)V", (void *)startQtApplication},
     {"quitQtAndroidPlugin", "()V", (void *)quitQtAndroidPlugin},
     {"terminateQt", "()V", (void *)terminateQt},
-    {"setDisplayMetrics", "(IIIIDDD)V", (void *)setDisplayMetrics},
+    {"setDisplayMetrics", "(IIIIDDDD)V", (void *)setDisplayMetrics},
     {"setSurface", "(ILjava/lang/Object;II)V", (void *)setSurface},
     {"updateWindow", "()V", (void *)updateWindow},
     {"updateApplicationState", "(I)V", (void *)updateApplicationState},
@@ -744,20 +793,26 @@ static int registerNatives(JNIEnv *env)
     jmethodID methodID;
     GET_AND_CHECK_STATIC_METHOD(methodID, m_applicationClass, "activity", "()Landroid/app/Activity;");
     jobject activityObject = env->CallStaticObjectMethod(m_applicationClass, methodID);
+    GET_AND_CHECK_STATIC_METHOD(methodID, m_applicationClass, "service", "()Landroid/app/Service;");
+    jobject serviceObject = env->CallStaticObjectMethod(m_applicationClass, methodID);
     GET_AND_CHECK_STATIC_METHOD(methodID, m_applicationClass, "classLoader", "()Ljava/lang/ClassLoader;");
     m_classLoaderObject = env->NewGlobalRef(env->CallStaticObjectMethod(m_applicationClass, methodID));
     clazz = env->GetObjectClass(m_classLoaderObject);
     GET_AND_CHECK_METHOD(m_loadClassMethodID, clazz, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+    if (serviceObject)
+        m_serviceObject = env->NewGlobalRef(serviceObject);
 
-    if (activityObject) {
+    if (activityObject)
         m_activityObject = env->NewGlobalRef(activityObject);
 
+    jobject object = activityObject ? activityObject : serviceObject;
+    if (object) {
         FIND_AND_CHECK_CLASS("android/content/ContextWrapper");
         GET_AND_CHECK_METHOD(methodID, clazz, "getAssets", "()Landroid/content/res/AssetManager;");
-        m_assetManager = AAssetManager_fromJava(env, env->CallObjectMethod(activityObject, methodID));
+        m_assetManager = AAssetManager_fromJava(env, env->CallObjectMethod(object, methodID));
 
         GET_AND_CHECK_METHOD(methodID, clazz, "getResources", "()Landroid/content/res/Resources;");
-        m_resourcesObj = env->NewGlobalRef(env->CallObjectMethod(activityObject, methodID));
+        m_resourcesObj = env->NewGlobalRef(env->CallObjectMethod(object, methodID));
 
         FIND_AND_CHECK_CLASS("android/graphics/Bitmap");
         m_bitmapClass = static_cast<jclass>(env->NewGlobalRef(clazz));
@@ -777,8 +832,6 @@ static int registerNatives(JNIEnv *env)
                              "<init>",
                              "(Landroid/content/res/Resources;Landroid/graphics/Bitmap;)V");
     }
-
-
 
     return JNI_TRUE;
 }
@@ -812,6 +865,7 @@ Q_DECL_EXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void */*reserved*/)
         __android_log_print(ANDROID_LOG_FATAL, "Qt", "registerNatives failed");
         return -1;
     }
+    QWindowSystemInterfacePrivate::TabletEvent::setPlatformSynthesizesMouse(false);
 
     m_javaVM = vm;
     return JNI_VERSION_1_4;

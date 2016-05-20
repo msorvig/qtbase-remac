@@ -1,7 +1,7 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -11,8 +11,8 @@
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
@@ -20,7 +20,7 @@
 ** Foundation and appearing in the file included in the packaging of
 ** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
-** will be met: http://www.gnu.org/copyleft/fdl.html.
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
@@ -28,7 +28,7 @@
 /*!
     \namespace Qt
     \inmodule QtCore
-    \target Qt Namespace
+    \keyword Qt Namespace
 
     \brief The Qt namespace contains miscellaneous identifiers
     used throughout the Qt library.
@@ -145,16 +145,14 @@
            attribute is true, Qt will not do the flip. \l QKeySequence::StandardKey
            will also flip accordingly (i.e., QKeySequence::Copy will be
            Command+C on the keyboard regardless of the value set, though what is output for
-           QKeySequence::toString(QKeySequence::PortableText) will be different).
+           QKeySequence::toString() will be different).
 
     \value AA_Use96Dpi Assume the screen has a resolution of 96 DPI rather
            than using the OS-provided resolution. This will cause font rendering
            to be consistent in pixels-per-point across devices rather than
            defining 1 point as 1/72 inch.
 
-    \value AA_X11InitThreads Calls \c XInitThreads() as part of the QApplication
-           construction in order to make Xlib calls thread-safe. This
-           attribute must be set before QApplication is constructed.
+    \value AA_X11InitThreads This value is obsolete and has no effect.
 
     \value AA_SynthesizeTouchForUnhandledMouseEvents All mouse events
            that are not accepted by the application will be translated
@@ -208,10 +206,22 @@
     \value AA_SetPalette Indicates whether a palette was explicitly set on the
            QApplication/QGuiApplication. This value has been added in Qt 5.5.
 
-    \value AA_NoHighDpiScaling Disables all high-DPI scaling in Qt, exposing window
+    \value AA_EnableHighDpiScaling. Enables high-DPI scaling in Qt on supported
+           platforms (see also \l{High DPI Displays}). Supported platforms are
+           X11, Windows and Android. Enabling makes Qt scale the main (device
+           independent) coordinate system according to display scale factors
+           provided by the operating system. This corresponds to setting the
+           QT_AUTO_SCREEN_SCALE_FACTOR environment variable to 1. This value
+           has been added in Qt 5.6. This attribute must be set before
+           Q(Gui)Application is constructed.
+
+    \value AA_DisableHighDpiScaling Disables high-DPI scaling in Qt, exposing window
            system coordinates. Note that the window system may do its own scaling,
            so this does not guarantee that QPaintDevice::devicePixelRatio() will
-           be equal to 1. This value has been added in Qt 5.6.
+           be equal to 1. In addition, scale factors set by QT_SCALE_FACTOR will not
+           be affected. This corresponds to setting the QT_AUTO_SCREEN_SCALE_FACTOR
+           environment variable to 0. This value has been added in Qt 5.6. This
+           attribute must be set before Q(Gui)Application is constructed.
 
     \value AA_UseStyleSheetPropagationInWidgetStyles By default, Qt Style Sheets
            disable regular QWidget palette and font propagation. When this flag
@@ -219,6 +229,22 @@
            manually called the corresponding QWidget methods. See
            \l{The Style Sheet Syntax#Inheritance}{The Style Sheet Syntax - Inheritance}
            for more details. This value has been added in Qt 5.7.
+
+    \value AA_DontUseNativeDialogs All dialogs created while this attribute is
+           set to true won't use the native dialogs provided by the platform.
+           This value has been added in Qt 5.7.
+
+    \value AA_SynthesizeMouseForUnhandledTabletEvents All tablet events
+           that are not accepted by the application will be translated
+           to mouse events instead. This attribute is enabled
+           by default. This value has been added in Qt 5.7.
+
+    \value AA_DontCheckOpenGLContextThreadAffinity When making a context
+           current using QOpenGLContext, do not check that the
+           \l{QObject#Thread Affinity}{QObject thread affinity}
+           of the QOpenGLContext object is the same thread calling
+           \l{QOpenGLContext::makeCurrent}{makeCurrent()}. This value has been
+           added in Qt 5.8.
 
     The following values are obsolete:
 
@@ -723,27 +749,25 @@
     \value MonoOnly The pixmap becomes monochrome. If necessary,
            it is dithered using the chosen dithering algorithm.
 
-    Dithering mode preference for RGB channels:
+    Dithering mode preference:
 
-    \value DiffuseDither (default) - A high-quality dither.
-    \value OrderedDither A faster, more ordered dither.
+    \value DiffuseDither (default) - A high-quality dither using error diffusion.
+    \value OrderedDither A faster, ordered dither.
     \value ThresholdDither No dithering; closest color is used.
 
-    Dithering mode preference for alpha channel:
+    Dithering mode preference for 1-bit alpha masks:
 
     \value ThresholdAlphaDither (default) - No dithering.
-    \value OrderedAlphaDither A faster, more ordered dither.
-    \value DiffuseAlphaDither A high-quality dither.
+    \value OrderedAlphaDither A faster, ordered dither.
+    \value DiffuseAlphaDither A high-quality dither using error diffusion.
     \omitvalue NoAlpha
 
     Color matching versus dithering preference:
 
-    \value PreferDither (default when converting to a pixmap) - Always dither
-           32-bit images when the image is converted to 8 bits.
-    \value AvoidDither (default when converting for the purpose of saving to
-           file) - Dither 32-bit images only if the image has more than 256
-           colors and it is being converted to 8 bits.
-    \omitvalue AutoDither
+    \value PreferDither Always dither images when converting to smaller color-spaces.
+    \value AvoidDither Only dither to indexed formats if the source image uses more
+           different colors than the size of the color table of the destination format.
+    \value AutoDither (default) - Only dither when down-converting to 1 or 8-bit indexed formats.
 
     \omitvalue ColorMode_Mask
     \omitvalue Dither_Mask
@@ -1707,8 +1731,8 @@
     \value Key_unknown
 
     \value Key_Call     A key to answer or initiate a call (see Qt::Key_ToggleCallHangup for a key to toggle current call state)
-    \value Key_Camera   A key to activate the camera shutter
-    \value Key_CameraFocus  A key to focus the camera
+    \value Key_Camera   A key to activate the camera shutter. On Windows Runtime, the environment variable QT_QPA_ENABLE_CAMERA_KEYS must be set to receive the event.
+    \value Key_CameraFocus  A key to focus the camera. On Windows Runtime, the environment variable QT_QPA_ENABLE_CAMERA_KEYS must be set to receive the event.
     \value Key_Context1
     \value Key_Context2
     \value Key_Context3
@@ -1729,6 +1753,17 @@
     \value Key_Zoom
     \value Key_Exit
     \value Key_Cancel
+    \value Key_MicVolumeUp
+    \value Key_Find
+    \value Key_Open
+    \value Key_MicVolumeDown
+    \value Key_New
+    \value Key_Settings
+    \value Key_Redo
+    \value Key_Exit
+    \value Key_Info
+    \value Key_Undo
+    \value Key_Guide
 
     \sa QKeyEvent::key()
 */
@@ -2088,8 +2123,8 @@
                          another process or by manually using native code.
 
     \value CoverWindow Indicates that the window represents a cover window,
-                       which is shown when the application is minimized
-                       on the BlackBerry platform for instance.
+                       which is shown when the application is minimized on
+                       some platforms.
 
     There are also a number of flags which you can use to customize
     the appearance of top-level windows. These have no effect on other
@@ -2179,12 +2214,6 @@
            on the bottom has a parent, the parent will also be left on
            the bottom.  This window hint is currently not implemented
            for OS X.
-
-    \value WindowOkButtonHint Adds an OK button to the window decoration of a dialog.
-           Only supported for Windows CE.
-
-    \value WindowCancelButtonHint Adds a Cancel button to the window decoration of a dialog.
-           Only supported for Windows CE.
 
     \value WindowTransparentForInput Informs the window system that this window
            is used only for output (displaying something) and does not take input.
@@ -2420,7 +2449,7 @@
     \value WhatsThisCursor  \inlineimage cursor-whatsthis.png
                           An arrow with a question mark, typically used to indicate
                           the presence of What's This? help for a widget.
-    \value BusyCursor     \inlineimage cursor-wait.png
+    \value BusyCursor     \inlineimage cursor-busy.png
                           An hourglass or watch cursor, usually shown during
                           operations that allow the user to interact with
                           the application while they are performed in the
@@ -2551,6 +2580,11 @@
     \value ImTextAfterCursor    The plain text after the cursor. The widget can decide how much text to return,
                                 but \b{must} not return an empty string unless the cursor is at the end of the document.
     \value ImEnterKeyType       The Enter key type.
+    \value ImAnchorRectangle    The bounding rectangle of the selection anchor.
+                                This value has been added in Qt 5.7.
+    \value ImInputItemClipRectangle The actual exposed input item rectangle. Parts of the input item might be
+                                clipped. This value will take clipping into consideration and return the actual painted
+                                item rectangle. The rectangle is in widget coordinates.
 
     Masks:
 
@@ -2730,7 +2764,7 @@
     "\l{http://bugreports.qt.io/browse/QTWEBSITE-13}{http://bugreports.qt.../QTWEBSITE-13/}"),
     whereas Qt::ElideRight is appropriate
     for other strings (e.g.,
-    "\l{http://doc.qt.digia.com/qq/qq09-mac-deployment.html}{Deploying Applications on Ma...}").
+    "\l{http://doc.qt.io/archives/qq/qq09-mac-deployment.html}{Deploying Applications on Ma...}").
 
     \sa QAbstractItemView::textElideMode, QFontMetrics::elidedText(), AlignmentFlag, QTabBar::elideMode
 */
@@ -3063,6 +3097,9 @@
     \since 5.2
 
     This enum describes the phase of scrolling.
+
+    \value NoScrollPhase The input device doesn't support scroll phase.
+    This value was introduced in Qt 5.7.
 
     \value ScrollBegin Scrolling is about to begin, but the scrolling
     distance did not yet change.

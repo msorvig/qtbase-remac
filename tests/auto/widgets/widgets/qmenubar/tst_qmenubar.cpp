@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -95,7 +90,7 @@ private slots:
     void count();
     void insertItem_QString_QObject();
 
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
     void accel();
     void activatedCount();
     void allowActiveAndDisabled();
@@ -117,7 +112,8 @@ private slots:
 //     void check_mouse2();
 
     void check_altPress();
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+    void check_altClosePress();
+#if !defined(Q_OS_DARWIN)
     void check_shortcutPress();
     void check_menuPosition();
 #endif
@@ -210,6 +206,7 @@ void tst_QMenuBar::cleanup()
 TestMenu tst_QMenuBar::initSimpleMenuBar(QMenuBar *mb)
 {
     TestMenu result;
+    mb->setNativeMenuBar(false);
     connect(mb, SIGNAL(triggered(QAction*)), this, SLOT(onSimpleActivated(QAction*)));
     QMenu *menu = mb->addMenu(QStringLiteral("&accel"));
     QAction *action = menu->addAction(QStringLiteral("menu1") );
@@ -277,6 +274,7 @@ void tst_QMenuBar::onComplexActionTriggered()
 TestMenu tst_QMenuBar::initComplexMenuBar(QMenuBar *mb)
 {
     TestMenu result;
+    mb->setNativeMenuBar(false);
     QMenu *menu = addNumberedMenu(mb, 1);
     result.menus << menu;
     for (char c = 'a'; c < 'c'; ++c)
@@ -310,7 +308,7 @@ inline TestMenu tst_QMenuBar::initWindowWithComplexMenuBar(QMainWindow &w)
 }
 
 // On Mac/WinCE, native key events are needed to test menu action activation
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::accel()
 {
     // create a popup menu with menu items set the accelerators later...
@@ -328,7 +326,7 @@ void tst_QMenuBar::accel()
 #endif
 
 // On Mac/WinCE, native key events are needed to test menu action activation
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::activatedCount()
 {
     // create a popup menu with menu items set the accelerators later...
@@ -519,7 +517,7 @@ void tst_QMenuBar::insertItem_QString_QObject()
 }
 
 // On Mac/WinCE, native key events are needed to test menu action activation
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::check_accelKeys()
 {
     QMainWindow w;
@@ -592,7 +590,7 @@ void tst_QMenuBar::check_accelKeys()
 #endif
 
 // On Mac/WinCE, native key events are needed to test menu action activation
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::check_cursorKeys1()
 {
     QMainWindow w;
@@ -626,7 +624,7 @@ void tst_QMenuBar::check_cursorKeys1()
 #endif
 
 // Qt/Mac,WinCE does not use the native popups/menubar
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::check_cursorKeys2()
 {
     QMainWindow w;
@@ -659,7 +657,7 @@ void tst_QMenuBar::check_cursorKeys2()
     If a popupmenu is active you can use Left to move to the menu to the left of it.
 */
 // Qt/Mac,WinCE does not use the native popups/menubar
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::check_cursorKeys3()
 {
     QMainWindow w;
@@ -774,7 +772,7 @@ void tst_QMenuBar::check_endKey()
 */
 
 // Qt/Mac,WinCE does not use the native popups/menubar
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::check_escKey()
 {
     QMainWindow w;
@@ -919,7 +917,7 @@ void tst_QMenuBar::check_escKey()
 //     QCOMPARE(m_complexActionTriggerCount['h'], (uint)itemH_count);
 // }
 
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::allowActiveAndDisabled()
 {
     QMenuBar menuBar;
@@ -978,8 +976,38 @@ void tst_QMenuBar::check_altPress()
     QTRY_VERIFY( ::qobject_cast<QMenuBar *>(qApp->focusWidget()) );
 }
 
+// QTBUG-47377: Pressing 'Alt' after opening a menu by pressing 'Alt+Accelerator'
+// should close it and QMenuBar::activeAction() should be 0.
+void tst_QMenuBar::check_altClosePress()
+{
+    const QStyle *style = QApplication::style();
+    if (!style->styleHint(QStyle::SH_MenuBar_AltKeyNavigation) ) {
+        QSKIP(("This test is not supposed to work in the " + style->objectName().toLatin1()
+               + " style. Skipping.").constData());
+    }
+
+    QMainWindow w;
+    w.setWindowTitle(QTest::currentTestFunction());
+    w.menuBar()->setNativeMenuBar(false);
+    QMenu *menuFile = w.menuBar()->addMenu(tr("&File"));
+    menuFile->addAction("Quit");
+    QMenu *menuEdit = w.menuBar()->addMenu(tr("&Edit"));
+    menuEdit->addAction("Copy");
+
+    w.show();
+    w.move(QGuiApplication::primaryScreen()->availableGeometry().center());
+    QApplication::setActiveWindow(&w);
+    QVERIFY(QTest::qWaitForWindowActive(&w));
+
+    QTest::keyClick(&w, Qt::Key_F, Qt::AltModifier);
+    QTRY_VERIFY(menuFile->isVisible());
+    QTest::keyClick(menuFile, Qt::Key_Alt, Qt::AltModifier);
+    QTRY_VERIFY(!menuFile->isVisible());
+    QTRY_VERIFY(!w.menuBar()->activeAction());
+}
+
 // Qt/Mac,WinCE does not use the native popups/menubar
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::check_shortcutPress()
 {
     QMainWindow w;
@@ -1022,7 +1050,7 @@ private:
 };
 
 // Qt/Mac,WinCE does not use the native popups/menubar
-#if !defined(Q_OS_MAC) && !defined(Q_OS_WINCE)
+#if !defined(Q_OS_DARWIN)
 void tst_QMenuBar::check_menuPosition()
 {
     QMainWindow w;
@@ -1036,6 +1064,7 @@ void tst_QMenuBar::check_menuPosition()
         menu.addAction("item");
     }
 
+    w.menuBar()->setNativeMenuBar(false);
     QAction *menu_action = w.menuBar()->addMenu(&menu);
     centerOnScreen(&w);
     w.show();
@@ -1090,7 +1119,7 @@ void tst_QMenuBar::check_menuPosition()
         menu.close();
     }
 
-#  ifndef QTEST_NO_CURSOR
+#  ifndef QT_NO_CURSOR
     // QTBUG-28031: Click at bottom-right corner.
     {
         w.move(400, 200);
@@ -1104,7 +1133,7 @@ void tst_QMenuBar::check_menuPosition()
         QCOMPARE(menu.geometry().right() - 1, globalPos.x());
         menu.close();
     }
-#  endif // QTEST_NO_CURSOR
+#  endif // QT_NO_CURSOR
 }
 #endif
 
@@ -1360,7 +1389,7 @@ void tst_QMenuBar::cornerWidgets()
 
     QFETCH(Qt::Corner, corner);
 
-#if defined(Q_OS_OSX) || defined(Q_OS_WINCE)
+#if defined(Q_OS_OSX)
     QSKIP("Test interferes with native menu bars on this platform");
 #endif
 
@@ -1369,6 +1398,7 @@ void tst_QMenuBar::cornerWidgets()
     widget.setWindowTitle(QLatin1String(QTest::currentTestFunction()) + dataTag);
     QVBoxLayout *layout = new QVBoxLayout(&widget);
     QMenuBar *menuBar = new QMenuBar(&widget);
+    menuBar->setNativeMenuBar(false);
     layout->addWidget(menuBar);
     QMenu *fileMenu = menuBar->addMenu("File");
     fileMenu->addAction("Quit");

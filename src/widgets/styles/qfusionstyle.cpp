@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -678,10 +684,7 @@ void QFusionStyle::drawPrimitive(PrimitiveElement elem,
     {
         QStyleOption dockWidgetHandle = *option;
         bool horizontal = option->state & State_Horizontal;
-        if (horizontal)
-            dockWidgetHandle.state &= ~State_Horizontal;
-        else
-            dockWidgetHandle.state |= State_Horizontal;
+        dockWidgetHandle.state.setFlag(State_Horizontal, !horizontal);
         proxy()->drawControl(CE_Splitter, &dockWidgetHandle, painter, widget);
     }
         break;
@@ -1222,8 +1225,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
             QRect titleRect = subElementRect(SE_DockWidgetTitleBarText, option, widget);
             if (verticalTitleBar) {
                 QRect rect = dwOpt->rect;
-                QRect r = rect;
-                r.setSize(r.size().transposed());
+                QRect r = rect.transposed();
                 titleRect = QRect(r.left() + rect.bottom()
                                   - titleRect.bottom(),
                                   r.top() + titleRect.left() - rect.left(),
@@ -1536,13 +1538,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
                 QRect r = option->rect;
                 painter->fillRect(r, highlight);
                 painter->setPen(QPen(highlightOutline));
-                const QLine lines[4] = {
-                    QLine(QPoint(r.left() + 1, r.bottom()), QPoint(r.right() - 1, r.bottom())),
-                    QLine(QPoint(r.left() + 1, r.top()), QPoint(r.right() - 1, r.top())),
-                    QLine(QPoint(r.left(), r.top()), QPoint(r.left(), r.bottom())),
-                    QLine(QPoint(r.right() , r.top()), QPoint(r.right(), r.bottom())),
-                };
-                painter->drawLines(lines, 4);
+                painter->drawRect(QRectF(r).adjusted(0.5, 0.5, -0.5, -0.5));
             }
             bool checkable = menuItem->checkType != QStyleOptionMenuItem::NotCheckable;
             bool checked = menuItem->checked;
@@ -1653,7 +1649,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
 
             QRect textRect(xpos, y + windowsItemVMargin, w - xm - windowsRightBorder - tab + 1, h - 2 * windowsItemVMargin);
             QRect vTextRect = visualRect(opt->direction, menuitem->rect, textRect);
-            QString s = menuitem->text;
+            QStringRef s(&menuitem->text);
             if (!s.isEmpty()) {                     // draw text
                 p->save();
                 int t = s.indexOf(QLatin1Char('\t'));
@@ -1664,12 +1660,13 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
                 if (t >= 0) {
                     QRect vShortcutRect = visualRect(opt->direction, menuitem->rect,
                                                      QRect(textRect.topRight(), QPoint(menuitem->rect.right(), textRect.bottom())));
+                    const QString textToDraw = s.mid(t + 1).toString();
                     if (dis && !act && proxy()->styleHint(SH_EtchDisabledText, option, widget)) {
                         p->setPen(menuitem->palette.light().color());
-                        p->drawText(vShortcutRect.adjusted(1, 1, 1, 1), text_flags, s.mid(t + 1));
+                        p->drawText(vShortcutRect.adjusted(1, 1, 1, 1), text_flags, textToDraw);
                         p->setPen(discol);
                     }
-                    p->drawText(vShortcutRect, text_flags, s.mid(t + 1));
+                    p->drawText(vShortcutRect, text_flags, textToDraw);
                     s = s.left(t);
                 }
                 QFont font = menuitem->font;
@@ -1684,12 +1681,13 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
                     font.setBold(true);
 
                 p->setFont(font);
+                const QString textToDraw = s.left(t).toString();
                 if (dis && !act && proxy()->styleHint(SH_EtchDisabledText, option, widget)) {
                     p->setPen(menuitem->palette.light().color());
-                    p->drawText(vTextRect.adjusted(1, 1, 1, 1), text_flags, s.left(t));
+                    p->drawText(vTextRect.adjusted(1, 1, 1, 1), text_flags, textToDraw);
                     p->setPen(discol);
                 }
-                p->drawText(vTextRect, text_flags, s.left(t));
+                p->drawText(vTextRect, text_flags, textToDraw);
                 p->restore();
             }
 
@@ -2566,7 +2564,7 @@ void QFusionStyle::drawComplexControl(ComplexControl control, const QStyleOption
 
                 QColor subtleEdge = alphaOutline;
                 subtleEdge.setAlpha(40);
-                painter->setPen(Qt::NoPen);
+                painter->setPen(subtleEdge);
                 painter->setBrush(Qt::NoBrush);
                 painter->setClipRect(scrollBarGroove.adjusted(1, 0, -1, -3));
                 painter->drawRect(scrollBarGroove.adjusted(1, 0, -1, -1));
@@ -3104,6 +3102,9 @@ int QFusionStyle::pixelMetric(PixelMetric metric, const QStyleOption *option, co
     case PM_DockWidgetTitleBarButtonMargin:
         val = 2;
         break;
+    case PM_TitleBarButtonSize:
+        val = 19;
+        break;
     case PM_MaximumDragDistance:
         return -1; // Do not dpi-scale because the value is magic
     case PM_TabCloseIndicatorWidth:
@@ -3227,18 +3228,7 @@ QSize QFusionStyle::sizeFromContents(ContentsType type, const QStyleOption *opti
         newSize += QSize(4, 4);
         break;
     case CT_MdiControls:
-        if (const QStyleOptionComplex *styleOpt = qstyleoption_cast<const QStyleOptionComplex *>(option)) {
-            int width = 0;
-            if (styleOpt->subControls & SC_MdiMinButton)
-                width += 19 + 1;
-            if (styleOpt->subControls & SC_MdiNormalButton)
-                width += 19 + 1;
-            if (styleOpt->subControls & SC_MdiCloseButton)
-                width += 19 + 1;
-            newSize = QSize(width, 19);
-        } else {
-            newSize = QSize(60, 19);
-        }
+        newSize -= QSize(1, 0);
         break;
     default:
         break;
@@ -3424,12 +3414,28 @@ QRect QFusionStyle::subControlRect(ComplexControl control, const QStyleOptionCom
             QSize textSize = option->fontMetrics.boundingRect(groupBox->text).size() + QSize(2, 2);
             int indicatorWidth = proxy()->pixelMetric(PM_IndicatorWidth, option, widget);
             int indicatorHeight = proxy()->pixelMetric(PM_IndicatorHeight, option, widget);
+
+            const int width = textSize.width()
+                + (option->subControls & QStyle::SC_GroupBoxCheckBox ? indicatorWidth + 5 : 0);
+
             rect = QRect();
+
+            if (option->rect.width() > width) {
+                switch (groupBox->textAlignment & Qt::AlignHorizontal_Mask) {
+                case Qt::AlignHCenter:
+                    rect.moveLeft((option->rect.width() - width) / 2);
+                    break;
+                case Qt::AlignRight:
+                    rect.moveLeft(option->rect.width() - width);
+                    break;
+                }
+            }
+
             if (subControl == SC_GroupBoxCheckBox) {
                 rect.setWidth(indicatorWidth);
                 rect.setHeight(indicatorHeight);
                 rect.moveTop(textSize.height() > indicatorHeight ? (textSize.height() - indicatorHeight) / 2 : 0);
-                rect.moveLeft(1);
+                rect.translate(1, 0);
             } else if (subControl == SC_GroupBoxLabel) {
                 rect.setSize(textSize);
                 rect.moveTop(1);
@@ -3618,7 +3624,7 @@ int QFusionStyle::styleHint(StyleHint hint, const QStyleOption *option, const QW
     case SH_Menu_SupportsSections:
         return 1;
 
-#if defined(Q_OS_IOS)
+#if defined(QT_PLATFORM_UIKIT)
     case SH_ComboBox_UseNativePopup:
         return 1;
 #endif
@@ -3738,5 +3744,7 @@ QPixmap QFusionStyle::standardPixmap(StandardPixmap standardPixmap, const QStyle
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qfusionstyle_p.cpp"
 
 #endif // QT_NO_STYLE_FUSION || QT_PLUGIN

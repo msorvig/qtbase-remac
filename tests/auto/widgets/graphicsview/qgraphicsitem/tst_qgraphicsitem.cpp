@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -62,9 +57,7 @@
 
 Q_DECLARE_METATYPE(QPainterPath)
 
-#include "../../../qtest-config.h"
-
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 #include <windows.h>
 #define Q_CHECK_PAINTEVENTS \
     if (::SwitchDesktop(::GetThreadDesktop(::GetCurrentThreadId())) == 0) \
@@ -284,9 +277,6 @@ class tst_QGraphicsItem : public QObject
 {
     Q_OBJECT
 
-public slots:
-    void init();
-
 private slots:
     void construction();
     void constructionWithParent();
@@ -360,7 +350,7 @@ private slots:
     void filtersChildEvents();
     void filtersChildEvents2();
     void ensureVisible();
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     void cursor();
 #endif
     //void textControlGetterSetter();
@@ -485,13 +475,6 @@ private slots:
 private:
     QList<QGraphicsItem *> paintedItems;
 };
-
-void tst_QGraphicsItem::init()
-{
-#ifdef Q_OS_WINCE //disable magic for WindowsCE
-    qApp->setAutoMaximizeThreshold(-1);
-#endif
-}
 
 void tst_QGraphicsItem::construction()
 {
@@ -4130,9 +4113,9 @@ public:
         font.setPointSize(4);
         painter->setFont(font);
         for (int x = -100; x < 100; x += 25) {
-            for (int y = -100; y < 100; y += 25) {
-                painter->drawText(QRectF(x, y, 25, 25), Qt::AlignCenter, QString("%1x%2").arg(x).arg(y));
-            }
+            const QString prefix = QString::number(x) + QLatin1Char('x');
+            for (int y = -100; y < 100; y += 25)
+                painter->drawText(QRectF(x, y, 25, 25), Qt::AlignCenter, prefix + QString::number(y));
         }
     }
 };
@@ -4192,7 +4175,7 @@ void tst_QGraphicsItem::ensureVisible()
     QTest::qWait(25);
 }
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QGraphicsItem::cursor()
 {
     QGraphicsScene scene;
@@ -4540,7 +4523,7 @@ protected:
         case QGraphicsItem::ItemSceneHasChanged:
             break;
         case QGraphicsItem::ItemCursorChange:
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
             oldValues << cursor();
 #endif
             break;
@@ -7658,7 +7641,9 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0)
     {
         QGraphicsRectItem::paint(painter, option, widget);
-        painter->drawText(boundingRect(), Qt::AlignCenter, QString("%1x%2\n%3x%4").arg(p.x()).arg(p.y()).arg(sp.x()).arg(sp.y()));
+        const QString text = QString::number(p.x()) + QLatin1Char('x') + QString::number(p.y())
+            + QLatin1Char('\n') + QString::number(sp.x()) + QLatin1Char('x') + QString::number(sp.y());
+        painter->drawText(boundingRect(), Qt::AlignCenter, text);
     }
 
 protected:
@@ -8246,10 +8231,11 @@ void tst_QGraphicsItem::sorting()
     QGraphicsScene scene;
     QGraphicsItem *grid[100][100];
     for (int x = 0; x < 100; ++x) {
+        const QString prefix = QString::number(x) + QLatin1Char('x');
         for (int y = 0; y < 100; ++y) {
             PainterItem *item = new PainterItem;
             item->setPos(x * 25, y * 25);
-            item->setData(0, QString("%1x%2").arg(x).arg(y));
+            item->setData(0, prefix + QString::number(y));
             grid[x][y] = item;
             scene.addItem(item);
         }

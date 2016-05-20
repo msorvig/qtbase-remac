@@ -24,6 +24,7 @@ HEADERS +=  \
         tools/qdatetime.h \
         tools/qdatetime_p.h \
         tools/qdatetimeparser_p.h \
+        tools/qdoublescanprint_p.h \
         tools/qeasingcurve.h \
         tools/qfreelist_p.h \
         tools/qhash.h \
@@ -132,13 +133,6 @@ false: SOURCES += $$NO_PCH_SOURCES # Hack for QtCreator
     SOURCES += tools/qelapsedtimer_mac.cpp
     OBJECTIVE_SOURCES += tools/qlocale_mac.mm \
                          tools/qtimezoneprivate_mac.mm \
-                         tools/qstring_mac.mm \
-                         tools/qbytearray_mac.mm \
-                         tools/qdatetime_mac.mm
-}
-else:blackberry {
-    SOURCES += tools/qelapsedtimer_unix.cpp tools/qlocale_blackberry.cpp tools/qtimezoneprivate_tz.cpp
-    HEADERS += tools/qlocale_blackberry.h
 }
 else:android {
     SOURCES += tools/qelapsedtimer_unix.cpp tools/qlocale_unix.cpp tools/qtimezoneprivate_android.cpp
@@ -147,20 +141,18 @@ else:unix {
     SOURCES += tools/qelapsedtimer_unix.cpp tools/qlocale_unix.cpp tools/qtimezoneprivate_tz.cpp
 }
 else:win32 {
-    SOURCES += tools/qelapsedtimer_win.cpp tools/qlocale_win.cpp
-    !winrt: SOURCES += tools/qtimezoneprivate_win.cpp
+    SOURCES += tools/qelapsedtimer_win.cpp \
+               tools/qlocale_win.cpp \
+               tools/qtimezoneprivate_win.cpp
     winphone: LIBS_PRIVATE += -lWindowsPhoneGlobalizationUtil
+    winrt-*-msvc2013: LIBS += advapi32.lib
 } else:integrity:SOURCES += tools/qelapsedtimer_unix.cpp tools/qlocale_unix.cpp
 else:SOURCES += tools/qelapsedtimer_generic.cpp
 
-contains(QT_CONFIG, zlib) {
-    include($$PWD/../../3rdparty/zlib.pri)
-    corelib_zlib_headers.files = $$PWD/../../3rdparty/zlib/zconf.h\
-                                 $$PWD/../../3rdparty/zlib/zlib.h
-    corelib_zlib_headers.path = $$[QT_INSTALL_HEADERS]/QtZlib
-    INSTALLS += corelib_zlib_headers
-} else {
+contains(QT_CONFIG, system-zlib) {
     include($$PWD/../../3rdparty/zlib_dependency.pri)
+} else {
+    include($$PWD/../../3rdparty/zlib.pri)
 }
 
 contains(QT_CONFIG,icu) {
@@ -202,8 +194,14 @@ INCLUDEPATH += ../3rdparty/md5 \
                ../3rdparty/md4 \
                ../3rdparty/sha3
 
+contains(QT_CONFIG, system-doubleconversion) {
+    LIBS_PRIVATE += -ldouble-conversion
+} else: contains(QT_CONFIG, doubleconversion) {
+    include($$PWD/../../3rdparty/double-conversion/double-conversion.pri)
+}
+
 # Note: libm should be present by default becaue this is C++
-!macx-icc:!vxworks:!haiku:unix:LIBS_PRIVATE += -lm
+unix:!macx-icc:!vxworks:!haiku:!integrity: LIBS_PRIVATE += -lm
 
 TR_EXCLUDE += ../3rdparty/*
 

@@ -1,46 +1,43 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
 #ifndef QT_NO_DIRECTWRITE
-
-#if WINVER < 0x0600
-#  undef WINVER
-#  define WINVER 0x0600
-#endif
-#if _WIN32_WINNT < 0x0600
-#undef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#endif
 
 #include "qwindowsfontenginedirectwrite.h"
 #include "qwindowsfontdatabase.h"
@@ -50,8 +47,14 @@
 #include <QtCore/QtEndian>
 #include <QtCore/QVarLengthArray>
 #include <private/qstringiterator_p.h>
+#include <QtCore/private/qsystemlibrary_p.h>
 
-#include <dwrite.h>
+#if defined(QT_USE_DIRECTWRITE2)
+#  include <dwrite_2.h>
+#else
+#  include <dwrite.h>
+#endif
+
 #include <d2d1.h>
 
 QT_BEGIN_NAMESPACE
@@ -196,8 +199,8 @@ namespace {
 */
 
 QWindowsFontEngineDirectWrite::QWindowsFontEngineDirectWrite(IDWriteFontFace *directWriteFontFace,
-                                               qreal pixelSize,
-                                               const QSharedPointer<QWindowsFontEngineData> &d)
+                                                             qreal pixelSize,
+                                                             const QSharedPointer<QWindowsFontEngineData> &d)
     : QFontEngine(DirectWrite)
     , m_fontEngineData(d)
     , m_directWriteFontFace(directWriteFontFace)
@@ -485,14 +488,14 @@ qreal QWindowsFontEngineDirectWrite::maxCharWidth() const
     return 0;
 }
 
-QImage QWindowsFontEngineDirectWrite::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition)
+QImage QWindowsFontEngineDirectWrite::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t)
 {
-    QImage im = imageForGlyph(glyph, subPixelPosition, 0, QTransform());
+    QImage im = alphaRGBMapForGlyph(glyph, subPixelPosition, t);
 
     QImage alphaMap(im.width(), im.height(), QImage::Format_Alpha8);
 
     for (int y=0; y<im.height(); ++y) {
-        uint *src = (uint*) im.scanLine(y);
+        const uint *src = reinterpret_cast<const uint *>(im.constScanLine(y));
         uchar *dst = alphaMap.scanLine(y);
         for (int x=0; x<im.width(); ++x) {
             *dst = 255 - (m_fontEngineData->pow_gamma[qGray(0xffffffff - *src)] * 255. / 2047.);
@@ -502,6 +505,11 @@ QImage QWindowsFontEngineDirectWrite::alphaMapForGlyph(glyph_t glyph, QFixed sub
     }
 
     return alphaMap;
+}
+
+QImage QWindowsFontEngineDirectWrite::alphaMapForGlyph(glyph_t glyph, QFixed subPixelPosition)
+{
+    return alphaMapForGlyph(glyph, subPixelPosition, QTransform());
 }
 
 bool QWindowsFontEngineDirectWrite::supportsSubPixelPositions() const
@@ -514,13 +522,8 @@ QImage QWindowsFontEngineDirectWrite::imageForGlyph(glyph_t t,
                                              int margin,
                                              const QTransform &xform)
 {
-    glyph_metrics_t metrics = QFontEngine::boundingBox(t, xform);
-    // This needs to be kept in sync with alphaMapBoundingBox
-    int width = (metrics.width + margin * 2).ceil().toInt() ;
-    int height = (metrics.height + margin * 2).ceil().toInt();
-
     UINT16 glyphIndex = t;
-    FLOAT glyphAdvance = metrics.xoff.toReal();
+    FLOAT glyphAdvance = 0;
 
     DWRITE_GLYPH_OFFSET glyphOffset;
     glyphOffset.advanceOffset = 0;
@@ -536,23 +539,25 @@ QImage QWindowsFontEngineDirectWrite::imageForGlyph(glyph_t t,
     glyphRun.bidiLevel = 0;
     glyphRun.glyphOffsets = &glyphOffset;
 
-    QFixed x = margin - metrics.x.floor() + subPixelPosition;
-    QFixed y = margin - metrics.y.floor();
-
     DWRITE_MATRIX transform;
-    transform.dx = x.toReal();
-    transform.dy = y.toReal();
+    transform.dx = subPixelPosition.toReal();
+    transform.dy = 0;
     transform.m11 = xform.m11();
     transform.m12 = xform.m12();
     transform.m21 = xform.m21();
     transform.m22 = xform.m22();
+
+    DWRITE_RENDERING_MODE renderMode =
+             fontDef.hintingPreference == QFont::PreferNoHinting
+                ? DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC
+                : DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL;
 
     IDWriteGlyphRunAnalysis *glyphAnalysis = NULL;
     HRESULT hr = m_fontEngineData->directWriteFactory->CreateGlyphRunAnalysis(
                 &glyphRun,
                 1.0f,
                 &transform,
-                DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC,
+                renderMode,
                 DWRITE_MEASURING_MODE_NATURAL,
                 0.0, 0.0,
                 &glyphAnalysis
@@ -560,53 +565,183 @@ QImage QWindowsFontEngineDirectWrite::imageForGlyph(glyph_t t,
 
     if (SUCCEEDED(hr)) {
         RECT rect;
-        rect.left = 0;
-        rect.top = 0;
-        rect.right = width;
-        rect.bottom = height;
+        glyphAnalysis->GetAlphaTextureBounds(DWRITE_TEXTURE_CLEARTYPE_3x1, &rect);
 
-        int size = width * height * 3;
-        BYTE *alphaValues = new BYTE[size];
-        memset(alphaValues, 0, size);
+        QRect boundingRect = QRect(QPoint(rect.left - margin,
+                                          rect.top - margin),
+                                   QPoint(rect.right + margin,
+                                          rect.bottom + margin));
 
-        hr = glyphAnalysis->CreateAlphaTexture(DWRITE_TEXTURE_CLEARTYPE_3x1,
-                                               &rect,
-                                               alphaValues,
-                                               size);
 
-        if (SUCCEEDED(hr)) {
-            QImage img(width, height, QImage::Format_RGB32);
-            img.fill(0xffffffff);
+        const int width = boundingRect.width() - 1; // -1 due to Qt's off-by-one definition of a QRect
+        const int height = boundingRect.height() - 1;
 
-            for (int y=0; y<height; ++y) {
-                uint *dest = reinterpret_cast<uint *>(img.scanLine(y));
-                BYTE *src = alphaValues + width * 3 * y;
-
-                for (int x=0; x<width; ++x) {
-                    dest[x] = *(src) << 16
-                            | *(src + 1) << 8
-                            | *(src + 2);
-
-                    src += 3;
-                }
-            }
-
-            delete[] alphaValues;
-            glyphAnalysis->Release();
-
-            return img;
-        } else {
-            delete[] alphaValues;
-            glyphAnalysis->Release();
-
-            qErrnoWarning("%s: CreateAlphaTexture failed", __FUNCTION__);
+        QImage image;
+#if defined(QT_USE_DIRECTWRITE2)
+        HRESULT hr = DWRITE_E_NOCOLOR;
+        IDWriteColorGlyphRunEnumerator *enumerator = 0;
+        IDWriteFactory2 *factory2 = Q_NULLPTR;
+        if (glyphFormat == QFontEngine::Format_ARGB
+                && SUCCEEDED(m_fontEngineData->directWriteFactory->QueryInterface(__uuidof(IDWriteFactory2),
+                                                                                  reinterpret_cast<void **>(&factory2)))) {
+            hr = factory2->TranslateColorGlyphRun(0.0f,
+                                                  0.0f,
+                                                  &glyphRun,
+                                                  NULL,
+                                                  DWRITE_MEASURING_MODE_NATURAL,
+                                                  NULL,
+                                                  0,
+                                                  &enumerator);
+            image = QImage(width, height, QImage::Format_ARGB32_Premultiplied);
+            image.fill(0);
+        } else
+#endif
+        {
+            image = QImage(width, height, QImage::Format_RGB32);
+            image.fill(0xffffffff);
         }
 
-    } else {
-        qErrnoWarning("%s: CreateGlyphRunAnalysis failed", __FUNCTION__);
-    }
+#if defined(QT_USE_DIRECTWRITE2)
+        BOOL ok = true;
+        if (SUCCEEDED(hr)) {
+            while (SUCCEEDED(hr) && ok) {
+                const DWRITE_COLOR_GLYPH_RUN *colorGlyphRun = 0;
+                hr = enumerator->GetCurrentRun(&colorGlyphRun);
+                if (FAILED(hr)) { // No colored runs, only outline
+                    qErrnoWarning(hr, "%s: IDWriteColorGlyphRunEnumerator::GetCurrentRun failed", __FUNCTION__);
+                    break;
+                }
 
-    return QImage();
+                IDWriteGlyphRunAnalysis *colorGlyphsAnalysis = NULL;
+                hr = m_fontEngineData->directWriteFactory->CreateGlyphRunAnalysis(
+                            &colorGlyphRun->glyphRun,
+                            1.0f,
+                            &transform,
+                            renderMode,
+                            DWRITE_MEASURING_MODE_NATURAL,
+                            0.0, 0.0,
+                            &colorGlyphsAnalysis
+                            );
+                if (FAILED(hr)) {
+                    qErrnoWarning(hr, "%s: CreateGlyphRunAnalysis failed for color run", __FUNCTION__);
+                    break;
+                }
+
+                float r = qBound(0.0f, colorGlyphRun->runColor.r, 1.0f);
+                float g = qBound(0.0f, colorGlyphRun->runColor.g, 1.0f);
+                float b = qBound(0.0f, colorGlyphRun->runColor.b, 1.0f);
+                float a = qBound(0.0f, colorGlyphRun->runColor.a, 1.0f);
+
+                if (!qFuzzyIsNull(a)) {
+                    renderGlyphRun(&image,
+                                   r,
+                                   g,
+                                   b,
+                                   a,
+                                   colorGlyphsAnalysis,
+                                   boundingRect);
+                }
+                colorGlyphsAnalysis->Release();
+
+                hr = enumerator->MoveNext(&ok);
+                if (FAILED(hr)) {
+                    qErrnoWarning(hr, "%s: IDWriteColorGlyphRunEnumerator::MoveNext failed", __FUNCTION__);
+                    break;
+                }
+            }
+        } else
+#endif
+        {
+            renderGlyphRun(&image,
+                           0.0,
+                           0.0,
+                           0.0,
+                           1.0,
+                           glyphAnalysis,
+                           boundingRect);
+        }
+
+        glyphAnalysis->Release();
+        return image;
+    } else {
+        qErrnoWarning(hr, "%s: CreateGlyphRunAnalysis failed", __FUNCTION__);
+        return QImage();
+    }
+}
+
+
+void QWindowsFontEngineDirectWrite::renderGlyphRun(QImage *destination,
+                                                   float r,
+                                                   float g,
+                                                   float b,
+                                                   float a,
+                                                   IDWriteGlyphRunAnalysis *glyphAnalysis,
+                                                   const QRect &boundingRect)
+{
+    const int width = destination->width();
+    const int height = destination->height();
+
+    r *= 255.0;
+    g *= 255.0;
+    b *= 255.0;
+
+    const int size = width * height * 3;
+    if (size > 0) {
+        RECT rect;
+        rect.left = boundingRect.left();
+        rect.top = boundingRect.top();
+        rect.right = boundingRect.right();
+        rect.bottom = boundingRect.bottom();
+
+        QVarLengthArray<BYTE, 1024> alphaValueArray(size);
+        BYTE *alphaValues = alphaValueArray.data();
+        memset(alphaValues, 0, size);
+
+        HRESULT hr = glyphAnalysis->CreateAlphaTexture(DWRITE_TEXTURE_CLEARTYPE_3x1,
+                                                       &rect,
+                                                       alphaValues,
+                                                       size);
+        if (SUCCEEDED(hr)) {
+            if (destination->hasAlphaChannel()) {
+                for (int y = 0; y < height; ++y) {
+                    uint *dest = reinterpret_cast<uint *>(destination->scanLine(y));
+                    BYTE *src = alphaValues + width * 3 * y;
+
+                    for (int x = 0; x < width; ++x) {
+                        float redAlpha = a * *src++ / 255.0;
+                        float greenAlpha = a * *src++ / 255.0;
+                        float blueAlpha = a * *src++ / 255.0;
+                        float averageAlpha = (redAlpha + greenAlpha + blueAlpha) / 3.0;
+
+                        QRgb currentRgb = dest[x];
+                        dest[x] = qRgba(qRound(qRed(currentRgb) * (1.0 - averageAlpha) + averageAlpha * r),
+                                        qRound(qGreen(currentRgb) * (1.0 - averageAlpha) + averageAlpha * g),
+                                        qRound(qBlue(currentRgb) * (1.0 - averageAlpha) + averageAlpha * b),
+                                        qRound(qAlpha(currentRgb) * (1.0 - averageAlpha) + averageAlpha * 255));
+                    }
+                }
+
+            } else {
+                for (int y = 0; y < height; ++y) {
+                    uint *dest = reinterpret_cast<uint *>(destination->scanLine(y));
+                    BYTE *src = alphaValues + width * 3 * y;
+
+                    for (int x = 0; x < width; ++x) {
+                        dest[x] = *(src + 0) << 16
+                                | *(src + 1) << 8
+                                | *(src + 2);
+
+                        src += 3;
+                    }
+                }
+            }
+        } else {
+            qErrnoWarning("%s: CreateAlphaTexture failed", __FUNCTION__);
+        }
+    } else {
+        glyphAnalysis->Release();
+        qWarning("%s: Glyph has no bounds", __FUNCTION__);
+    }
 }
 
 QImage QWindowsFontEngineDirectWrite::alphaRGBMapForGlyph(glyph_t t,
@@ -626,7 +761,8 @@ QImage QWindowsFontEngineDirectWrite::alphaRGBMapForGlyph(glyph_t t,
 QFontEngine *QWindowsFontEngineDirectWrite::cloneWithSize(qreal pixelSize) const
 {
     QFontEngine *fontEngine = new QWindowsFontEngineDirectWrite(m_directWriteFontFace,
-                                                                pixelSize, m_fontEngineData);
+                                                                pixelSize,
+                                                                m_fontEngineData);
 
     fontEngine->fontDef = fontDef;
     fontEngine->fontDef.pixelSize = pixelSize;
@@ -634,58 +770,15 @@ QFontEngine *QWindowsFontEngineDirectWrite::cloneWithSize(qreal pixelSize) const
     return fontEngine;
 }
 
+Qt::HANDLE QWindowsFontEngineDirectWrite::handle() const
+{
+    return m_directWriteFontFace;
+}
+
 void QWindowsFontEngineDirectWrite::initFontInfo(const QFontDef &request,
-                                                 int dpi, IDWriteFont *font)
+                                                 int dpi)
 {
     fontDef = request;
-
-    IDWriteFontFamily *fontFamily = NULL;
-    HRESULT hr = font->GetFontFamily(&fontFamily);
-
-    IDWriteLocalizedStrings *familyNames = NULL;
-    if (SUCCEEDED(hr))
-        hr = fontFamily->GetFamilyNames(&familyNames);
-
-    UINT32 index = 0;
-
-    if (SUCCEEDED(hr)) {
-        BOOL exists = false;
-
-        wchar_t localeName[LOCALE_NAME_MAX_LENGTH];
-        int defaultLocaleSuccess = GetUserDefaultLocaleName(localeName, LOCALE_NAME_MAX_LENGTH);
-        if (defaultLocaleSuccess)
-            hr = familyNames->FindLocaleName(localeName, &index, &exists);
-
-        if (SUCCEEDED(hr) && !exists)
-            hr = familyNames->FindLocaleName(L"en-us", &index, &exists);
-
-        if (!exists)
-            index = 0;
-    }
-
-    // Get the family name.
-    if (SUCCEEDED(hr)) {
-        UINT32 length = 0;
-
-        hr = familyNames->GetStringLength(index, &length);
-
-        if (SUCCEEDED(hr)) {
-            QVarLengthArray<wchar_t, 128> name(length+1);
-
-            hr = familyNames->GetString(index, name.data(), name.size());
-
-            if (SUCCEEDED(hr))
-                fontDef.family = QString::fromWCharArray(name.constData());
-        }
-    }
-
-    if (familyNames != NULL)
-        familyNames->Release();
-    if (fontFamily)
-        fontFamily->Release();
-
-    if (FAILED(hr))
-        qErrnoWarning(hr, "initFontInfo: Failed to get family name");
 
     if (fontDef.pointSize < 0)
         fontDef.pointSize = fontDef.pixelSize * 72. / dpi;
@@ -700,16 +793,75 @@ QString QWindowsFontEngineDirectWrite::fontNameSubstitute(const QString &familyN
     return QSettings(QLatin1String(keyC), QSettings::NativeFormat).value(familyName, familyName).toString();
 }
 
-glyph_metrics_t QWindowsFontEngineDirectWrite::alphaMapBoundingBox(glyph_t glyph, QFixed pos, const QTransform &matrix, GlyphFormat format)
+glyph_metrics_t QWindowsFontEngineDirectWrite::alphaMapBoundingBox(glyph_t glyph,
+                                                                   QFixed subPixelPosition,
+                                                                   const QTransform &matrix,
+                                                                   GlyphFormat format)
 {
-    Q_UNUSED(pos);
-    int margin = 0;
-    if (format == QFontEngine::Format_A32 || format == QFontEngine::Format_ARGB)
-        margin = glyphMargin(QFontEngine::Format_A32);
-    glyph_metrics_t gm = QFontEngine::boundingBox(glyph, matrix);
-    gm.width += margin * 2;
-    gm.height += margin * 2;
-    return gm;
+    Q_UNUSED(format);
+    glyph_metrics_t bbox = QFontEngine::boundingBox(glyph, matrix); // To get transformed advance
+
+    UINT16 glyphIndex = glyph;
+    FLOAT glyphAdvance = 0;
+
+    DWRITE_GLYPH_OFFSET glyphOffset;
+    glyphOffset.advanceOffset = 0;
+    glyphOffset.ascenderOffset = 0;
+
+    DWRITE_GLYPH_RUN glyphRun;
+    glyphRun.fontFace = m_directWriteFontFace;
+    glyphRun.fontEmSize = fontDef.pixelSize;
+    glyphRun.glyphCount = 1;
+    glyphRun.glyphIndices = &glyphIndex;
+    glyphRun.glyphAdvances = &glyphAdvance;
+    glyphRun.isSideways = false;
+    glyphRun.bidiLevel = 0;
+    glyphRun.glyphOffsets = &glyphOffset;
+
+    DWRITE_MATRIX transform;
+    transform.dx = subPixelPosition.toReal();
+    transform.dy = 0;
+    transform.m11 = matrix.m11();
+    transform.m12 = matrix.m12();
+    transform.m21 = matrix.m21();
+    transform.m22 = matrix.m22();
+
+    DWRITE_RENDERING_MODE renderMode =
+             fontDef.hintingPreference == QFont::PreferNoHinting
+                ? DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC
+                : DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL;
+
+    IDWriteGlyphRunAnalysis *glyphAnalysis = NULL;
+    HRESULT hr = m_fontEngineData->directWriteFactory->CreateGlyphRunAnalysis(
+                &glyphRun,
+                1.0f,
+                &transform,
+                renderMode,
+                DWRITE_MEASURING_MODE_NATURAL,
+                0.0, 0.0,
+                &glyphAnalysis
+                );
+
+    if (SUCCEEDED(hr)) {
+        RECT rect;
+        glyphAnalysis->GetAlphaTextureBounds(DWRITE_TEXTURE_CLEARTYPE_3x1, &rect);
+        glyphAnalysis->Release();
+
+        int margin = glyphMargin(QFontEngine::Format_A32);
+
+        return glyph_metrics_t(rect.left,
+                               rect.top,
+                               rect.right - rect.left + margin * 2,
+                               rect.bottom - rect.top + margin * 2,
+                               bbox.xoff, bbox.yoff);
+    } else {
+        return glyph_metrics_t();
+    }
+}
+
+QImage QWindowsFontEngineDirectWrite::bitmapForGlyph(glyph_t glyph, QFixed subPixelPosition, const QTransform &t)
+{
+    return imageForGlyph(glyph, subPixelPosition, glyphMargin(QFontEngine::Format_A32), t);
 }
 
 QT_END_NAMESPACE

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -48,7 +54,6 @@
 #include <qpa/qplatformscreen.h>
 
 #include <AppKit/AppKit.h>
-#include <Carbon/Carbon.h>
 
 #include <QDebug>
 
@@ -94,6 +99,7 @@ static bool isMouseEvent(NSEvent *ev)
         // make sure that m_nsWindow stays valid until the
         // QCocoaWindow is deleted by Qt.
         [_window setReleasedWhenClosed:NO];
+        _watcher = &_platformWindow->sentinel;
     }
 
     return self;
@@ -102,7 +108,7 @@ static bool isMouseEvent(NSEvent *ev)
 - (void)handleWindowEvent:(NSEvent *)theEvent
 {
     QCocoaWindow *pw = self.platformWindow;
-    if (pw && pw->m_forwardWindow) {
+    if (_watcher && pw && pw->m_forwardWindow) {
         if (theEvent.type == NSLeftMouseUp || theEvent.type == NSLeftMouseDragged) {
             QNSView *forwardView = pw->m_qtView;
             if (theEvent.type == NSLeftMouseUp) {
@@ -141,7 +147,7 @@ static bool isMouseEvent(NSEvent *ev)
     if (!self.window.delegate)
         return; // Already detached, pending NSAppKitDefined event
 
-    if (pw && pw->frameStrutEventsEnabled() && isMouseEvent(theEvent)) {
+    if (_watcher && pw && pw->frameStrutEventsEnabled() && isMouseEvent(theEvent)) {
         NSPoint loc = [theEvent locationInWindow];
         NSRect windowFrame = [self.window convertRectFromScreen:[self.window frame]];
         NSRect contentFrame = [[self.window contentView] frame];
@@ -157,6 +163,7 @@ static bool isMouseEvent(NSEvent *ev)
 - (void)detachFromPlatformWindow
 {
     _platformWindow = 0;
+    _watcher.clear();
     [self.window.delegate release];
     self.window.delegate = nil;
 }
@@ -346,7 +353,6 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_synchedWindowState(Qt::WindowActive)
     , m_windowModality(Qt::NonModal)
     , m_windowUnderMouse(false)
-    , m_ignoreWindowShouldClose(false)
     , m_inConstructor(true)
     , m_inSetVisible(false)
     , m_inSetGeometry(false)
@@ -372,9 +378,8 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_bottomContentBorderThickness(0)
     , m_normalGeometry(QRect(0,0,-1,-1))
 {
-#ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
-    qDebug() << "QCocoaWindow::QCocoaWindow" << this;
-#endif
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::QCocoaWindow" << window();
+
     QMacAutoReleasePool pool;
 
     // At this point QPlatformWindow::geometry() may contain the user-requested
@@ -419,12 +424,9 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
 
 QCocoaWindow::~QCocoaWindow()
 {
-    //     qDebug() << "QCocoaWindow::~QCocoaWindow" << this;
-#ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::~QCocoaWindow" << window();
 
-#endif
     QMacAutoReleasePool pool;
-
     [m_nsWindow makeFirstResponder:nil];
     [m_nsWindow setContentView:nil];
     [m_nsWindow.helper detachFromPlatformWindow];
@@ -480,6 +482,8 @@ QSurfaceFormat QCocoaWindow::format() const
 
 void QCocoaWindow::setGeometry(const QRect &rectIn)
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setGeometry" << window() << rectIn;
+
     // Refuse external geometry updates while in the QCocoaWindow constructor. This
     // can happen if/when QCocoaWindow wants to update the QWindow geometry.
     if (m_inConstructor)
@@ -500,9 +504,6 @@ void QCocoaWindow::setGeometry(const QRect &rectIn)
         rect.moveTopLeft(rect.topLeft() + QPoint(margins.left(), margins.top()));
     }
 
-#ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
-    qDebug() << "QCocoaWindow::setGeometry" << this << rect;
-#endif
     setCocoaGeometry(rect);
 }
 
@@ -525,6 +526,7 @@ QRect QCocoaWindow::geometry() const
 
 void QCocoaWindow::setCocoaGeometry(const QRect &rect)
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setCocoaGeometry" << window() << rect;
     QMacAutoReleasePool pool;
 
     // Special case for child NSWindows where child NSWindow geometry needs to
@@ -654,6 +656,8 @@ void QCocoaWindow::show(bool becauseOfAncestor)
 
 void QCocoaWindow::setVisible(bool visible)
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setVisible" << window() << visible;
+
     if (m_isNSWindowChild && m_hiddenByClipping)
         return;
 
@@ -663,9 +667,7 @@ void QCocoaWindow::setVisible(bool visible)
     QCocoaWindow *parentCocoaWindow = 0;
     if (window()->transientParent())
         parentCocoaWindow = static_cast<QCocoaWindow *>(window()->transientParent()->handle());
-#ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
-    qDebug() << "QCocoaWindow::setVisible" << window() << visible;
-#endif
+
     if (visible) {
         // We need to recreate if the modality has changed as the style mask will need updating
         if (m_windowModality != window()->modality())
@@ -834,13 +836,10 @@ NSUInteger QCocoaWindow::windowStyleMask(Qt::WindowFlags flags)
         return styleMask;
     if ((type & Qt::Popup) == Qt::Popup) {
         if (!windowIsPopupType(type)) {
-            styleMask = NSUtilityWindowMask;
+            styleMask = NSUtilityWindowMask | NSResizableWindowMask;
             if (!(flags & Qt::CustomizeWindowHint)) {
-                styleMask |= NSResizableWindowMask | NSClosableWindowMask |
-                             NSMiniaturizableWindowMask | NSTitledWindowMask;
+                styleMask |= NSClosableWindowMask | NSMiniaturizableWindowMask | NSTitledWindowMask;
             } else {
-                if (flags & Qt::WindowMaximizeButtonHint)
-                    styleMask |= NSResizableWindowMask;
                 if (flags & Qt::WindowTitleHint)
                     styleMask |= NSTitledWindowMask;
                 if (flags & Qt::WindowCloseButtonHint)
@@ -880,9 +879,6 @@ NSUInteger QCocoaWindow::windowStyleMask(Qt::WindowFlags flags)
     if (m_drawContentBorderGradient)
         styleMask |= NSTexturedBackgroundWindowMask;
 
-#ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
-    qDebug("windowStyleMask of '%s': flags %X -> styleMask %lX", qPrintable(window()->title()), (int)flags, styleMask);
-#endif
     return styleMask;
 }
 
@@ -923,10 +919,13 @@ void QCocoaWindow::setWindowFlags(Qt::WindowFlags flags)
         Qt::WindowType type = window()->type();
         if ((type & Qt::Popup) != Qt::Popup && (type & Qt::Dialog) != Qt::Dialog) {
             NSWindowCollectionBehavior behavior = [m_nsWindow collectionBehavior];
-            if (flags & Qt::WindowFullscreenButtonHint)
+            if (flags & Qt::WindowFullscreenButtonHint) {
                 behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
-            else
+                behavior &= ~NSWindowCollectionBehaviorFullScreenAuxiliary;
+            } else {
+                behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
                 behavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
+            }
             [m_nsWindow setCollectionBehavior:behavior];
         }
         setWindowZoomButton(flags);
@@ -1001,7 +1000,8 @@ bool QCocoaWindow::isAlertState() const
 
 void QCocoaWindow::raise()
 {
-    //qDebug() << "raise" << this;
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::raise" << window();
+
     // ### handle spaces (see Qt 4 raise_sys in qwidget_mac.mm)
     if (!m_nsWindow)
         return;
@@ -1042,6 +1042,7 @@ void QCocoaWindow::raise()
 
 void QCocoaWindow::lower()
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::lower" << window();
     if (!m_nsWindow)
         return;
     if (m_isNSWindowChild) {
@@ -1094,13 +1095,11 @@ void QCocoaWindow::propagateSizeHints()
     if (!m_nsWindow)
         return;
 
-#ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
-    qDebug() << "QCocoaWindow::propagateSizeHints" << this;
-    qDebug() << "       min/max" << windowMinimumSize() << windowMaximumSize();
-    qDebug() << "size increment" << windowSizeIncrement();
-    qDebug() << "      basesize" << windowBaseSize();
-    qDebug() << "      geometry" << windowGeometry();
-#endif
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::propagateSizeHints" << window() << "\n"
+                              << "       min/max" << windowMinimumSize() << windowMaximumSize()
+                              << "size increment" << windowSizeIncrement()
+                              << "      basesize" << windowBaseSize()
+                              << "      geometry" << windowGeometry();
 
     // Set the minimum content size.
     const QSize minimumSize = windowMinimumSize();
@@ -1132,6 +1131,7 @@ void QCocoaWindow::propagateSizeHints()
 
 void QCocoaWindow::setOpacity(qreal level)
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setOpacity" << level;
     if (m_nsWindow) {
         [m_nsWindow setAlphaValue:level];
         [m_nsWindow setOpaque: isOpaque()];
@@ -1140,6 +1140,7 @@ void QCocoaWindow::setOpacity(qreal level)
 
 void QCocoaWindow::setMask(const QRegion &region)
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setMask" << window() << region;
     if (m_nsWindow)
         [m_nsWindow setBackgroundColor:[NSColor clearColor]];
 
@@ -1149,6 +1150,7 @@ void QCocoaWindow::setMask(const QRegion &region)
 
 bool QCocoaWindow::setKeyboardGrabEnabled(bool grab)
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setKeyboardGrabEnabled" << window() << grab;
     if (!m_nsWindow)
         return false;
 
@@ -1161,6 +1163,7 @@ bool QCocoaWindow::setKeyboardGrabEnabled(bool grab)
 
 bool QCocoaWindow::setMouseGrabEnabled(bool grab)
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setMouseGrabEnabled" << window() << grab;
     if (!m_nsWindow)
         return false;
 
@@ -1178,6 +1181,8 @@ WId QCocoaWindow::winId() const
 
 void QCocoaWindow::setParent(const QPlatformWindow *parentWindow)
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::setParent" << window() << (parentWindow ? parentWindow->window() : 0);
+
     // recreate the window for compatibility
     bool unhideAfterRecreate = parentWindow && !m_contentViewIsToBeEmbedded && ![m_contentView isHidden];
     recreateWindow(parentWindow);
@@ -1261,9 +1266,11 @@ void QCocoaWindow::windowDidEndLiveResize()
 
 bool QCocoaWindow::windowShouldClose()
 {
-    // might have been set from qnsview.mm
-    if (m_ignoreWindowShouldClose)
-       return false;
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::windowShouldClose" << window();
+   // This callback should technically only determine if the window
+   // should (be allowed to) close, but since our QPA API to determine
+   // that also involves actually closing the window we do both at the
+   // same time, instead of doing the latter in windowWillClose.
     bool accepted = false;
     QWindowSystemInterface::handleCloseEvent(window(), &accepted);
     QWindowSystemInterface::flushWindowSystemEvents();
@@ -1300,6 +1307,9 @@ QCocoaGLContext *QCocoaWindow::currentContext() const
 
 void QCocoaWindow::recreateWindow(const QPlatformWindow *parentWindow)
 {
+    qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::recreateWindow" << window()
+                              << "parent" << (parentWindow ? parentWindow->window() : 0);
+
     bool wasNSWindowChild = m_isNSWindowChild;
     BOOL requestNSWindowChild = qt_mac_resolveOption(NO, window(), "_q_platform_MacUseNSWindow",
                                                                    "QT_MAC_USE_NSWINDOW");
@@ -1396,6 +1406,9 @@ void QCocoaWindow::recreateWindow(const QPlatformWindow *parentWindow)
         [m_contentView setFrame:frame];
         [m_contentView setHidden: YES];
     }
+
+    m_nsWindow.ignoresMouseEvents =
+        (window()->flags() & Qt::WindowTransparentForInput) == Qt::WindowTransparentForInput;
 
     const qreal opacity = qt_window_private(window())->opacity;
     if (!qFuzzyCompare(opacity, qreal(1.0)))
@@ -1564,7 +1577,7 @@ void QCocoaWindow::syncWindowState(Qt::WindowState newState)
     // do nothing except set the new state
     NSRect contentRect = [contentView() frame];
     if (contentRect.size.width <= 0 || contentRect.size.height <= 0) {
-        qWarning() << Q_FUNC_INFO << "invalid window content view size, check your window geometry";
+        qWarning("invalid window content view size, check your window geometry");
         m_synchedWindowState = newState;
         return;
     }
@@ -1631,10 +1644,6 @@ void QCocoaWindow::syncWindowState(Qt::WindowState newState)
             }
         }
     }
-
-#ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
-    qDebug() << "QCocoaWindow::syncWindowState" << newState << "actual" << predictedState << "was" << m_synchedWindowState << "effectively maximized" << m_effectivelyMaximized;
-#endif
 
     // New state is now the current synched state
     m_synchedWindowState = predictedState;
@@ -1811,6 +1820,22 @@ bool QCocoaWindow::updateExposedState(QSize windowSize, const qreal devicePixelR
     // Don't send expose events if there are no changes.
     if (m_exposedSize == windowSize && m_exposedDevicePixelRatio == devicePixelRatio)
         return false;
+
+	qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::updateExposedState" << window() << windowSize << devicePixelRatio;
+
+
+    // Update the QWindow's screen property. This property is set
+    // to QGuiApplication::primaryScreen() at QWindow construciton
+    // time, and we won't get a NSWindowDidChangeScreenNotification
+    // on show. The case where the window is initially displayed
+    // on a non-primary screen needs special handling here.
+    NSUInteger screenIndex = [[NSScreen screens] indexOfObject:m_nsWindow.screen];
+    if (screenIndex != NSNotFound) {
+        QCocoaScreen *cocoaScreen = QCocoaIntegration::instance()->screenAtIndex(screenIndex);
+        if (cocoaScreen)
+            window()->setScreen(cocoaScreen->screen());
+    }
+
 
     // Something changed, store the new geometry and send Expose event.
     m_exposedSize = windowSize;

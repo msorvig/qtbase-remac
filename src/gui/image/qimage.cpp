@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -98,34 +104,21 @@ QImageData::QImageData()
 {
 }
 
-/*! \fn QImageData * QImageData::create(const QSize &size, QImage::Format format, int numColors)
+/*! \fn QImageData * QImageData::create(const QSize &size, QImage::Format format)
 
     \internal
 
     Creates a new image data.
     Returns 0 if invalid parameters are give or anything else failed.
 */
-QImageData * QImageData::create(const QSize &size, QImage::Format format, int numColors)
+QImageData * QImageData::create(const QSize &size, QImage::Format format)
 {
-    if (!size.isValid() || numColors < 0 || format == QImage::Format_Invalid)
+    if (!size.isValid() || format == QImage::Format_Invalid)
         return 0;                                // invalid parameter(s)
 
     uint width = size.width();
     uint height = size.height();
     uint depth = qt_depthForFormat(format);
-
-    switch (format) {
-    case QImage::Format_Mono:
-    case QImage::Format_MonoLSB:
-        numColors = 2;
-        break;
-    case QImage::Format_Indexed8:
-        numColors = qBound(0, numColors, 256);
-        break;
-    default:
-        numColors = 0;
-        break;
-    }
 
     const int bytes_per_line = ((width * depth + 31) >> 5) << 2; // bytes per scanline (must be multiple of 4)
 
@@ -138,13 +131,16 @@ QImageData * QImageData::create(const QSize &size, QImage::Format format, int nu
         return 0;
 
     QScopedPointer<QImageData> d(new QImageData);
-    d->colortable.resize(numColors);
-    if (depth == 1) {
+
+    switch (format) {
+    case QImage::Format_Mono:
+    case QImage::Format_MonoLSB:
+        d->colortable.resize(2);
         d->colortable[0] = QColor(Qt::black).rgba();
         d->colortable[1] = QColor(Qt::white).rgba();
-    } else {
-        for (int i = 0; i < numColors; ++i)
-            d->colortable[i] = 0;
+        break;
+    default:
+        break;
     }
 
     d->width = width;
@@ -192,7 +188,9 @@ bool QImageData::checkForAlphaPixels() const
     case QImage::Format_Indexed8:
         has_alpha_pixels = has_alpha_clut;
         break;
-
+    case QImage::Format_Alpha8:
+        has_alpha_pixels = true;
+        break;
     case QImage::Format_ARGB32:
     case QImage::Format_ARGB32_Premultiplied: {
         uchar *bits = data;
@@ -266,7 +264,20 @@ bool QImageData::checkForAlphaPixels() const
         }
     } break;
 
-    default:
+    case QImage::Format_RGB32:
+    case QImage::Format_RGB16:
+    case QImage::Format_RGB444:
+    case QImage::Format_RGB555:
+    case QImage::Format_RGB666:
+    case QImage::Format_RGB888:
+    case QImage::Format_RGBX8888:
+    case QImage::Format_BGR30:
+    case QImage::Format_RGB30:
+    case QImage::Format_Grayscale8:
+        break;
+    case QImage::Format_Invalid:
+    case QImage::NImageFormats:
+        Q_UNREACHABLE();
         break;
     }
 
@@ -313,7 +324,7 @@ bool QImageData::checkForAlphaPixels() const
     sharing}. QImage objects can also be streamed and compared.
 
     \note If you would like to load QImage objects in a static build of Qt,
-    refer to the \l{How To Create Qt Plugins}{Plugin HowTo}.
+    refer to the \l{How to Create Qt Plugins}{Plugin HowTo}.
 
     \warning Painting on a QImage with the format
     QImage::Format_Indexed8 is not supported.
@@ -756,9 +767,8 @@ QImage::QImage() Q_DECL_NOEXCEPT
     drawing onto it with QPainter.
 */
 QImage::QImage(int width, int height, Format format)
-    : QPaintDevice()
+    : QImage(QSize(width, height), format)
 {
-    d = QImageData::create(QSize(width, height), format, 0);
 }
 
 /*!
@@ -773,7 +783,7 @@ QImage::QImage(int width, int height, Format format)
 QImage::QImage(const QSize &size, Format format)
     : QPaintDevice()
 {
-    d = QImageData::create(size, format, 0);
+    d = QImageData::create(size, format);
 }
 
 
@@ -816,6 +826,17 @@ QImageData *QImageData::create(uchar *data, int width, int height,  int bpl, QIm
 
     d->cleanupFunction = cleanupFunction;
     d->cleanupInfo = cleanupInfo;
+
+    switch (format) {
+    case QImage::Format_Mono:
+    case QImage::Format_MonoLSB:
+        d->colortable.resize(2);
+        d->colortable[0] = QColor(Qt::black).rgba();
+        d->colortable[1] = QColor(Qt::white).rgba();
+        break;
+    default:
+        break;
+    }
 
     return d;
 }
@@ -2049,10 +2070,10 @@ static QImage convertWithPalette(const QImage &src, QImage::Format format,
     dest.setColorTable(clut);
 
     QString textsKeys = src.text();
-    QStringList textKeyList = textsKeys.split(QLatin1Char('\n'), QString::SkipEmptyParts);
-    foreach (const QString &textKey, textKeyList) {
-        QStringList textKeySplitted = textKey.split(QLatin1String(": "));
-        dest.setText(textKeySplitted[0], textKeySplitted[1]);
+    const auto textKeyList = textsKeys.splitRef(QLatin1Char('\n'), QString::SkipEmptyParts);
+    for (const auto &textKey : textKeyList) {
+        const auto textKeySplitted = textKey.split(QLatin1String(": "));
+        dest.setText(textKeySplitted[0].toString(), textKeySplitted[1].toString());
     }
 
     int h = src.height();
@@ -2221,7 +2242,15 @@ QRgb QImage::pixel(int x, int y) const
     case Format_MonoLSB:
         return d->colortable.at((*(s + (x >> 3)) >> (x & 7)) & 1);
     case Format_Indexed8:
-        return d->colortable.at((int)s[x]);
+        {
+            int index = (int)s[x];
+            if (index < d->colortable.size()) {
+                return d->colortable.at(index);
+            } else {
+                qWarning("QImage::pixel: color table index %d out of range.", index);
+                return 0;
+            }
+        }
     case Format_RGB32:
         return 0xff000000 | reinterpret_cast<const QRgb *>(s)[x];
     case Format_ARGB32: // Keep old behaviour.
@@ -2245,7 +2274,7 @@ QRgb QImage::pixel(int x, int y) const
     const QPixelLayout *layout = &qPixelLayouts[d->format];
     uint result;
     const uint *ptr = qFetchPixels[layout->bpp](&result, s, x, 1);
-    return *layout->convertToARGB32PM(&result, ptr, 1, layout, 0);
+    return *layout->convertToARGB32PM(&result, ptr, 1, 0, 0);
 }
 
 /*!
@@ -2347,7 +2376,7 @@ void QImage::setPixel(int x, int y, uint index_or_rgb)
 
     const QPixelLayout *layout = &qPixelLayouts[d->format];
     uint result;
-    const uint *ptr = layout->convertFromARGB32PM(&result, &index_or_rgb, 1, layout, 0);
+    const uint *ptr = layout->convertFromARGB32PM(&result, &index_or_rgb, 1, 0, 0);
     qStorePixels[layout->bpp](s, ptr, x, 1);
 }
 
@@ -2380,17 +2409,25 @@ QColor QImage::pixelColor(int x, int y) const
         return QColor();
     }
 
+    QRgba64 c;
     const uchar * s = constScanLine(y);
     switch (d->format) {
     case Format_BGR30:
     case Format_A2BGR30_Premultiplied:
-        return QColor(qConvertA2rgb30ToRgb64<PixelOrderBGR>(reinterpret_cast<const quint32 *>(s)[x]));
+        c = qConvertA2rgb30ToRgb64<PixelOrderBGR>(reinterpret_cast<const quint32 *>(s)[x]);
+        break;
     case Format_RGB30:
     case Format_A2RGB30_Premultiplied:
-        return QColor(qConvertA2rgb30ToRgb64<PixelOrderRGB>(reinterpret_cast<const quint32 *>(s)[x]));
+        c = qConvertA2rgb30ToRgb64<PixelOrderRGB>(reinterpret_cast<const quint32 *>(s)[x]);
+        break;
     default:
-        return QColor(pixel(x, y));
+        c = QRgba64::fromArgb32(pixel(x, y));
+        break;
     }
+    // QColor is always unpremultiplied
+    if (hasAlphaChannel() && qPixelLayouts[d->format].premultiplied)
+        c = c.unpremultiplied();
+    return QColor(c);
 }
 
 /*!
@@ -2417,10 +2454,22 @@ QColor QImage::pixelColor(int x, int y) const
 */
 void QImage::setPixelColor(int x, int y, const QColor &color)
 {
-    if (!d || x < 0 || x >= width() || y < 0 || y >= height() || !color.isValid()) {
+    if (!d || x < 0 || x >= width() || y < 0 || y >= height()) {
         qWarning("QImage::setPixelColor: coordinate (%d,%d) out of range", x, y);
         return;
     }
+
+    if (!color.isValid()) {
+        qWarning("QImage::setPixelColor: color is invalid");
+        return;
+    }
+
+    // QColor is always unpremultiplied
+    QRgba64 c = color.rgba64();
+    if (!hasAlphaChannel())
+        c.setAlpha(65535);
+    else if (qPixelLayouts[d->format].premultiplied)
+        c = c.premultiplied();
     // detach is called from within scanLine
     uchar * s = scanLine(y);
     switch (d->format) {
@@ -2430,19 +2479,19 @@ void QImage::setPixelColor(int x, int y, const QColor &color)
         qWarning("QImage::setPixelColor: called on monochrome or indexed format");
         return;
     case Format_BGR30:
-        ((uint *)s)[x] = qConvertRgb64ToRgb30<PixelOrderBGR>(color.rgba64()) | 0xc0000000;
+        ((uint *)s)[x] = qConvertRgb64ToRgb30<PixelOrderBGR>(c) | 0xc0000000;
         return;
     case Format_A2BGR30_Premultiplied:
-        ((uint *)s)[x] = qConvertRgb64ToRgb30<PixelOrderBGR>(color.rgba64());
+        ((uint *)s)[x] = qConvertRgb64ToRgb30<PixelOrderBGR>(c);
         return;
     case Format_RGB30:
-        ((uint *)s)[x] = qConvertRgb64ToRgb30<PixelOrderRGB>(color.rgba64()) | 0xc0000000;
+        ((uint *)s)[x] = qConvertRgb64ToRgb30<PixelOrderRGB>(c) | 0xc0000000;
         return;
     case Format_A2RGB30_Premultiplied:
-        ((uint *)s)[x] = qConvertRgb64ToRgb30<PixelOrderRGB>(color.rgba64());
+        ((uint *)s)[x] = qConvertRgb64ToRgb30<PixelOrderRGB>(c);
         return;
     default:
-        setPixel(x, y, color.rgba());
+        setPixel(x, y, c.toArgb32());
         return;
     }
 }
@@ -2513,7 +2562,7 @@ bool QImage::allGray() const
         while (x < d->width) {
             int l = qMin(d->width - x, buffer_size);
             const uint *ptr = fetch(buffer, b, x, l);
-            ptr = layout->convertToARGB32PM(buffer, ptr, l, layout, 0);
+            ptr = layout->convertToARGB32PM(buffer, ptr, l, 0, 0);
             for (int i = 0; i < l; ++i) {
                 if (!qIsGray(ptr[i]))
                     return false;
@@ -3717,11 +3766,10 @@ QString QImage::text(const QString &key) const
         return d->text.value(key);
 
     QString tmp;
-    foreach (const QString &key, d->text.keys()) {
-        if (!tmp.isEmpty())
-            tmp += QLatin1String("\n\n");
-        tmp += key + QLatin1String(": ") + d->text.value(key).simplified();
-    }
+    for (auto it = d->text.begin(), end = d->text.end(); it != end; ++it)
+        tmp += it.key() + QLatin1String(": ") + it.value().simplified() + QLatin1String("\n\n");
+    if (!tmp.isEmpty())
+        tmp.chop(2); // remove final \n\n
     return tmp;
 }
 
@@ -4382,12 +4430,15 @@ QImage QImage::smoothScaled(int w, int h) const {
             src = src.convertToFormat(QImage::Format_RGB32);
     }
     src = qSmoothScaleImage(src, w, h);
-    copyMetadata(src.d, d);
+    if (!src.isNull())
+        copyMetadata(src.d, d);
     return src;
 }
 
 static QImage rotated90(const QImage &image) {
     QImage out(image.height(), image.width(), image.format());
+    out.setDotsPerMeterX(image.dotsPerMeterY());
+    out.setDotsPerMeterY(image.dotsPerMeterX());
     if (image.colorCount() > 0)
         out.setColorTable(image.colorTable());
     int w = image.width();
@@ -4456,6 +4507,8 @@ static QImage rotated180(const QImage &image) {
 
 static QImage rotated270(const QImage &image) {
     QImage out(image.height(), image.width(), image.format());
+    out.setDotsPerMeterX(image.dotsPerMeterY());
+    out.setDotsPerMeterY(image.dotsPerMeterX());
     if (image.colorCount() > 0)
         out.setColorTable(image.colorTable());
     int w = image.width();
@@ -4605,32 +4658,7 @@ QImage QImage::transformed(const QTransform &matrix, Qt::TransformationMode mode
 
     if (complex_xform || mode == Qt::SmoothTransformation) {
         if (d->format < QImage::Format_RGB32 || !hasAlphaChannel()) {
-            switch(d->format) {
-            case QImage::Format_RGB16:
-                target_format = Format_ARGB8565_Premultiplied;
-                break;
-            case QImage::Format_RGB555:
-                target_format = Format_ARGB8555_Premultiplied;
-                break;
-            case QImage::Format_RGB666:
-                target_format = Format_ARGB6666_Premultiplied;
-                break;
-            case QImage::Format_RGB444:
-                target_format = Format_ARGB4444_Premultiplied;
-                break;
-            case QImage::Format_RGBX8888:
-                target_format = Format_RGBA8888_Premultiplied;
-                break;
-            case QImage::Format_BGR30:
-                target_format = Format_A2BGR30_Premultiplied;
-                break;
-            case QImage::Format_RGB30:
-                target_format = Format_A2RGB30_Premultiplied;
-                break;
-            default:
-                target_format = Format_ARGB32_Premultiplied;
-                break;
-            }
+            target_format = qt_alphaVersion(d->format);
         }
     }
 

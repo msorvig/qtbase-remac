@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -106,7 +112,7 @@ static QTextLine currentTextLine(const QTextCursor &cursor)
 }
 
 QWidgetTextControlPrivate::QWidgetTextControlPrivate()
-    : doc(0), cursorOn(false), cursorIsFocusIndicator(false),
+    : doc(0), cursorOn(false), cursorVisible(false), cursorIsFocusIndicator(false),
 #ifndef Q_OS_ANDROID
       interactionFlags(Qt::TextEditorInteraction),
 #else
@@ -679,17 +685,30 @@ void QWidgetTextControlPrivate::_q_documentLayoutChanged()
 
 }
 
-void QWidgetTextControlPrivate::setBlinkingCursorEnabled(bool enable)
+void QWidgetTextControlPrivate::setCursorVisible(bool visible)
 {
-    Q_Q(QWidgetTextControl);
+    if (cursorVisible == visible)
+        return;
 
-    if (enable && QApplication::cursorFlashTime() > 0)
-        cursorBlinkTimer.start(QApplication::cursorFlashTime() / 2, q);
+    cursorVisible = visible;
+    updateCursorBlinking();
+
+    if (cursorVisible)
+        connect(qApp->styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetTextControlPrivate::updateCursorBlinking);
     else
-        cursorBlinkTimer.stop();
+        disconnect(qApp->styleHints(), &QStyleHints::cursorFlashTimeChanged, this, &QWidgetTextControlPrivate::updateCursorBlinking);
+}
 
-    cursorOn = enable;
+void QWidgetTextControlPrivate::updateCursorBlinking()
+{
+    cursorBlinkTimer.stop();
+    if (cursorVisible) {
+        int flashTime = QGuiApplication::styleHints()->cursorFlashTime();
+        if (flashTime >= 2)
+            cursorBlinkTimer.start(flashTime / 2, q_func());
+    }
 
+    cursorOn = cursorVisible;
     repaintCursor();
 }
 
@@ -2067,10 +2086,15 @@ QVariant QWidgetTextControl::inputMethodQuery(Qt::InputMethodQuery property, QVa
     switch(property) {
     case Qt::ImCursorRectangle:
         return cursorRect();
+    case Qt::ImAnchorRectangle:
+        return d->rectForPosition(d->cursor.anchor());
     case Qt::ImFont:
         return QVariant(d->cursor.charFormat().font());
-    case Qt::ImCursorPosition:
-        return QVariant(d->cursor.position() - block.position());
+    case Qt::ImCursorPosition: {
+        const QPointF pt = argument.toPointF();
+        if (!pt.isNull())
+            return QVariant(cursorForPosition(pt).position() - block.position());
+        return QVariant(d->cursor.position() - block.position()); }
     case Qt::ImSurroundingText:
         return QVariant(block.text());
     case Qt::ImCurrentSelection:
@@ -2079,8 +2103,11 @@ QVariant QWidgetTextControl::inputMethodQuery(Qt::InputMethodQuery property, QVa
         return QVariant(); // No limit.
     case Qt::ImAnchorPosition:
         return QVariant(d->cursor.anchor() - block.position());
-    case Qt::ImAbsolutePosition:
-        return QVariant(d->cursor.position());
+    case Qt::ImAbsolutePosition: {
+        const QPointF pt = argument.toPointF();
+        if (!pt.isNull())
+            return QVariant(cursorForPosition(pt).position());
+        return QVariant(d->cursor.position()); }
     case Qt::ImTextAfterCursor:
     {
         int maxLength = argument.isValid() ? argument.toInt() : 1024;
@@ -2117,7 +2144,7 @@ QVariant QWidgetTextControl::inputMethodQuery(Qt::InputMethodQuery property, QVa
             tmpCursor.movePosition(QTextCursor::NextBlock);
             --numBlocks;
         }
-        result += block.text().mid(0,localPos);
+        result += block.text().midRef(0, localPos);
         return QVariant(result);
     }
     default:
@@ -2142,13 +2169,13 @@ void QWidgetTextControlPrivate::focusEvent(QFocusEvent *e)
 #endif
         cursorOn = (interactionFlags & (Qt::TextSelectableByKeyboard | Qt::TextEditable));
         if (interactionFlags & Qt::TextEditable) {
-            setBlinkingCursorEnabled(true);
+            setCursorVisible(true);
         }
 #ifdef QT_KEYPAD_NAVIGATION
         }
 #endif
     } else {
-        setBlinkingCursorEnabled(false);
+        setCursorVisible(false);
 
         if (cursorIsFocusIndicator
             && e->reason() != Qt::ActiveWindowFocusReason
@@ -2401,8 +2428,8 @@ void QWidgetTextControl::setExtraSelections(const QList<QTextEdit::ExtraSelectio
 
     for (int i = 0; i < selections.count(); ++i) {
         const QTextEdit::ExtraSelection &sel = selections.at(i);
-        QHash<int, int>::iterator it = hash.find(sel.cursor.anchor());
-        if (it != hash.end()) {
+        const auto it = hash.constFind(sel.cursor.anchor());
+        if (it != hash.cend()) {
             const QAbstractTextDocumentLayout::Selection &esel = d->extraSelections.at(it.value());
             if (esel.cursor.position() == sel.cursor.position()
                 && esel.format == sel.format) {
@@ -2957,7 +2984,7 @@ void QWidgetTextControl::setTextInteractionFlags(Qt::TextInteractionFlags flags)
     d->interactionFlags = flags;
 
     if (d->hasFocus)
-        d->setBlinkingCursorEnabled(flags & Qt::TextEditable);
+        d->setCursorVisible(flags & Qt::TextEditable);
 }
 
 Qt::TextInteractionFlags QWidgetTextControl::textInteractionFlags() const

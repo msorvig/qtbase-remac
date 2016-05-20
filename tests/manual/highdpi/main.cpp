@@ -1,31 +1,26 @@
 /****************************************************************************
  **
- ** Copyright (C) 2015 The Qt Company Ltd.
- ** Contact: http://www.qt.io/licensing/
+ ** Copyright (C) 2016 The Qt Company Ltd.
+ ** Contact: https://www.qt.io/licensing/
  **
  ** This file is part of the test suite of the Qt Toolkit.
  **
- ** $QT_BEGIN_LICENSE:LGPL21$
+ ** $QT_BEGIN_LICENSE:GPL-EXCEPT$
  ** Commercial License Usage
  ** Licensees holding valid commercial Qt licenses may use this file in
  ** accordance with the commercial license agreement provided with the
  ** Software or, alternatively, in accordance with the terms contained in
  ** a written agreement between you and The Qt Company. For licensing terms
- ** and conditions see http://www.qt.io/terms-conditions. For further
- ** information use the contact form at http://www.qt.io/contact-us.
+ ** and conditions see https://www.qt.io/terms-conditions. For further
+ ** information use the contact form at https://www.qt.io/contact-us.
  **
- ** GNU Lesser General Public License Usage
- ** Alternatively, this file may be used under the terms of the GNU Lesser
- ** General Public License version 2.1 or version 3 as published by the Free
- ** Software Foundation and appearing in the file LICENSE.LGPLv21 and
- ** LICENSE.LGPLv3 included in the packaging of this file. Please review the
- ** following information to ensure the GNU Lesser General Public License
- ** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
- ** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
- **
- ** As a special exception, The Qt Company gives you certain additional
- ** rights. These rights are described in The Qt Company LGPL Exception
- ** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+ ** GNU General Public License Usage
+ ** Alternatively, this file may be used under the terms of the GNU
+ ** General Public License version 3 as published by the Free Software
+ ** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+ ** included in the packaging of this file. Please review the following
+ ** information to ensure the GNU General Public License requirements will
+ ** be met: https://www.gnu.org/licenses/gpl-3.0.html.
  **
  ** $QT_END_LICENSE$
  **
@@ -139,7 +134,7 @@ private slots:
 
             // update label, add ".0" if needed.
             QString number = QString::number(scalefactorF);
-            if (!number.contains("."))
+            if (!number.contains(QLatin1Char('.')))
                 number.append(".0");
             m_label->setText(number);
     }
@@ -203,8 +198,8 @@ DemoController::DemoController(DemoContainerList *demos, QCommandLineParser *par
     foreach (QScreen *screen, screens) {
         // create scale control line
         QSize screenSize = screen->geometry().size();
-        QString screenId = screen->name() + " " + QString::number(screenSize.width())
-                                          + " " + QString::number(screenSize.height());
+        QString screenId = screen->name() + QLatin1Char(' ') + QString::number(screenSize.width())
+                                          + QLatin1Char(' ') + QString::number(screenSize.height());
         LabelSlider *slider = new LabelSlider(this, screenId, layout, layoutRow++);
         slider->setValue(getScreenFactorWithoutPixelDensity(screen) * 10);
 
@@ -380,16 +375,22 @@ Labels::Labels()
 
 class MainWindow : public QMainWindow
 {
+    Q_OBJECT
 public:
     MainWindow();
     QMenu *addNewMenu(const QString &title, int itemCount = 5);
 
+private slots:
+    void maskActionToggled(bool t);
+
+private:
     QIcon qtIcon;
     QIcon qtIcon1x;
     QIcon qtIcon2x;
 
     QToolBar *fileToolBar;
     int menuCount;
+    QAction *m_maskAction;
 };
 
 MainWindow::MainWindow()
@@ -408,7 +409,12 @@ MainWindow::MainWindow()
     addNewMenu("&Edit");
     addNewMenu("&Build");
     addNewMenu("&Debug", 4);
-    addNewMenu("&Transmogrify", 7);
+    QMenu *menu = addNewMenu("&Transmogrify", 7);
+    menu->addSeparator();
+    m_maskAction = menu->addAction("Mask");
+    m_maskAction->setCheckable(true);
+    connect(m_maskAction, &QAction::toggled, this, &MainWindow::maskActionToggled);
+    fileToolBar->addAction(m_maskAction);
     addNewMenu("T&ools");
     addNewMenu("&Help", 2);
 }
@@ -431,6 +437,16 @@ QMenu *MainWindow::addNewMenu(const QString &title, int itemCount)
     return menu;
 }
 
+void MainWindow::maskActionToggled(bool t)
+{
+    if (t) {
+        QVector<QPoint> upperLeftTriangle;
+        upperLeftTriangle << QPoint(0, 0) << QPoint(width(), 0) << QPoint(0, height());
+        setMask(QRegion(QPolygon(upperLeftTriangle)));
+    } else {
+        clearMask();
+    }
+}
 
 class StandardIcons : public QWidget
 {

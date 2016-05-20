@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -50,7 +56,7 @@
 #include "qnetworkreplydataimpl_p.h"
 #include "qnetworkreplyfileimpl_p.h"
 
-#if defined(Q_OS_IOS) && defined(QT_NO_SSL)
+#if defined(QT_PLATFORM_UIKIT) && defined(QT_NO_SSL)
 #include "qnetworkreplynsurlconnectionimpl_p.h"
 #endif
 
@@ -278,7 +284,8 @@ static void ensureInitialized()
 
     \snippet code/src_network_access_qnetworkaccessmanager.cpp 4
 
-    Network requests can be reenabled again by calling
+    Network requests can be re-enabled again, and this property will resume to
+    reflect the actual device state by calling
 
     \snippet code/src_network_access_qnetworkaccessmanager.cpp 5
 
@@ -467,16 +474,12 @@ QNetworkAccessManager::QNetworkAccessManager(QObject *parent)
 
 #ifndef QT_NO_BEARERMANAGEMENT
     Q_D(QNetworkAccessManager);
-    if (!d->networkSessionRequired) {
-        // if a session is required, we track online state through
-        // the QNetworkSession's signals
-        connect(&d->networkConfigurationManager, SIGNAL(onlineStateChanged(bool)),
-                SLOT(_q_onlineStateChanged(bool)));
-    }
-    // we would need all active configurations to check for
-    // d->networkConfigurationManager.isOnline(), which is asynchronous
-    // and potentially expensive. We can just check the configuration here
-    d->online = (d->networkConfiguration.state() & QNetworkConfiguration::Active);
+    // if a session is required, we track online state through
+    // the QNetworkSession's signals if a request is already made.
+    // we need to track current accessibility state by default
+    //
+    connect(&d->networkConfigurationManager, SIGNAL(onlineStateChanged(bool)),
+            SLOT(_q_onlineStateChanged(bool)));
 #endif
 }
 
@@ -946,7 +949,8 @@ QNetworkConfiguration QNetworkAccessManager::activeConfiguration() const
 void QNetworkAccessManager::setNetworkAccessible(QNetworkAccessManager::NetworkAccessibility accessible)
 {
     Q_D(QNetworkAccessManager);
-    d->defaultAccessControl = false;
+
+    d->defaultAccessControl = accessible == NotAccessible ? false : true;
 
     if (d->networkAccessible != accessible) {
         NetworkAccessibility previous = networkAccessible();
@@ -965,6 +969,10 @@ void QNetworkAccessManager::setNetworkAccessible(QNetworkAccessManager::NetworkA
 QNetworkAccessManager::NetworkAccessibility QNetworkAccessManager::networkAccessible() const
 {
     Q_D(const QNetworkAccessManager);
+
+    if (d->networkConfiguration.state().testFlag(QNetworkConfiguration::Undefined))
+        return UnknownAccessibility;
+
     if (d->networkSessionRequired) {
         QSharedPointer<QNetworkSession> networkSession(d->getNetworkSession());
         if (networkSession) {
@@ -974,7 +982,6 @@ QNetworkAccessManager::NetworkAccessibility QNetworkAccessManager::networkAccess
             else
                 return NotAccessible;
         } else {
-            // Network accessibility is either disabled or unknown.
             if (d->defaultAccessControl) {
                 if (d->online)
                     return d->networkAccessible;
@@ -1118,48 +1125,46 @@ QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Opera
     Q_D(QNetworkAccessManager);
 
     bool isLocalFile = req.url().isLocalFile();
-    QString scheme = req.url().scheme().toLower();
+    QString scheme = req.url().scheme();
 
     // fast path for GET on file:// URLs
     // The QNetworkAccessFileBackend will right now only be used for PUT
-    if ((op == QNetworkAccessManager::GetOperation || op == QNetworkAccessManager::HeadOperation)
-        && (isLocalFile || scheme == QLatin1String("qrc")
-#if defined(Q_OS_ANDROID)
+    if (op == QNetworkAccessManager::GetOperation
+     || op == QNetworkAccessManager::HeadOperation) {
+        if (isLocalFile
+#ifdef Q_OS_ANDROID
             || scheme == QLatin1String("assets")
 #endif
-            )) {
-        return new QNetworkReplyFileImpl(this, req, op);
-    }
+            || scheme == QLatin1String("qrc")) {
+            return new QNetworkReplyFileImpl(this, req, op);
+        }
 
-    if ((op == QNetworkAccessManager::GetOperation || op == QNetworkAccessManager::HeadOperation)
-            && scheme == QLatin1String("data")) {
-        return new QNetworkReplyDataImpl(this, req, op);
-    }
+        if (scheme == QLatin1String("data"))
+            return new QNetworkReplyDataImpl(this, req, op);
 
-    // A request with QNetworkRequest::AlwaysCache does not need any bearer management
-    QNetworkRequest::CacheLoadControl mode =
-        static_cast<QNetworkRequest::CacheLoadControl>(
-            req.attribute(QNetworkRequest::CacheLoadControlAttribute,
+        // A request with QNetworkRequest::AlwaysCache does not need any bearer management
+        QNetworkRequest::CacheLoadControl mode =
+            static_cast<QNetworkRequest::CacheLoadControl>(
+                req.attribute(QNetworkRequest::CacheLoadControlAttribute,
                               QNetworkRequest::PreferNetwork).toInt());
-    if (mode == QNetworkRequest::AlwaysCache
-        && (op == QNetworkAccessManager::GetOperation
-        || op == QNetworkAccessManager::HeadOperation)) {
-        // FIXME Implement a QNetworkReplyCacheImpl instead, see QTBUG-15106
-        QNetworkReplyImpl *reply = new QNetworkReplyImpl(this);
-        QNetworkReplyImplPrivate *priv = reply->d_func();
-        priv->manager = this;
-        priv->backend = new QNetworkAccessCacheBackend();
-        priv->backend->manager = this->d_func();
-        priv->backend->setParent(reply);
-        priv->backend->reply = priv;
-        priv->setup(op, req, outgoingData);
-        return reply;
+        if (mode == QNetworkRequest::AlwaysCache) {
+            // FIXME Implement a QNetworkReplyCacheImpl instead, see QTBUG-15106
+            QNetworkReplyImpl *reply = new QNetworkReplyImpl(this);
+            QNetworkReplyImplPrivate *priv = reply->d_func();
+            priv->manager = this;
+            priv->backend = new QNetworkAccessCacheBackend();
+            priv->backend->manager = this->d_func();
+            priv->backend->setParent(reply);
+            priv->backend->reply = priv;
+            priv->setup(op, req, outgoingData);
+            return reply;
+        }
     }
 
 #ifndef QT_NO_BEARERMANAGEMENT
     // Return a disabled network reply if network access is disabled.
     // Except if the scheme is empty or file://.
-    if (!d->networkAccessible && !isLocalFile) {
+    if (d->networkAccessible == NotAccessible && !isLocalFile) {
         return new QDisabledNetworkReply(this, req, op);
     }
 
@@ -1200,7 +1205,7 @@ QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Opera
     }
 
 // Use NSURLConnection for https on iOS when OpenSSL is disabled.
-#if defined(Q_OS_IOS) && defined(QT_NO_SSL)
+#if defined(QT_PLATFORM_UIKIT) && defined(QT_NO_SSL)
     if (scheme == QLatin1String("https"))
         return new QNetworkReplyNSURLConnectionImpl(this, request, op, outgoingData);
 #endif
@@ -1518,27 +1523,35 @@ void QNetworkAccessManagerPrivate::clearCache(QNetworkAccessManager *manager)
     manager->d_func()->objectCache.clear();
     manager->d_func()->authenticationManager->clearCache();
 
-    if (manager->d_func()->httpThread) {
-        manager->d_func()->httpThread->quit();
-        manager->d_func()->httpThread->wait(5000);
-        if (manager->d_func()->httpThread->isFinished())
-            delete manager->d_func()->httpThread;
-        else
-            QObject::connect(manager->d_func()->httpThread, SIGNAL(finished()), manager->d_func()->httpThread, SLOT(deleteLater()));
-        manager->d_func()->httpThread = 0;
-    }
+    manager->d_func()->destroyThread();
 }
 
 QNetworkAccessManagerPrivate::~QNetworkAccessManagerPrivate()
 {
-    if (httpThread) {
-        httpThread->quit();
-        httpThread->wait(5000);
-        if (httpThread->isFinished())
-            delete httpThread;
+    destroyThread();
+}
+
+QThread * QNetworkAccessManagerPrivate::createThread()
+{
+    if (!thread) {
+        thread = new QThread;
+        thread->setObjectName(QStringLiteral("QNetworkAccessManager thread"));
+        thread->start();
+    }
+    Q_ASSERT(thread);
+    return thread;
+}
+
+void QNetworkAccessManagerPrivate::destroyThread()
+{
+    if (thread) {
+        thread->quit();
+        thread->wait(5000);
+        if (thread->isFinished())
+            delete thread;
         else
-            QObject::connect(httpThread, SIGNAL(finished()), httpThread, SLOT(deleteLater()));
-        httpThread = 0;
+            QObject::connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
+        thread = 0;
     }
 }
 
@@ -1622,32 +1635,56 @@ void QNetworkAccessManagerPrivate::_q_networkSessionStateChanged(QNetworkSession
     if (online) {
         if (state != QNetworkSession::Connected && state != QNetworkSession::Roaming) {
             online = false;
-            networkAccessible = QNetworkAccessManager::NotAccessible;
-            emit q->networkAccessibleChanged(networkAccessible);
+            if (networkAccessible != QNetworkAccessManager::NotAccessible) {
+                networkAccessible = QNetworkAccessManager::NotAccessible;
+                emit q->networkAccessibleChanged(networkAccessible);
+            }
         }
     } else {
         if (state == QNetworkSession::Connected || state == QNetworkSession::Roaming) {
             online = true;
             if (defaultAccessControl)
-                networkAccessible = QNetworkAccessManager::Accessible;
-            emit q->networkAccessibleChanged(networkAccessible);
+                if (networkAccessible != QNetworkAccessManager::Accessible) {
+                    networkAccessible = QNetworkAccessManager::Accessible;
+                    emit q->networkAccessibleChanged(networkAccessible);
+                }
         }
     }
 }
 
 void QNetworkAccessManagerPrivate::_q_onlineStateChanged(bool isOnline)
 {
-    // if the user set a config, we only care whether this one is active.
+   Q_Q(QNetworkAccessManager);
+   // if the user set a config, we only care whether this one is active.
     // Otherwise, this QNAM is online if there is an online config.
     if (customNetworkConfiguration) {
         online = (networkConfiguration.state() & QNetworkConfiguration::Active);
     } else {
-        if (isOnline && online != isOnline) {
-            networkSessionStrongRef.clear();
-            networkSessionWeakRef.clear();
+        if (online != isOnline) {
+            if (isOnline) {
+                networkSessionStrongRef.clear();
+                networkSessionWeakRef.clear();
+            }
+            online = isOnline;
         }
-
-        online = isOnline;
+    }
+    if (online) {
+        if (defaultAccessControl) {
+            if (networkAccessible != QNetworkAccessManager::Accessible) {
+                networkAccessible = QNetworkAccessManager::Accessible;
+                emit q->networkAccessibleChanged(networkAccessible);
+            }
+        }
+    } else if (networkConfiguration.state().testFlag(QNetworkConfiguration::Undefined)) {
+        if (networkAccessible != QNetworkAccessManager::UnknownAccessibility) {
+            networkAccessible = QNetworkAccessManager::UnknownAccessibility;
+            emit q->networkAccessibleChanged(networkAccessible);
+        }
+    } else {
+        if (networkAccessible != QNetworkAccessManager::NotAccessible) {
+            networkAccessible = QNetworkAccessManager::NotAccessible;
+            emit q->networkAccessibleChanged(networkAccessible);
+        }
     }
 }
 
@@ -1678,7 +1715,7 @@ QNetworkRequest QNetworkAccessManagerPrivate::prepareMultipart(const QNetworkReq
             break;
         }
         // putting the boundary into quotes, recommended in RFC 2046 section 5.1.1
-        contentType += "; boundary=\"" + multiPart->d_func()->boundary + "\"";
+        contentType += "; boundary=\"" + multiPart->d_func()->boundary + '"';
         newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QVariant(contentType));
     }
 

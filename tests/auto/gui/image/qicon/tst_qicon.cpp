@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -36,6 +31,7 @@
 #include <QImageReader>
 #include <qicon.h>
 #include <qiconengine.h>
+#include <QtCore/QStandardPaths>
 
 #include <algorithm>
 
@@ -53,6 +49,7 @@ private slots:
     void actualSize2_data(); // test with 2 pixmaps with different aspect ratio
     void actualSize2();
     void isNull();
+    void isMask();
     void swap();
     void bestMatch();
     void cacheKey();
@@ -219,6 +216,20 @@ void tst_QIcon::isNull() {
     QVERIFY(iconSupportedFormat.actualSize(QSize(32, 32)).isValid());
 }
 
+void tst_QIcon::isMask()
+{
+    QIcon icon;
+    icon.setIsMask(true);
+    icon.addPixmap(QPixmap());
+    QVERIFY(icon.isMask());
+
+    QIcon icon2;
+    icon2.setIsMask(true);
+    QVERIFY(icon2.isMask());
+    icon2.setIsMask(false);
+    QVERIFY(!icon2.isMask());
+}
+
 void tst_QIcon::swap()
 {
     QPixmap p1(1, 1), p2(2, 2);
@@ -382,7 +393,6 @@ void tst_QIcon::addFile()
     icon.addFile(QLatin1String(":/styles/commonstyle/images/standardbutton-save-32.png"), QSize(), QIcon::Selected);
     icon.addFile(QLatin1String(":/styles/commonstyle/images/standardbutton-save-128.png"), QSize(), QIcon::Selected);
 
-#ifndef Q_OS_WINCE
     QVERIFY(icon.pixmap(16, QIcon::Normal).toImage() ==
             QPixmap(QLatin1String(":/styles/commonstyle/images/standardbutton-open-16.png")).toImage());
     QVERIFY(icon.pixmap(32, QIcon::Normal).toImage() ==
@@ -395,13 +405,6 @@ void tst_QIcon::addFile()
             QPixmap(QLatin1String(":/styles/commonstyle/images/standardbutton-save-32.png")).toImage());
     QVERIFY(icon.pixmap(128, QIcon::Selected).toImage() ==
             QPixmap(QLatin1String(":/styles/commonstyle/images/standardbutton-save-128.png")).toImage());
-#else
-    // WinCE only includes the 16x16 images for size reasons
-    QVERIFY(icon.pixmap(16, QIcon::Normal).toImage() ==
-            QPixmap(QLatin1String(":/styles/commonstyle/images/standardbutton-open-16.png")).toImage());
-    QVERIFY(icon.pixmap(16, QIcon::Selected).toImage() ==
-            QPixmap(QLatin1String(":/styles/commonstyle/images/standardbutton-save-16.png")).toImage());
-#endif
 }
 
 static bool sizeLess(const QSize &a, const QSize &b)
@@ -632,11 +635,26 @@ void tst_QIcon::fromTheme()
     QIcon::setThemeName("");
     abIcon = QIcon::fromTheme("address-book-new");
     QVERIFY(abIcon.isNull());
+
+    // Passing a full path to fromTheme is not very useful, but should work anyway
+    QIcon fullPathIcon = QIcon::fromTheme(m_pngImageFileName);
+    QVERIFY(!fullPathIcon.isNull());
+}
+
+static inline QString findGtkUpdateIconCache()
+{
+    QString binary = QLatin1String("gtk-update-icon-cache");
+#ifdef Q_OS_WIN
+    binary += QLatin1String(".exe");
+#endif
+    return QStandardPaths::findExecutable(binary);
 }
 
 void tst_QIcon::fromThemeCache()
 {
     QTemporaryDir dir;
+    QVERIFY2(dir.isValid(), qPrintable(dir.errorString()));
+
     QVERIFY(QDir().mkpath(dir.path() + QLatin1String("/testcache/16x16/actions")));
     QVERIFY(QFile(QStringLiteral(":/styles/commonstyle/images/standardbutton-open-16.png"))
         .copy( dir.path() + QLatin1String("/testcache/16x16/actions/button-open.png")));
@@ -686,11 +704,20 @@ void tst_QIcon::fromThemeCache()
     QVERIFY(!QIcon::fromTheme("button-open").isNull());
 
     // Try to run the actual gtk-update-icon-cache and make sure that icons are still found
+    const QString gtkUpdateIconCache = findGtkUpdateIconCache();
+    if (gtkUpdateIconCache.isEmpty()) {
+        QIcon::setThemeSearchPaths(QStringList());
+        QSKIP("gtk-update-icon-cache not run (binary not found)");
+    }
     QProcess process;
-    process.start(QStringLiteral("gtk-update-icon-cache"),
+    process.start(gtkUpdateIconCache,
                   QStringList() << QStringLiteral("-f") << QStringLiteral("-t") << (dir.path() + QLatin1String("/testcache")));
-    if (!process.waitForFinished())
-        QSKIP("gtk-update-icon-cache not run");
+    QVERIFY2(process.waitForStarted(), qPrintable(QLatin1String("Unable to start: ")
+                                                  + gtkUpdateIconCache + QLatin1String(": ")
+                                                  + process.errorString()));
+    QVERIFY(process.waitForFinished());
+    QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+    QCOMPARE(process.exitCode(), 0);
     QVERIFY(QFileInfo(cacheName).lastModified() >= QFileInfo(dir.path() + QLatin1String("/testcache/16x16/actions")).lastModified());
     QIcon::setThemeSearchPaths(QStringList() << dir.path()); // reload themes
     QVERIFY(!QIcon::fromTheme("button-open").isNull());

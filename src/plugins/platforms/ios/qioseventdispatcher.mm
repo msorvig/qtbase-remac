@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,6 +44,8 @@
 #include <QtCore/qprocessordetection.h>
 #include <QtCore/private/qcoreapplication_p.h>
 #include <QtCore/private/qthread_p.h>
+
+#include <qpa/qwindowsysteminterface.h>
 
 #import <Foundation/NSArray.h>
 #import <Foundation/NSString.h>
@@ -127,7 +135,7 @@ namespace
 
             // Which we verify, just in case
             struct rlimit stackLimit = {0, 0};
-            if (getrlimit(RLIMIT_STACK, &stackLimit) == 0 && stackSize > stackLimit.rlim_cur)
+            if (Q_UNLIKELY(getrlimit(RLIMIT_STACK, &stackLimit) == 0 && stackSize > stackLimit.rlim_cur))
                 qFatal("Unexpectedly exceeded stack limit");
 
             return stackSize;
@@ -248,7 +256,7 @@ static void __attribute__((noinline, noreturn)) user_main_trampoline()
         unsigned int bufferSize = [arg lengthOfBytesUsingEncoding:cStringEncoding] + 1;
         argv[i] = reinterpret_cast<char *>(malloc(bufferSize));
 
-        if (![arg getCString:argv[i] maxLength:bufferSize encoding:cStringEncoding])
+        if (Q_UNLIKELY(![arg getCString:argv[i] maxLength:bufferSize encoding:cStringEncoding]))
             qFatal("Could not convert argv[%d] to C string", i);
     }
 
@@ -461,12 +469,31 @@ bool __attribute__((returns_twice)) QIOSEventDispatcher::processEvents(QEventLoo
     return processedEvents;
 }
 
+/*!
+    Override of the CoreFoundation posted events runloop source callback
+    so that we can send window system (QPA) events in addition to sending
+    normal Qt events.
+*/
+bool QIOSEventDispatcher::processPostedEvents()
+{
+    // Don't send window system events if the base CF dispatcher has determined
+    // that events should not be sent for this pass of the runloop source.
+    if (!QEventDispatcherCoreFoundation::processPostedEvents())
+        return false;
+
+    qEventDispatcherDebug() << "Sending window system events for " << m_processEvents.flags; qIndent();
+    QWindowSystemInterface::sendWindowSystemEvents(m_processEvents.flags);
+    qUnIndent();
+
+    return true;
+}
+
 void QIOSEventDispatcher::handleRunLoopExit(CFRunLoopActivity activity)
 {
     Q_UNUSED(activity);
     Q_ASSERT(activity == kCFRunLoopExit);
 
-    if (m_processEventLevel == 1 && !QThreadData::current()->eventLoops.top()->isRunning()) {
+    if (m_processEventLevel == 1 && !currentEventLoop()->isRunning()) {
         qEventDispatcherDebug() << "Root runloop level exited";
         interruptEventLoopExec();
     }

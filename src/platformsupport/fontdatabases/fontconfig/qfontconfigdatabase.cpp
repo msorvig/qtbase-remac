@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -61,12 +67,6 @@ static const int maxWeight = 99;
 static inline int mapToQtWeightForRange(int fcweight, int fcLower, int fcUpper, int qtLower, int qtUpper)
 {
     return qtLower + ((fcweight - fcLower) * (qtUpper - qtLower)) / (fcUpper - fcLower);
-}
-
-static inline bool requiresOpenType(int writingSystem)
-{
-    return ((writingSystem >= QFontDatabase::Syriac && writingSystem <= QFontDatabase::Sinhala)
-            || writingSystem == QFontDatabase::Khmer || writingSystem == QFontDatabase::Nko);
 }
 
 static inline int weightFromFcWeight(int fcweight)
@@ -243,7 +243,13 @@ static const char *specialLanguages[] = {
     "sa", // Siddham
     "sd", // Khudawadi
     "mai", // Tirhuta
-    "hoc"  // WarangCiti
+    "hoc", // WarangCiti
+    "", // Ahom
+    "", // AnatolianHieroglyphs
+    "", // Hatran
+    "", // Multani
+    "", // OldHungarian
+    ""  // SignWriting
 };
 Q_STATIC_ASSERT(sizeof(specialLanguages) / sizeof(const char *) == QChar::ScriptCount);
 
@@ -288,10 +294,10 @@ static const char *languageForWritingSystem[] = {
 Q_STATIC_ASSERT(sizeof(languageForWritingSystem) / sizeof(const char *) == QFontDatabase::WritingSystemsCount);
 
 #if FC_VERSION >= 20297
-// Newer FontConfig let's us sort out fonts that contain certain glyphs, but no
-// open type tables for is directly. Do this so we don't pick some strange
-// pseudo unicode font
-static const char *openType[] = {
+// Newer FontConfig let's us sort out fonts that report certain scripts support,
+// but no open type tables for handling them correctly.
+// Check the reported script presence in the FC_CAPABILITY's "otlayout:" section.
+static const char *capabilityForWritingSystem[] = {
     0,     // Any
     0,  // Latin
     0,  // Greek
@@ -327,7 +333,7 @@ static const char *openType[] = {
     0, // Runic
     "nko " // N'Ko
 };
-Q_STATIC_ASSERT(sizeof(openType) / sizeof(const char *) == QFontDatabase::WritingSystemsCount);
+Q_STATIC_ASSERT(sizeof(capabilityForWritingSystem) / sizeof(*capabilityForWritingSystem) == QFontDatabase::WritingSystemsCount);
 #endif
 
 static const char *getFcFamilyForStyleHint(const QFont::StyleHint style)
@@ -410,11 +416,23 @@ static void populateFromPattern(FcPattern *pattern)
     FcResult res = FcPatternGetLangSet(pattern, FC_LANG, 0, &langset);
     if (res == FcResultMatch) {
         bool hasLang = false;
+#if FC_VERSION >= 20297
+        FcChar8 *cap = Q_NULLPTR;
+        FcResult capRes = FcResultNoMatch;
+#endif
         for (int j = 1; j < QFontDatabase::WritingSystemsCount; ++j) {
             const FcChar8 *lang = (const FcChar8*) languageForWritingSystem[j];
             if (lang) {
                 FcLangResult langRes = FcLangSetHasLang(langset, lang);
                 if (langRes != FcLangDifferentLang) {
+#if FC_VERSION >= 20297
+                    if (capabilityForWritingSystem[j] != Q_NULLPTR) {
+                        if (cap == Q_NULLPTR)
+                            capRes = FcPatternGetString(pattern, FC_CAPABILITY, 0, &cap);
+                        if (capRes == FcResultMatch && strstr(reinterpret_cast<const char *>(cap), capabilityForWritingSystem[j]) == 0)
+                            continue;
+                    }
+#endif
                     writingSystems.setSupported(QFontDatabase::WritingSystem(j));
                     hasLang = true;
                 }
@@ -429,18 +447,6 @@ static void populateFromPattern(FcPattern *pattern)
         // special in a way.
         writingSystems.setSupported(QFontDatabase::Other);
     }
-
-#if FC_VERSION >= 20297
-    for (int j = 1; j < QFontDatabase::WritingSystemsCount; ++j) {
-        if (writingSystems.supported(QFontDatabase::WritingSystem(j))
-            && requiresOpenType(j) && openType[j]) {
-            FcChar8 *cap;
-            res = FcPatternGetString (pattern, FC_CAPABILITY, 0, &cap);
-            if (res != FcResultMatch || !strstr((const char *)cap, openType[j]))
-                writingSystems.setSupported(QFontDatabase::WritingSystem(j),false);
-        }
-    }
-#endif
 
     FontFile *fontFile = new FontFile;
     fontFile->fileName = QString::fromLocal8Bit((const char *)file_value);
@@ -711,15 +717,19 @@ QStringList QFontconfigDatabase::fallbacksForFamily(const QString &family, QFont
     FcPatternDestroy(pattern);
 
     if (fontSet) {
+        QSet<QString> duplicates;
+        duplicates.reserve(fontSet->nfont + 1);
+        duplicates.insert(family.toCaseFolded());
         for (int i = 0; i < fontSet->nfont; i++) {
             FcChar8 *value = 0;
             if (FcPatternGetString(fontSet->fonts[i], FC_FAMILY, 0, &value) != FcResultMatch)
                 continue;
             //         capitalize(value);
-            QString familyName = QString::fromUtf8((const char *)value);
-            if (!fallbackFamilies.contains(familyName,Qt::CaseInsensitive) &&
-                familyName.compare(family, Qt::CaseInsensitive)) {
+            const QString familyName = QString::fromUtf8((const char *)value);
+            const QString familyNameCF = familyName.toCaseFolded();
+            if (!duplicates.contains(familyNameCF)) {
                 fallbackFamilies << familyName;
+                duplicates.insert(familyNameCF);
             }
         }
         FcFontSetDestroy(fontSet);
@@ -852,7 +862,7 @@ void QFontconfigDatabase::setupFontEngine(QFontEngineFT *engine, const QFontDef 
 
     const QPlatformServices *services = QGuiApplicationPrivate::platformIntegration()->services();
     bool useXftConf = (services && (services->desktopEnvironment() == "GNOME" || services->desktopEnvironment() == "UNITY"));
-    if (useXftConf) {
+    if (useXftConf && !forcedAntialiasSetting) {
         void *antialiasResource =
                 QGuiApplication::platformNativeInterface()->nativeResourceForScreen("antialiasingEnabled",
                                                                                     QGuiApplication::primaryScreen());

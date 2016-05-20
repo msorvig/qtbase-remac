@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -179,8 +185,9 @@ QT_BEGIN_NAMESPACE
     \value Unicode_6_2  Version 6.2
     \value Unicode_6_3  Version 6.3  Since Qt 5.3
     \value Unicode_7_0  Version 7.0  Since Qt 5.5
+    \value Unicode_8_0  Version 8.0  Since Qt 5.6
     \value Unicode_Unassigned  The value is not assigned to any character
-                               in version 6.3 of Unicode.
+                               in version 8.0 of Unicode.
 
     \sa unicodeVersion(), currentUnicodeVersion()
 */
@@ -401,6 +408,12 @@ QT_BEGIN_NAMESPACE
     \value Script_Khudawadi
     \value Script_Tirhuta
     \value Script_WarangCiti
+    \value Script_Ahom
+    \value Script_AnatolianHieroglyphs
+    \value Script_Hatran
+    \value Script_Multani
+    \value Script_OldHungarian
+    \value Script_SignWriting
 
     \omitvalue ScriptCount
 
@@ -1423,48 +1436,18 @@ QChar::UnicodeVersion QChar::currentUnicodeVersion() Q_DECL_NOTHROW
 }
 
 
-template <typename T>
-Q_DECL_CONST_FUNCTION static inline T toLowerCase_helper(T uc) Q_DECL_NOTHROW
+template <typename Traits, typename T>
+Q_DECL_CONST_FUNCTION static inline T convertCase_helper(T uc) Q_DECL_NOTHROW
 {
-    const QUnicodeTables::Properties *p = qGetProp(uc);
-    if (p->lowerCaseSpecial) {
-        const ushort *specialCase = specialCaseMap + p->lowerCaseDiff;
-        return (*specialCase == 1) ? specialCase[1] : uc;
-    }
-    return uc + p->lowerCaseDiff;
-}
+    const QUnicodeTables::Properties *prop = qGetProp(uc);
 
-template <typename T>
-Q_DECL_CONST_FUNCTION static inline T toUpperCase_helper(T uc) Q_DECL_NOTHROW
-{
-    const QUnicodeTables::Properties *p = qGetProp(uc);
-    if (p->upperCaseSpecial) {
-        const ushort *specialCase = specialCaseMap + p->upperCaseDiff;
-        return (*specialCase == 1) ? specialCase[1] : uc;
+    if (Q_UNLIKELY(Traits::caseSpecial(prop))) {
+        const ushort *specialCase = specialCaseMap + Traits::caseDiff(prop);
+        // so far, there are no special cases beyond BMP (guaranteed by the qunicodetables generator)
+        return *specialCase == 1 ? specialCase[1] : uc;
     }
-    return uc + p->upperCaseDiff;
-}
 
-template <typename T>
-Q_DECL_CONST_FUNCTION static inline T toTitleCase_helper(T uc) Q_DECL_NOTHROW
-{
-    const QUnicodeTables::Properties *p = qGetProp(uc);
-    if (p->titleCaseSpecial) {
-        const ushort *specialCase = specialCaseMap + p->titleCaseDiff;
-        return (*specialCase == 1) ? specialCase[1] : uc;
-    }
-    return uc + p->titleCaseDiff;
-}
-
-template <typename T>
-Q_DECL_CONST_FUNCTION static inline T toCaseFolded_helper(T uc) Q_DECL_NOTHROW
-{
-    const QUnicodeTables::Properties *p = qGetProp(uc);
-    if (p->caseFoldSpecial) {
-        const ushort *specialCase = specialCaseMap + p->caseFoldDiff;
-        return (*specialCase == 1) ? specialCase[1] : uc;
-    }
-    return uc + p->caseFoldDiff;
+    return uc + Traits::caseDiff(prop);
 }
 
 /*!
@@ -1484,7 +1467,7 @@ uint QChar::toLower(uint ucs4) Q_DECL_NOTHROW
 {
     if (ucs4 > LastValidCodePoint)
         return ucs4;
-    return toLowerCase_helper<uint>(ucs4);
+    return convertCase_helper<QUnicodeTables::LowercaseTraits>(ucs4);
 }
 
 /*!
@@ -1504,7 +1487,7 @@ uint QChar::toUpper(uint ucs4) Q_DECL_NOTHROW
 {
     if (ucs4 > LastValidCodePoint)
         return ucs4;
-    return toUpperCase_helper<uint>(ucs4);
+    return convertCase_helper<QUnicodeTables::UppercaseTraits>(ucs4);
 }
 
 /*!
@@ -1524,29 +1507,29 @@ uint QChar::toTitleCase(uint ucs4) Q_DECL_NOTHROW
 {
     if (ucs4 > LastValidCodePoint)
         return ucs4;
-    return toTitleCase_helper<uint>(ucs4);
+    return convertCase_helper<QUnicodeTables::TitlecaseTraits>(ucs4);
 }
 
 static inline uint foldCase(const ushort *ch, const ushort *start)
 {
-    uint c = *ch;
-    if (QChar(c).isLowSurrogate() && ch > start && QChar(*(ch - 1)).isHighSurrogate())
-        c = QChar::surrogateToUcs4(*(ch - 1), c);
-    return toCaseFolded_helper<uint>(c);
+    uint ucs4 = *ch;
+    if (QChar::isLowSurrogate(ucs4) && ch > start && QChar::isHighSurrogate(*(ch - 1)))
+        ucs4 = QChar::surrogateToUcs4(*(ch - 1), ucs4);
+    return convertCase_helper<QUnicodeTables::CasefoldTraits>(ucs4);
 }
 
 static inline uint foldCase(uint ch, uint &last) Q_DECL_NOTHROW
 {
-    uint c = ch;
-    if (QChar(c).isLowSurrogate() && QChar(last).isHighSurrogate())
-        c = QChar::surrogateToUcs4(last, c);
+    uint ucs4 = ch;
+    if (QChar::isLowSurrogate(ucs4) && QChar::isHighSurrogate(last))
+        ucs4 = QChar::surrogateToUcs4(last, ucs4);
     last = ch;
-    return toCaseFolded_helper<uint>(c);
+    return convertCase_helper<QUnicodeTables::CasefoldTraits>(ucs4);
 }
 
 static inline ushort foldCase(ushort ch) Q_DECL_NOTHROW
 {
-    return toCaseFolded_helper<ushort>(ch);
+    return convertCase_helper<QUnicodeTables::CasefoldTraits>(ch);
 }
 
 /*!
@@ -1565,7 +1548,7 @@ uint QChar::toCaseFolded(uint ucs4) Q_DECL_NOTHROW
 {
     if (ucs4 > LastValidCodePoint)
         return ucs4;
-    return toCaseFolded_helper<uint>(ucs4);
+    return convertCase_helper<QUnicodeTables::CasefoldTraits>(ucs4);
 }
 
 /*!

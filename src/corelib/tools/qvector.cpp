@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -384,6 +390,9 @@
     initialized with a \l{default-constructed value}. If \a size is less
     than the current size, elements are removed from the end.
 
+    Since Qt 5.6, resize() doesn't shrink the capacity anymore.
+    To shed excess capacity, use squeeze().
+
     \sa size()
 */
 
@@ -403,15 +412,24 @@
 /*! \fn void QVector::reserve(int size)
 
     Attempts to allocate memory for at least \a size elements. If you
-    know in advance how large the vector will be, you can call this
-    function, and if you call resize() often you are likely to get
-    better performance. If \a size is an underestimate, the worst
-    that will happen is that the QVector will be a bit slower.
+    know in advance how large the vector will be, you should call this
+    function to prevent reallocations and memory fragmentation.
 
-    The sole purpose of this function is to provide a means of fine
-    tuning QVector's memory usage. In general, you will rarely ever
-    need to call this function. If you want to change the size of the
-    vector, call resize().
+    If \a size is an underestimate, the worst that will happen is that
+    the QVector will be a bit slower. If \a size is an overestimate, you
+    may have used more memory than the normal QVector growth strategy
+    would have allocated—or you may have used less.
+
+    An alternative to reserve() is calling resize(). Whether or not that is
+    faster than reserve() depends on the element type, because resize()
+    default-constructs all elements, and requires assignment to existing
+    entries rather than calling append(), which copy- or move-constructs.
+    For simple types, like \c int or \c double, resize() is typically faster,
+    but for anything more complex, you should prefer reserve().
+
+    \warning If the size passed to resize() was underestimated, you run out
+    of allocated space and into undefined behavior. This problem does not
+    exist with reserve(), because it treats the size as just a hint.
 
     \sa squeeze(), capacity()
 */
@@ -484,8 +502,19 @@
 
 /*! \fn void QVector::clear()
 
-    Removes all the elements from the vector and releases the memory used by
-    the vector.
+    Removes all the elements from the vector.
+
+    \note Until Qt 5.6, this also released the memory used by
+    the vector. From Qt 5.7, the capacity is preserved. To shed
+    all capacity, swap with a default-constructed vector:
+    \code
+    QVector<T> v ...;
+    QVector<T>().swap(v);
+    Q_ASSERT(v.capacity() == 0);
+    \endcode
+    or call squeeze().
+
+    \sa squeeze()
 */
 
 /*! \fn const T &QVector::at(int i) const

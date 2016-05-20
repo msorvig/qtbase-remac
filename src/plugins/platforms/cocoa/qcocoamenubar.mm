@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author James Turner <james.turner@kdab.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -51,7 +57,6 @@ static inline QCocoaMenuLoader *getMenuLoader()
     return [NSApp QT_MANGLE_NAMESPACE(qt_qcocoamenuLoader)];
 }
 
-
 QCocoaMenuBar::QCocoaMenuBar() :
     m_window(0)
 {
@@ -68,34 +73,25 @@ QCocoaMenuBar::~QCocoaMenuBar()
 #ifdef QT_COCOA_ENABLE_MENU_DEBUG
     qDebug() << "~QCocoaMenuBar" << this;
 #endif
+    foreach (QCocoaMenu *menu, m_menus) {
+        if (!menu)
+            continue;
+        NSMenuItem *item = nativeItemForMenu(menu);
+        if (menu->attachedItem() == item)
+            menu->setAttachedItem(nil);
+    }
+
     [m_nativeMenu release];
     static_menubars.removeOne(this);
 
     if (m_window && m_window->menubar() == this) {
         m_window->setMenubar(0);
+
         // Delete the children first so they do not cause
         // the native menu items to be hidden after
         // the menu bar was updated
         qDeleteAll(children());
         updateMenuBarImmediately();
-    }
-}
-
-void QCocoaMenuBar::insertNativeMenu(QCocoaMenu *menu, QCocoaMenu *beforeMenu)
-{
-    QMacAutoReleasePool pool;
-
-    if (beforeMenu) {
-        NSUInteger nativeIndex = [m_nativeMenu indexOfItem:beforeMenu->nsMenuItem()];
-        [m_nativeMenu insertItem: menu->nsMenuItem() atIndex: nativeIndex];
-    } else {
-        [m_nativeMenu addItem: menu->nsMenuItem()];
-    }
-
-    menu->setMenuBar(this);
-    syncMenu(static_cast<QPlatformMenu *>(menu));
-    if (menu->isVisible()) {
-        [m_nativeMenu setSubmenu: menu->nsMenu() forItem: menu->nsMenuItem()];
     }
 }
 
@@ -107,42 +103,60 @@ void QCocoaMenuBar::insertMenu(QPlatformMenu *platformMenu, QPlatformMenu *befor
     qDebug() << "QCocoaMenuBar" << this << "insertMenu" << menu << "before" << before;
 #endif
 
-    if (m_menus.contains(menu)) {
-        qWarning() << Q_FUNC_INFO << "This menu already belongs to the menubar, remove it first";
+    if (m_menus.contains(QPointer<QCocoaMenu>(menu))) {
+        qWarning("This menu already belongs to the menubar, remove it first");
         return;
     }
 
-    if (beforeMenu && !m_menus.contains(beforeMenu)) {
-        qWarning() << Q_FUNC_INFO << "The before menu does not belong to the menubar";
+    if (beforeMenu && !m_menus.contains(QPointer<QCocoaMenu>(beforeMenu))) {
+        qWarning("The before menu does not belong to the menubar");
         return;
     }
 
-    m_menus.insert(beforeMenu ? m_menus.indexOf(beforeMenu) : m_menus.size(), menu);
-    if (!menu->menuBar())
-        insertNativeMenu(menu, beforeMenu);
+    int insertionIndex = beforeMenu ? m_menus.indexOf(beforeMenu) : m_menus.size();
+    m_menus.insert(insertionIndex, menu);
+
+    {
+        QMacAutoReleasePool pool;
+        NSMenuItem *item = [[[NSMenuItem alloc] init] autorelease];
+        item.tag = reinterpret_cast<NSInteger>(menu);
+
+        if (beforeMenu) {
+            // QMenuBar::toNSMenu() exposes the native menubar and
+            // the user could have inserted its own items in there.
+            // Same remark applies to removeMenu().
+            NSMenuItem *beforeItem = nativeItemForMenu(beforeMenu);
+            NSInteger nativeIndex = [m_nativeMenu indexOfItem:beforeItem];
+            [m_nativeMenu insertItem:item atIndex:nativeIndex];
+        } else {
+            [m_nativeMenu addItem:item];
+        }
+    }
+
+    syncMenu(menu);
+
     if (m_window && m_window->window()->isActive())
         updateMenuBarImmediately();
-}
-
-void QCocoaMenuBar::removeNativeMenu(QCocoaMenu *menu)
-{
-    QMacAutoReleasePool pool;
-
-    if (menu->menuBar() == this)
-        menu->setMenuBar(0);
-    NSUInteger realIndex = [m_nativeMenu indexOfItem:menu->nsMenuItem()];
-    [m_nativeMenu removeItemAtIndex: realIndex];
 }
 
 void QCocoaMenuBar::removeMenu(QPlatformMenu *platformMenu)
 {
     QCocoaMenu *menu = static_cast<QCocoaMenu *>(platformMenu);
     if (!m_menus.contains(menu)) {
-        qWarning() << Q_FUNC_INFO << "Trying to remove a menu that does not belong to the menubar";
+        qWarning("Trying to remove a menu that does not belong to the menubar");
         return;
     }
+
+    NSMenuItem *item = nativeItemForMenu(menu);
+    if (menu->attachedItem() == item)
+        menu->setAttachedItem(nil);
     m_menus.removeOne(menu);
-    removeNativeMenu(menu);
+
+    QMacAutoReleasePool pool;
+
+    // See remark in insertMenu().
+    NSInteger nativeIndex = [m_nativeMenu indexOfItem:item];
+    [m_nativeMenu removeItemAtIndex:nativeIndex];
 }
 
 void QCocoaMenuBar::syncMenu(QPlatformMenu *menu)
@@ -164,7 +178,16 @@ void QCocoaMenuBar::syncMenu(QPlatformMenu *menu)
                 break;
             }
     }
-    [cocoaMenu->nsMenuItem() setHidden:shouldHide];
+
+    nativeItemForMenu(cocoaMenu).hidden = shouldHide;
+}
+
+NSMenuItem *QCocoaMenuBar::nativeItemForMenu(QCocoaMenu *menu) const
+{
+    if (!menu)
+        return nil;
+
+    return [m_nativeMenu itemWithTag:reinterpret_cast<NSInteger>(menu)];
 }
 
 void QCocoaMenuBar::handleReparent(QWindow *newParentWindow)
@@ -291,24 +314,16 @@ void QCocoaMenuBar::updateMenuBarImmediately()
     qDebug() << "QCocoaMenuBar" << "updateMenuBarImmediately" << cw;
 #endif
     bool disableForModal = mb->shouldDisable(cw);
-    // force a sync?
-    foreach (QCocoaMenu *m, mb->m_menus) {
-        mb->syncMenu(m);
-        m->syncModalState(disableForModal);
-    }
 
-    // reparent shared menu items if necessary.
-    // We browse the list in reverse order to be sure that the next items are redrawn before the current ones,
-    // in this way we are sure that "beforeMenu" (see below) is part of the native menu before "m" is redraw
-    for (int i = mb->m_menus.size() - 1; i >= 0; i--) {
-        QCocoaMenu *m = mb->m_menus.at(i);
-        QCocoaMenuBar *menuBar = m->menuBar();
-        if (menuBar != mb) {
-            QCocoaMenu *beforeMenu  = i < (mb->m_menus.size() - 1) ? mb->m_menus.at(i + 1) : 0;
-            if (menuBar)
-                menuBar->removeNativeMenu(m);
-            mb->insertNativeMenu(m, beforeMenu);
-        }
+    foreach (QCocoaMenu *menu, mb->m_menus) {
+        if (!menu)
+            continue;
+        NSMenuItem *item = mb->nativeItemForMenu(menu);
+        menu->setAttachedItem(item);
+        menu->setMenuParent(mb);
+        // force a sync?
+        mb->syncMenu(menu);
+        menu->syncModalState(disableForModal);
     }
 
     QCocoaMenuLoader *loader = getMenuLoader();

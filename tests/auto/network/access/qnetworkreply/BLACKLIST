@@ -7,3 +7,9 @@ ubuntu-14.04
 *
 [backgroundRequestInterruption:ftp, bg, nobg]
 *
+[authenticationCacheAfterCancel:http+socksauth]
+rhel-7.1
+rhel-7.2
+[authenticationCacheAfterCancel:https+socksauth]
+rhel-7.1
+rhel-7.2

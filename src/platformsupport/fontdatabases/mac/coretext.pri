@@ -5,11 +5,10 @@ contains(QT_CONFIG, freetype) {
     include($$QT_SOURCE_TREE/src/3rdparty/freetype_dependency.pri)
     HEADERS += $$QT_SOURCE_TREE/src/gui/text/qfontengine_ft_p.h
     SOURCES += $$QT_SOURCE_TREE/src/gui/text/qfontengine_ft.cpp
-    CONFIG += opentype
 }
 
-ios: \
-    # On iOS CoreText and CoreGraphics are stand-alone frameworks
+uikit: \
+    # On iOS/tvOS CoreText and CoreGraphics are stand-alone frameworks
     LIBS_PRIVATE += -framework CoreText -framework CoreGraphics
 else: \
     # On Mac OS they are part of the ApplicationServices umbrella framework,

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -57,7 +63,7 @@ class QImageWriter;
 struct Q_GUI_EXPORT QImageData {        // internal image data
     QImageData();
     ~QImageData();
-    static QImageData *create(const QSize &size, QImage::Format format, int numColors = 0);
+    static QImageData *create(const QSize &size, QImage::Format format);
     static QImageData *create(uchar *data, int w, int h,  int bpl, QImage::Format format, bool readOnly, QImageCleanupFunction cleanupFunction = 0, void *cleanupInfo = 0);
 
     QAtomicInt ref;
@@ -111,8 +117,6 @@ bool convert_generic_inplace(QImageData *data, QImage::Format dst_format, Qt::Im
 
 void dither_to_Mono(QImageData *dst, const QImageData *src, Qt::ImageConversionFlags flags, bool fromalpha);
 
-void qInitImageConversions();
-
 const uchar *qt_get_bitflip_array();
 Q_GUI_EXPORT void qGamma_correct_back_to_linear_cs(QImage *image);
 
@@ -163,9 +167,50 @@ inline int qt_depthForFormat(QImage::Format format)
     }
     return depth;
 }
+
 #if defined(_M_ARM)
 #pragma optimize("", on)
 #endif
+
+inline QImage::Format qt_alphaVersion(QImage::Format format)
+{
+    switch (format) {
+    case QImage::Format_RGB16:
+        return QImage::Format_ARGB8565_Premultiplied;
+    case QImage::Format_RGB555:
+        return QImage::Format_ARGB8555_Premultiplied;
+    case QImage::Format_RGB666:
+        return QImage::Format_ARGB6666_Premultiplied;
+    case QImage::Format_RGB444:
+        return QImage::Format_ARGB4444_Premultiplied;
+    case QImage::Format_RGBX8888:
+        return QImage::Format_RGBA8888_Premultiplied;
+    case QImage::Format_BGR30:
+        return QImage::Format_A2BGR30_Premultiplied;
+    case QImage::Format_RGB30:
+        return QImage::Format_A2RGB30_Premultiplied;
+    default:
+        break;
+    }
+    return QImage::Format_ARGB32_Premultiplied;
+}
+
+inline QImage::Format qt_maybeAlphaVersionWithSameDepth(QImage::Format format)
+{
+    const QImage::Format toFormat = qt_alphaVersion(format);
+    return qt_depthForFormat(format) == qt_depthForFormat(toFormat) ? toFormat : format;
+}
+
+inline QImage::Format qt_alphaVersionForPainting(QImage::Format format)
+{
+    QImage::Format toFormat = qt_alphaVersion(format);
+#if defined(__ARM_NEON__) || defined(__SSE2__)
+    // If we are switching depth anyway and we have optimized ARGB32PM routines, upgrade to that.
+    if (qt_depthForFormat(format) != qt_depthForFormat(toFormat))
+        toFormat = QImage::Format_ARGB32_Premultiplied;
+#endif
+    return toFormat;
+}
 
 QT_END_NAMESPACE
 

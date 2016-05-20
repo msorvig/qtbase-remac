@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -53,9 +59,12 @@
 #include <qpa/qplatformintegration.h>
 #include <qpa/qplatformservices.h>
 #include <qpa/qplatformdialoghelper.h>
+#ifndef QT_NO_DBUS
+#include "QtPlatformSupport/private/qdbusplatformmenu_p.h"
+#include "QtPlatformSupport/private/qdbusmenubar_p.h"
+#endif
 #if !defined(QT_NO_DBUS) && !defined(QT_NO_SYSTEMTRAYICON)
 #include "QtPlatformSupport/private/qdbustrayicon_p.h"
-#include "QtPlatformSupport/private/qdbusplatformmenu_p.h"
 #endif
 
 #include <algorithm>
@@ -108,6 +117,21 @@ static bool isDBusTrayAvailable() {
 }
 #endif
 
+#ifndef QT_NO_DBUS
+static bool checkDBusGlobalMenuAvailable()
+{
+    QDBusConnection connection = QDBusConnection::sessionBus();
+    QString registrarService = QStringLiteral("com.canonical.AppMenu.Registrar");
+    return connection.interface()->isServiceRegistered(registrarService);
+}
+
+static bool isDBusGlobalMenuAvailable()
+{
+    static bool dbusGlobalMenuAvailable = checkDBusGlobalMenuAvailable();
+    return dbusGlobalMenuAvailable;
+}
+#endif
+
 class QGenericUnixThemePrivate : public QPlatformThemePrivate
 {
 public:
@@ -153,8 +177,9 @@ QStringList QGenericUnixTheme::xdgIconThemePaths()
     QString xdgDirString = QFile::decodeName(qgetenv("XDG_DATA_DIRS"));
     if (xdgDirString.isEmpty())
         xdgDirString = QLatin1String("/usr/local/share/:/usr/share/");
-    foreach (const QString &xdgDir, xdgDirString.split(QLatin1Char(':'))) {
-        const QFileInfo xdgIconsDir(xdgDir + QStringLiteral("/icons"));
+    const auto xdgDirs = xdgDirString.splitRef(QLatin1Char(':'));
+    for (const QStringRef &xdgDir : xdgDirs) {
+        const QFileInfo xdgIconsDir(xdgDir + QLatin1String("/icons"));
         if (xdgIconsDir.isDir())
             paths.append(xdgIconsDir.absoluteFilePath());
     }
@@ -165,6 +190,15 @@ QStringList QGenericUnixTheme::xdgIconThemePaths()
 
     return paths;
 }
+
+#ifndef QT_NO_DBUS
+QPlatformMenuBar *QGenericUnixTheme::createPlatformMenuBar() const
+{
+    if (isDBusGlobalMenuAvailable())
+        return new QDBusMenuBar();
+    return nullptr;
+}
+#endif
 
 #if !defined(QT_NO_DBUS) && !defined(QT_NO_SYSTEMTRAYICON)
 QPlatformSystemTrayIcon *QGenericUnixTheme::createPlatformSystemTrayIcon() const
@@ -243,8 +277,13 @@ void QKdeThemePrivate::refresh()
     toolButtonStyle = Qt::ToolButtonTextBesideIcon;
     toolBarIconSize = 0;
     styleNames.clear();
+    if (kdeVersion >= 5)
+        styleNames << QStringLiteral("breeze");
     styleNames << QStringLiteral("Oxygen") << QStringLiteral("fusion") << QStringLiteral("windows");
-    iconFallbackThemeName = iconThemeName = QStringLiteral("oxygen");
+    if (kdeVersion >= 5)
+        iconFallbackThemeName = iconThemeName = QStringLiteral("breeze");
+    else
+        iconFallbackThemeName = iconThemeName = QStringLiteral("oxygen");
 
     QHash<QString, QSettings*> kdeSettings;
 
@@ -541,12 +580,21 @@ QPlatformTheme *QKdeTheme::createKdeTheme()
 
     kdeDirs.removeDuplicates();
     if (kdeDirs.isEmpty()) {
-        qWarning("%s: Unable to determine KDE dirs", Q_FUNC_INFO);
+        qWarning("Unable to determine KDE dirs");
         return 0;
     }
 
     return new QKdeTheme(kdeDirs, kdeVersion);
 }
+
+#ifndef QT_NO_DBUS
+QPlatformMenuBar *QKdeTheme::createPlatformMenuBar() const
+{
+    if (isDBusGlobalMenuAvailable())
+        return new QDBusMenuBar();
+    return nullptr;
+}
+#endif
 
 #if !defined(QT_NO_DBUS) && !defined(QT_NO_SYSTEMTRAYICON)
 QPlatformSystemTrayIcon *QKdeTheme::createPlatformSystemTrayIcon() const
@@ -572,23 +620,23 @@ const char *QGnomeTheme::name = "gnome";
 class QGnomeThemePrivate : public QPlatformThemePrivate
 {
 public:
-    QGnomeThemePrivate() : fontsConfigured(false) { }
+    QGnomeThemePrivate() : systemFont(Q_NULLPTR), fixedFont(Q_NULLPTR) {}
+    ~QGnomeThemePrivate() { delete systemFont; delete fixedFont; }
+
     void configureFonts(const QString &gtkFontName) const
     {
-        Q_ASSERT(!fontsConfigured);
+        Q_ASSERT(!systemFont);
         const int split = gtkFontName.lastIndexOf(QChar::Space);
-        float size = gtkFontName.mid(split+1).toFloat();
+        float size = gtkFontName.midRef(split + 1).toFloat();
         QString fontName = gtkFontName.left(split);
 
-        systemFont = QFont(fontName, size);
-        fixedFont = QFont(QLatin1String("monospace"), systemFont.pointSize());
-        fixedFont.setStyleHint(QFont::TypeWriter);
-        fontsConfigured = true;
+        systemFont = new QFont(fontName, size);
+        fixedFont = new QFont(QLatin1String("monospace"), systemFont->pointSize());
+        fixedFont->setStyleHint(QFont::TypeWriter);
     }
 
-    mutable QFont systemFont;
-    mutable QFont fixedFont;
-    mutable bool fontsConfigured;
+    mutable QFont *systemFont;
+    mutable QFont *fixedFont;
 };
 
 QGnomeTheme::QGnomeTheme()
@@ -604,8 +652,9 @@ QVariant QGnomeTheme::themeHint(QPlatformTheme::ThemeHint hint) const
     case QPlatformTheme::DialogButtonBoxLayout:
         return QVariant(QPlatformDialogHelper::GnomeLayout);
     case QPlatformTheme::SystemIconThemeName:
+        return QVariant(QStringLiteral("Adwaita"));
     case QPlatformTheme::SystemIconFallbackThemeName:
-        return QVariant(QString(QStringLiteral("gnome")));
+        return QVariant(QStringLiteral("gnome"));
     case QPlatformTheme::IconThemeSearchPaths:
         return QVariant(QGenericUnixTheme::xdgIconThemePaths());
     case QPlatformTheme::StyleNames: {
@@ -626,13 +675,13 @@ QVariant QGnomeTheme::themeHint(QPlatformTheme::ThemeHint hint) const
 const QFont *QGnomeTheme::font(Font type) const
 {
     Q_D(const QGnomeTheme);
-    if (!d->fontsConfigured)
+    if (!d->systemFont)
         d->configureFonts(gtkFontName());
     switch (type) {
     case QPlatformTheme::SystemFont:
-        return &d->systemFont;
+        return d->systemFont;
     case QPlatformTheme::FixedFont:
-        return &d->fixedFont;
+        return d->fixedFont;
     default:
         return 0;
     }
@@ -642,6 +691,15 @@ QString QGnomeTheme::gtkFontName() const
 {
     return QStringLiteral("%1 %2").arg(QLatin1String(defaultSystemFontNameC)).arg(defaultSystemFontSize);
 }
+
+#ifndef QT_NO_DBUS
+QPlatformMenuBar *QGnomeTheme::createPlatformMenuBar() const
+{
+    if (isDBusGlobalMenuAvailable())
+        return new QDBusMenuBar();
+    return nullptr;
+}
+#endif
 
 #if !defined(QT_NO_DBUS) && !defined(QT_NO_SYSTEMTRAYICON)
 QPlatformSystemTrayIcon *QGnomeTheme::createPlatformSystemTrayIcon() const
@@ -708,9 +766,9 @@ QStringList QGenericUnixTheme::themeNames()
                 result.push_back(QLatin1String(QKdeTheme::name));
 #endif
             } else if (gtkBasedEnvironments.contains(desktopName)) {
-                // prefer the GTK2 theme implementation with native dialogs etc.
-                result.push_back(QStringLiteral("gtk2"));
-                // fallback to the generic Gnome theme if loading the GTK2 theme fails
+                // prefer the GTK3 theme implementation with native dialogs etc.
+                result.push_back(QStringLiteral("gtk3"));
+                // fallback to the generic Gnome theme if loading the GTK3 theme fails
                 result.push_back(QLatin1String(QGnomeTheme::name));
             }
         }

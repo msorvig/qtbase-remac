@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,6 +45,8 @@
 #include <initializer_list>
 #endif
 
+#include <iterator>
+
 QT_BEGIN_NAMESPACE
 
 
@@ -48,7 +56,7 @@ class QSet
     typedef QHash<T, QHashDummyValue> Hash;
 
 public:
-    inline QSet() {}
+    inline QSet() Q_DECL_NOTHROW {}
 #ifdef Q_COMPILER_INITIALIZER_LISTS
     inline QSet(std::initializer_list<T> list)
     {
@@ -60,7 +68,7 @@ public:
     // compiler-generated copy/move ctor/assignment operators are fine!
     // compiler-generated destructor is fine!
 
-    inline void swap(QSet<T> &other) { q_hash.swap(other.q_hash); }
+    inline void swap(QSet<T> &other) Q_DECL_NOTHROW { q_hash.swap(other.q_hash); }
 
     inline bool operator==(const QSet<T> &other) const
         { return q_hash == other.q_hash; }
@@ -96,6 +104,7 @@ public:
         typedef QHash<T, QHashDummyValue> Hash;
         typename Hash::iterator i;
         friend class const_iterator;
+        friend class QSet<T>;
 
     public:
         typedef std::bidirectional_iterator_tag iterator_category;
@@ -161,18 +170,31 @@ public:
     };
 
     // STL style
+    typedef std::reverse_iterator<iterator> reverse_iterator;
+    typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
+
     inline iterator begin() { return q_hash.begin(); }
-    inline const_iterator begin() const { return q_hash.begin(); }
-    inline const_iterator cbegin() const { return q_hash.begin(); }
-    inline const_iterator constBegin() const { return q_hash.constBegin(); }
+    inline const_iterator begin() const Q_DECL_NOTHROW { return q_hash.begin(); }
+    inline const_iterator cbegin() const Q_DECL_NOTHROW { return q_hash.begin(); }
+    inline const_iterator constBegin() const Q_DECL_NOTHROW { return q_hash.constBegin(); }
     inline iterator end() { return q_hash.end(); }
-    inline const_iterator end() const { return q_hash.end(); }
-    inline const_iterator cend() const { return q_hash.end(); }
-    inline const_iterator constEnd() const { return q_hash.constEnd(); }
+    inline const_iterator end() const Q_DECL_NOTHROW { return q_hash.end(); }
+    inline const_iterator cend() const Q_DECL_NOTHROW { return q_hash.end(); }
+    inline const_iterator constEnd() const Q_DECL_NOTHROW { return q_hash.constEnd(); }
+
+    reverse_iterator rbegin() { return reverse_iterator(end()); }
+    reverse_iterator rend() { return reverse_iterator(begin()); }
+    const_reverse_iterator rbegin() const Q_DECL_NOTHROW { return const_reverse_iterator(end()); }
+    const_reverse_iterator rend() const Q_DECL_NOTHROW { return const_reverse_iterator(begin()); }
+    const_reverse_iterator crbegin() const Q_DECL_NOTHROW { return const_reverse_iterator(end()); }
+    const_reverse_iterator crend() const Q_DECL_NOTHROW { return const_reverse_iterator(begin()); }
+
     iterator erase(iterator i)
+    { return erase(m2c(i)); }
+    iterator erase(const_iterator i)
     {
         Q_ASSERT_X(isValidIterator(i), "QSet::erase", "The specified const_iterator argument 'i' is invalid");
-        return q_hash.erase(reinterpret_cast<typename Hash::iterator &>(i));
+        return q_hash.erase(reinterpret_cast<typename Hash::const_iterator &>(i));
     }
 
     // more Qt
@@ -227,9 +249,17 @@ public:
 
 private:
     Hash q_hash;
+
+    static const_iterator m2c(iterator it) Q_DECL_NOTHROW
+    { return const_iterator(typename Hash::const_iterator(it.i.i)); }
+
     bool isValidIterator(const iterator &i) const
     {
         return q_hash.isValidIterator(reinterpret_cast<const typename Hash::iterator&>(i));
+    }
+    bool isValidIterator(const const_iterator &i) const Q_DECL_NOTHROW
+    {
+        return q_hash.isValidIterator(reinterpret_cast<const typename Hash::const_iterator&>(i));
     }
 };
 

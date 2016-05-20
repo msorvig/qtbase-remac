@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -254,10 +260,8 @@ void QLineEdit::initStyleOption(QStyleOptionFrame *option) const
     \sa setText(), setMaxLength()
 */
 QLineEdit::QLineEdit(QWidget* parent)
-    : QWidget(*new QLineEditPrivate, parent,0)
+    : QLineEdit(QString(), parent)
 {
-    Q_D(QLineEdit);
-    d->init(QString());
 }
 
 /*!
@@ -562,16 +566,10 @@ void QLineEdit::setEchoMode(EchoMode mode)
     if (mode == (EchoMode)d->control->echoMode())
         return;
     Qt::InputMethodHints imHints = inputMethodHints();
-    if (mode == Password || mode == NoEcho) {
-        imHints |= Qt::ImhHiddenText;
-    } else {
-        imHints &= ~Qt::ImhHiddenText;
-    }
-    if (mode != Normal) {
-        imHints |= (Qt::ImhNoAutoUppercase | Qt::ImhNoPredictiveText | Qt::ImhSensitiveData);
-    } else {
-        imHints &= ~(Qt::ImhNoAutoUppercase | Qt::ImhNoPredictiveText | Qt::ImhSensitiveData);
-    }
+    imHints.setFlag(Qt::ImhHiddenText, mode == Password || mode == NoEcho);
+    imHints.setFlag(Qt::ImhNoAutoUppercase, mode != Normal);
+    imHints.setFlag(Qt::ImhNoPredictiveText, mode != Normal);
+    imHints.setFlag(Qt::ImhSensitiveData, mode != Normal);
     setInputMethodHints(imHints);
     d->control->setEchoMode(mode);
     update();
@@ -982,7 +980,7 @@ int QLineEdit::selectionStart() const
 void QLineEdit::setSelection(int start, int length)
 {
     Q_D(QLineEdit);
-    if (start < 0 || start > (int)d->control->end()) {
+    if (Q_UNLIKELY(start < 0 || start > (int)d->control->end())) {
         qWarning("QLineEdit::setSelection: Invalid start position (%d)", start);
         return;
     }
@@ -1423,11 +1421,11 @@ bool QLineEdit::event(QEvent * e)
         d->control->processShortcutOverrideEvent(ke);
 #endif
     } else if (e->type() == QEvent::KeyRelease) {
-        d->control->setCursorBlinkPeriod(QApplication::cursorFlashTime());
+        d->control->updateCursorBlinking();
     } else if (e->type() == QEvent::Show) {
         //In order to get the cursor blinking if QComboBox::setEditable is called when the combobox has focus
         if (hasFocus()) {
-            d->control->setCursorBlinkPeriod(QApplication::cursorFlashTime());
+            d->control->setBlinkingCursorEnabled(true);
             QStyleOptionFrame opt;
             initStyleOption(&opt);
             if ((!hasSelectedText() && d->control->preeditAreaText().isEmpty())
@@ -1444,10 +1442,10 @@ bool QLineEdit::event(QEvent * e)
         if (e->type() == QEvent::EnterEditFocus) {
             end(false);
             d->setCursorVisible(true);
-            d->control->setCursorBlinkPeriod(QApplication::cursorFlashTime());
+            d->control->setCursorBlinkEnabled(true);
         } else if (e->type() == QEvent::LeaveEditFocus) {
             d->setCursorVisible(false);
-            d->control->setCursorBlinkPeriod(0);
+            d->control->setCursorBlinkEnabled(false);
             if (d->control->hasAcceptableInput() || d->control->fixup())
                 emit editingFinished();
         }
@@ -1488,7 +1486,7 @@ void QLineEdit::mousePressEvent(QMouseEvent* e)
     int cursor = d->xToPos(e->pos().x());
 #ifndef QT_NO_DRAGANDDROP
     if (!mark && d->dragEnabled && d->control->echoMode() == Normal &&
-         e->button() == Qt::LeftButton && d->control->inSelection(e->pos().x())) {
+         e->button() == Qt::LeftButton && d->inSelection(e->pos().x())) {
         if (!d->dndTimer.isActive())
             d->dndTimer.start(QApplication::startDragTime(), this);
     } else
@@ -1694,7 +1692,7 @@ void QLineEdit::keyPressEvent(QKeyEvent *event)
     if (event->isAccepted()) {
         if (layoutDirection() != d->control->layoutDirection())
             setLayoutDirection(d->control->layoutDirection());
-        d->control->setCursorBlinkPeriod(0);
+        d->control->updateCursorBlinking();
     }
 }
 
@@ -1749,14 +1747,26 @@ void QLineEdit::inputMethodEvent(QInputMethodEvent *e)
 */
 QVariant QLineEdit::inputMethodQuery(Qt::InputMethodQuery property) const
 {
+    return inputMethodQuery(property, QVariant());
+}
+
+/*!\internal
+*/
+QVariant QLineEdit::inputMethodQuery(Qt::InputMethodQuery property, QVariant argument) const
+{
     Q_D(const QLineEdit);
     switch(property) {
     case Qt::ImCursorRectangle:
         return d->cursorRect();
+    case Qt::ImAnchorRectangle:
+        return d->adjustedControlRect(d->control->anchorRect());
     case Qt::ImFont:
         return font();
-    case Qt::ImCursorPosition:
-        return QVariant(d->control->cursor());
+    case Qt::ImCursorPosition: {
+        const QPointF pt = argument.toPointF();
+        if (!pt.isNull())
+            return QVariant(d->xToPos(pt.x(), QTextLine::CursorBetweenCharacters));
+        return QVariant(d->control->cursor()); }
     case Qt::ImSurroundingText:
         return QVariant(d->control->text());
     case Qt::ImCurrentSelection:
@@ -1794,7 +1804,7 @@ void QLineEdit::focusInEvent(QFocusEvent *e)
 #ifdef QT_KEYPAD_NAVIGATION
     if (!QApplication::keypadNavigationEnabled() || (hasEditFocus() && ( e->reason() == Qt::PopupFocusReason))) {
 #endif
-    d->control->setCursorBlinkPeriod(QApplication::cursorFlashTime());
+    d->control->setBlinkingCursorEnabled(true);
     QStyleOptionFrame opt;
     initStyleOption(&opt);
     if((!hasSelectedText() && d->control->preeditAreaText().isEmpty())
@@ -1838,7 +1848,7 @@ void QLineEdit::focusOutEvent(QFocusEvent *e)
         deselect();
 
     d->setCursorVisible(false);
-    d->control->setCursorBlinkPeriod(0);
+    d->control->setBlinkingCursorEnabled(false);
 #ifdef QT_KEYPAD_NAVIGATION
     // editingFinished() is already emitted on LeaveEditFocus
     if (!QApplication::keypadNavigationEnabled())
@@ -1899,13 +1909,19 @@ void QLineEdit::paintEvent(QPaintEvent *)
 
     if (d->shouldShowPlaceholderText()) {
         if (!d->placeholderText.isEmpty()) {
+            const Qt::LayoutDirection layoutDir = d->placeholderText.isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight;
+            const Qt::Alignment alignPhText = QStyle::visualAlignment(layoutDir, QFlag(d->alignment));
             QColor col = pal.text().color();
             col.setAlpha(128);
             QPen oldpen = p.pen();
             p.setPen(col);
-            QString elidedText = fm.elidedText(d->placeholderText, Qt::ElideRight, lineRect.width());
-            p.drawText(lineRect, va, elidedText);
+            Qt::LayoutDirection oldLayoutDir = p.layoutDirection();
+            p.setLayoutDirection(layoutDir);
+
+            const QString elidedText = fm.elidedText(d->placeholderText, Qt::ElideRight, lineRect.width());
+            p.drawText(lineRect, alignPhText, elidedText);
             p.setPen(oldpen);
+            p.setLayoutDirection(oldLayoutDir);
         }
     }
 
@@ -2180,9 +2196,10 @@ void QLineEdit::changeEvent(QEvent *ev)
         update();
         break;
     case QEvent::LayoutDirectionChange:
-        foreach (const QLineEditPrivate::SideWidgetEntry &e, d->trailingSideWidgets) // Refresh icon to show arrow in right direction.
+        for (const auto &e : d->trailingSideWidgets) { // Refresh icon to show arrow in right direction.
             if (e.flags & QLineEditPrivate::SideWidgetClearButton)
                 static_cast<QLineEditIconButton *>(e.widget)->setIcon(d->clearButtonIcon());
+        }
         d->positionSideWidgets();
         break;
     default:

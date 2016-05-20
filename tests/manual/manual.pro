@@ -2,6 +2,7 @@ TEMPLATE=subdirs
 
 SUBDIRS = bearerex \
 filetest \
+foreignwindows \
 gestures \
 inputmethodhints \
 keypadnavigation \
@@ -30,6 +31,7 @@ qsysinfo \
 qtabletevent \
 qtexteditlist \
 qtbug-8933 \
+qtbug-52641 \
 qtouchevent \
 touch \
 qwidget_zorder \
@@ -55,11 +57,8 @@ contains(QT_CONFIG, opengl) {
     contains(QT_CONFIG, egl): SUBDIRS += qopenglcontext
 }
 
-win32 {
-    SUBDIRS -= network_remote_stresstest network_stresstest
-    # disable some tests on wince because of missing dependencies
-    wince: SUBDIRS -= lance windowmodality
-}
+win32: SUBDIRS -= network_remote_stresstest network_stresstest
 
 lessThan(QT_MAJOR_VERSION, 5): SUBDIRS -= bearerex lance qnetworkaccessmanager/qget qmimedatabase qnetworkreply \
-qpainfo qscreen  socketengine xembed-raster xembed-widgets windowtransparency
+qpainfo qscreen  socketengine xembed-raster xembed-widgets windowtransparency \
+foreignwindows

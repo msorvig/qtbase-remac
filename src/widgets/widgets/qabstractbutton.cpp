@@ -1,37 +1,45 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
 
-#include "qabstractbutton.h"
+#include "private/qabstractbutton_p.h"
+
+#include "private/qbuttongroup_p.h"
 #include "qabstractitemview.h"
 #include "qbuttongroup.h"
 #include "qabstractbutton_p.h"
@@ -171,137 +179,6 @@ QAbstractButtonPrivate::QAbstractButtonPrivate(QSizePolicy::ControlType type)
     controlType(type)
 {}
 
-#ifndef QT_NO_BUTTONGROUP
-
-class QButtonGroupPrivate: public QObjectPrivate
-{
-    Q_DECLARE_PUBLIC(QButtonGroup)
-
-public:
-    QButtonGroupPrivate():exclusive(true){}
-    QList<QAbstractButton *> buttonList;
-    QPointer<QAbstractButton> checkedButton;
-    void detectCheckedButton();
-    void notifyChecked(QAbstractButton *button);
-    bool exclusive;
-    QHash<QAbstractButton*, int> mapping;
-};
-
-QButtonGroup::QButtonGroup(QObject *parent)
-    : QObject(*new QButtonGroupPrivate, parent)
-{
-}
-
-QButtonGroup::~QButtonGroup()
-{
-    Q_D(QButtonGroup);
-    for (int i = 0; i < d->buttonList.count(); ++i)
-        d->buttonList.at(i)->d_func()->group = 0;
-}
-
-
-bool QButtonGroup::exclusive() const
-{
-    Q_D(const QButtonGroup);
-    return d->exclusive;
-}
-
-void QButtonGroup::setExclusive(bool exclusive)
-{
-    Q_D(QButtonGroup);
-    d->exclusive = exclusive;
-}
-
-
-void QButtonGroup::addButton(QAbstractButton *button, int id)
-{
-    Q_D(QButtonGroup);
-    if (QButtonGroup *previous = button->d_func()->group)
-        previous->removeButton(button);
-    button->d_func()->group = this;
-    d->buttonList.append(button);
-    if (id == -1) {
-        const QHash<QAbstractButton*, int>::const_iterator it
-                = std::min_element(d->mapping.cbegin(), d->mapping.cend());
-        if (it == d->mapping.cend())
-            d->mapping[button] = -2;
-        else
-            d->mapping[button] = *it - 1;
-    } else {
-        d->mapping[button] = id;
-    }
-
-    if (d->exclusive && button->isChecked())
-        button->d_func()->notifyChecked();
-}
-
-void QButtonGroup::removeButton(QAbstractButton *button)
-{
-    Q_D(QButtonGroup);
-    if (d->checkedButton == button) {
-        d->detectCheckedButton();
-    }
-    if (button->d_func()->group == this) {
-        button->d_func()->group = 0;
-        d->buttonList.removeAll(button);
-        d->mapping.remove(button);
-    }
-}
-
-QList<QAbstractButton*> QButtonGroup::buttons() const
-{
-    Q_D(const QButtonGroup);
-    return d->buttonList;
-}
-
-QAbstractButton *QButtonGroup::checkedButton() const
-{
-    Q_D(const QButtonGroup);
-    return d->checkedButton;
-}
-
-QAbstractButton *QButtonGroup::button(int id) const
-{
-    Q_D(const QButtonGroup);
-    return d->mapping.key(id);
-}
-
-void QButtonGroup::setId(QAbstractButton *button, int id)
-{
-    Q_D(QButtonGroup);
-    if (button && id != -1)
-        d->mapping[button] = id;
-}
-
-int QButtonGroup::id(QAbstractButton *button) const
-{
-    Q_D(const QButtonGroup);
-    return d->mapping.value(button, -1);
-}
-
-int QButtonGroup::checkedId() const
-{
-    Q_D(const QButtonGroup);
-    return d->mapping.value(d->checkedButton, -1);
-}
-
-// detect a checked button other than the current one
-void QButtonGroupPrivate::detectCheckedButton()
-{
-    QAbstractButton *previous = checkedButton;
-    checkedButton = 0;
-    if (exclusive)
-        return;
-    for (int i = 0; i < buttonList.count(); i++) {
-        if (buttonList.at(i) != previous && buttonList.at(i)->isChecked()) {
-            checkedButton = buttonList.at(i);
-            return;
-        }
-    }
-}
-
-#endif // QT_NO_BUTTONGROUP
-
 QList<QAbstractButton *>QAbstractButtonPrivate::queryButtonList() const
 {
 #ifndef QT_NO_BUTTONGROUP
@@ -311,15 +188,16 @@ QList<QAbstractButton *>QAbstractButtonPrivate::queryButtonList() const
 
     QList<QAbstractButton*>candidates = parent->findChildren<QAbstractButton *>();
     if (autoExclusive) {
-        for (int i = candidates.count() - 1; i >= 0; --i) {
-            QAbstractButton *candidate = candidates.at(i);
-            if (!candidate->autoExclusive()
+        auto isNoMemberOfMyAutoExclusiveGroup = [](QAbstractButton *candidate) {
+            return !candidate->autoExclusive()
 #ifndef QT_NO_BUTTONGROUP
                 || candidate->group()
 #endif
-                )
-                candidates.removeAt(i);
-        }
+                ;
+        };
+        candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+                                        isNoMemberOfMyAutoExclusiveGroup),
+                         candidates.end());
     }
     return candidates;
 }
@@ -1221,16 +1099,14 @@ void QAbstractButton::keyPressEvent(QKeyEvent *e)
         }
         break;
     }
-    case Qt::Key_Escape:
-        if (d->down) {
+    default:
+        if (e->matches(QKeySequence::Cancel) && d->down) {
             setDown(false);
             repaint(); //flush paint event before invoking potentially expensive operation
             QApplication::flush();
             d->emitReleased();
-            break;
+            return;
         }
-        // fall through
-    default:
         e->ignore();
     }
 }
@@ -1415,3 +1291,5 @@ void QAbstractButton::setIconSize(const QSize &size)
 
 
 QT_END_NAMESPACE
+
+#include "moc_qabstractbutton.cpp"

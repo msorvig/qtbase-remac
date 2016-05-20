@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -44,7 +51,9 @@
 #include "qvariant.h"
 #include "qcache.h"
 #include "qdebug.h"
+#include "qdir.h"
 #include "qpalette.h"
+#include "qmath.h"
 
 #include "private/qhexstring_p.h"
 #include "private/qguiapplication_p.h"
@@ -434,7 +443,7 @@ void QPixmapIconEngine::addFile(const QString &fileName, const QSize &size, QIco
             }
         }
     }
-    foreach (const QImage &i, icoImages)
+    for (const QImage &i : qAsConst(icoImages))
         pixmaps += QPixmapIconEngineEntry(abs, i, mode, state);
     if (icoImages.isEmpty() && !ignoreSize) // Add placeholder with the filename and empty pixmap for the size.
         pixmaps += QPixmapIconEngineEntry(abs, size, mode, state);
@@ -521,7 +530,6 @@ void QPixmapIconEngine::virtual_hook(int id, void *data)
     }
 }
 
-#ifndef QT_NO_LIBRARY
 Q_GLOBAL_STATIC_WITH_ARGS(QFactoryLoader, loader,
     (QIconEngineFactoryInterface_iid, QLatin1String("/iconengines"), Qt::CaseInsensitive))
 
@@ -529,8 +537,6 @@ QFactoryLoader *qt_iconEngineFactoryLoader()
 {
     return loader();
 }
-#endif
-
 
 
 /*!
@@ -1007,7 +1013,6 @@ void QIcon::addFile(const QString &fileName, const QSize &size, Mode mode, State
         return;
     detach();
     if (!d) {
-#ifndef QT_NO_LIBRARY
         QFileInfo info(fileName);
         QString suffix = info.suffix();
         if (!suffix.isEmpty()) {
@@ -1022,26 +1027,19 @@ void QIcon::addFile(const QString &fileName, const QSize &size, Mode mode, State
                 }
             }
         }
-#endif
         // ...then fall back to the default engine
         if (!d) {
             d = new QIconPrivate;
             d->engine = new QPixmapIconEngine;
         }
     }
+
     d->engine->addFile(fileName, size, mode, state);
 
-    // Check if a "@2x" file exists and add it.
-    static bool disable2xImageLoading = !qEnvironmentVariableIsEmpty("QT_HIGHDPI_DISABLE_2X_IMAGE_LOADING");
-    if (!disable2xImageLoading && qApp->devicePixelRatio() > 1.0) {
-        QString at2xfileName = fileName;
-        int dotIndex = fileName.lastIndexOf(QLatin1Char('.'));
-        if (dotIndex == -1) /* no dot */
-            dotIndex = fileName.size(); /* append */
-        at2xfileName.insert(dotIndex, QStringLiteral("@2x"));
-        if (QFile::exists(at2xfileName))
-            d->engine->addFile(at2xfileName, size, mode, state);
-    }
+    // Check if a "@Nx" file exists and add it.
+    QString atNxFileName = qt_findAtNxFile(fileName, qApp->devicePixelRatio());
+    if (atNxFileName != fileName)
+        d->engine->addFile(atNxFileName, size, mode, state);
 }
 
 /*!
@@ -1174,6 +1172,8 @@ QIcon QIcon::fromTheme(const QString &name)
 
     if (qtIconCache()->contains(name)) {
         icon = *qtIconCache()->object(name);
+    } else if (QDir::isAbsolutePath(name)) {
+        return QIcon(name);
     } else {
         QPlatformTheme * const platformTheme = QGuiApplicationPrivate::platformTheme();
         bool hasUserTheme = QIconLoader::instance()->hasUserTheme();
@@ -1233,6 +1233,12 @@ bool QIcon::hasThemeIcon(const QString &name)
 */
 void QIcon::setIsMask(bool isMask)
 {
+    if (!d) {
+        d = new QIconPrivate;
+        d->engine = new QPixmapIconEngine;
+    } else {
+        detach();
+    }
     d->is_mask = isMask;
 }
 
@@ -1247,6 +1253,8 @@ void QIcon::setIsMask(bool isMask)
 */
 bool QIcon::isMask() const
 {
+    if (!d)
+        return false;
     return d->is_mask;
 }
 
@@ -1320,7 +1328,6 @@ QDataStream &operator>>(QDataStream &s, QIcon &icon)
             QIconEngine *engine = new QIconLoaderEngine();
             icon.d->engine = engine;
             engine->read(s);
-#ifndef QT_NO_LIBRARY
         } else {
             const int index = loader()->indexOf(key);
             if (index != -1) {
@@ -1332,7 +1339,6 @@ QDataStream &operator>>(QDataStream &s, QIcon &icon)
                     } // factory
                 } // instance
             } // index
-#endif
         }
     } else if (s.version() == QDataStream::Qt_4_2) {
         icon = QIcon();
@@ -1394,6 +1400,47 @@ QDebug operator<<(QDebug dbg, const QIcon &i)
     \typedef QIcon::DataPtr
     \internal
 */
+
+/*!
+    \internal
+    \since 5.6
+    Attempts to find a suitable @Nx file for the given \a targetDevicePixelRatio
+    Returns the the \a baseFileName if no such file was found.
+
+    Given base foo.png and a target dpr of 2.5, this function will look for
+    foo@3x.png, then foo@2x, then fall back to foo.png if not found.
+
+    \a sourceDevicePixelRatio will be set to the value of N if the argument is
+    a non-null pointer
+*/
+QString qt_findAtNxFile(const QString &baseFileName, qreal targetDevicePixelRatio,
+                        qreal *sourceDevicePixelRatio)
+{
+    if (targetDevicePixelRatio <= 1.0)
+        return baseFileName;
+
+    static bool disableNxImageLoading = !qEnvironmentVariableIsEmpty("QT_HIGHDPI_DISABLE_2X_IMAGE_LOADING");
+    if (disableNxImageLoading)
+        return baseFileName;
+
+    int dotIndex = baseFileName.lastIndexOf(QLatin1Char('.'));
+    if (dotIndex == -1) /* no dot */
+        dotIndex = baseFileName.size(); /* append */
+
+    QString atNxfileName = baseFileName;
+    atNxfileName.insert(dotIndex, QLatin1String("@2x"));
+    // Check for @Nx, ..., @3x, @2x file versions,
+    for (int n = qMin(qCeil(targetDevicePixelRatio), 9); n > 1; --n) {
+        atNxfileName[dotIndex + 1] = QLatin1Char('0' + n);
+        if (QFile::exists(atNxfileName)) {
+            if (sourceDevicePixelRatio)
+                *sourceDevicePixelRatio = n;
+            return atNxfileName;
+        }
+    }
+
+    return baseFileName;
+}
 
 QT_END_NAMESPACE
 #endif //QT_NO_ICON

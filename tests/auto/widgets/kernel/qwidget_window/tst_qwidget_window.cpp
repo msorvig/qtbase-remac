@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,6 +41,8 @@
 #include <qboxlayout.h>
 #include <qtabwidget.h>
 #include <qlabel.h>
+#include <qmainwindow.h>
+#include <qtoolbar.h>
 #include <private/qwindow_p.h>
 
 static inline void setFrameless(QWidget *w)
@@ -99,6 +96,8 @@ private slots:
     void tst_move_count();
 
     void tst_eventfilter_on_toplevel();
+
+    void QTBUG_50561_QCocoaBackingStore_paintDevice_crash();
 };
 
 void tst_QWidget_window::initTestCase()
@@ -206,32 +205,20 @@ void tst_QWidget_window::tst_show_resize_hide_show()
 //    QCoreApplication::processEvents(QEventLoop::AllEvents, 1000);
 }
 
-class TestWidget : public QWidget
+class PaintTestWidget : public QWidget
 {
 public:
-    int m_first, m_next;
-    bool paintEventReceived;
+    int paintEventCount;
 
-    void reset(){ m_first = m_next = 0; paintEventReceived = false; }
-    bool event(QEvent *event)
+    explicit PaintTestWidget(QWidget *parent = Q_NULLPTR)
+        : QWidget(parent)
+        , paintEventCount(0)
+    {}
+
+    void paintEvent(QPaintEvent *event) Q_DECL_OVERRIDE
     {
-        switch (event->type()) {
-        case QEvent::WindowActivate:
-        case QEvent::WindowDeactivate:
-        case QEvent::Hide:
-        case QEvent::Show:
-            if (m_first)
-                m_next = event->type();
-            else
-                m_first = event->type();
-            break;
-        case QEvent::Paint:
-            paintEventReceived = true;
-            break;
-        default:
-            break;
-        }
-        return QWidget::event(event);
+        ++paintEventCount;
+        QWidget::paintEvent(event);
     }
 };
 
@@ -338,43 +325,44 @@ void tst_QWidget_window::tst_windowFilePath()
 
 void tst_QWidget_window::tst_showWithoutActivating()
 {
-#ifndef Q_DEAD_CODE_FROM_QT4_X11
-    QSKIP("This test is X11-only.");
-#else
-    QWidget w;
-    w.show();
-    QVERIFY(QTest::qWaitForWindowExposed(&w));
-    QApplication::processEvents();
+    QString platformName = QGuiApplication::platformName().toLower();
+    if (platformName == "cocoa")
+        QSKIP("Cocoa: This fails. Figure out why.");
+    else if (platformName != QStringLiteral("xcb")
+            && platformName != QStringLiteral("windows")
+            && platformName != QStringLiteral("ios")
+            && platformName != QStringLiteral("tvos"))
+        QSKIP("Qt::WA_ShowWithoutActivating is currently supported only on xcb, windows, and ios/tvos platforms.");
 
-    QApplication::clipboard();
-    QLineEdit *lineEdit = new QLineEdit;
-    lineEdit->setAttribute(Qt::WA_ShowWithoutActivating, true);
-    lineEdit->show();
-    lineEdit->setAttribute(Qt::WA_ShowWithoutActivating, false);
-    lineEdit->raise();
-    lineEdit->activateWindow();
+    QWidget w1;
+    w1.setAttribute(Qt::WA_ShowWithoutActivating);
+    w1.show();
+    QVERIFY(!QTest::qWaitForWindowActive(&w1));
 
-    Window window;
-    int revertto;
-    QTRY_COMPARE(lineEdit->winId(),
-                 (XGetInputFocus(QX11Info::display(), &window, &revertto), window) );
-    // Note the use of the , before window because we want the XGetInputFocus to be re-executed
-    //     in each iteration of the inside loop of the QTRY_COMPARE macro
+    QWidget w2;
+    w2.show();
+    QVERIFY(QTest::qWaitForWindowActive(&w2));
 
-#endif // Q_DEAD_CODE_FROM_QT4_X11
+    QWidget w3;
+    w3.setAttribute(Qt::WA_ShowWithoutActivating);
+    w3.show();
+    QVERIFY(!QTest::qWaitForWindowActive(&w3));
+
+    w3.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&w3));
 }
 
 void tst_QWidget_window::tst_paintEventOnSecondShow()
 {
-    TestWidget w;
+    PaintTestWidget w;
     w.show();
     w.hide();
 
-    w.reset();
+    w.paintEventCount = 0;
     w.show();
     QVERIFY(QTest::qWaitForWindowExposed(&w));
     QApplication::processEvents();
-    QTRY_VERIFY(w.paintEventReceived);
+    QTRY_VERIFY(w.paintEventCount > 0);
 }
 
 #ifndef QT_NO_DRAGANDDROP
@@ -805,6 +793,47 @@ void tst_QWidget_window::tst_eventfilter_on_toplevel()
     // and check that it's received by the event filter
     QCoreApplication::postEvent(w.windowHandle(), new QEvent(EventFilter::filterEventType()));
     QTRY_COMPARE(filter.eventCount, 1);
+}
+
+class ApplicationStateSaver
+{
+public:
+    ApplicationStateSaver()
+    {
+        QApplication::setAttribute(Qt::AA_NativeWindows, true);
+        QApplication::setQuitOnLastWindowClosed(false);
+    }
+
+    ~ApplicationStateSaver()
+    {
+        QApplication::setAttribute(Qt::AA_NativeWindows, false);
+        QApplication::setQuitOnLastWindowClosed(true);
+    }
+};
+
+void tst_QWidget_window::QTBUG_50561_QCocoaBackingStore_paintDevice_crash()
+{
+    // Keep application state clean if testcase fails
+    ApplicationStateSaver as;
+
+    QMainWindow w;
+    w.addToolBar(new QToolBar(&w));
+    w.show();
+    QTest::qWaitForWindowExposed(&w);
+
+    // Simulate window system close
+    QCloseEvent *e = new QCloseEvent;
+    e->accept();
+    qApp->postEvent(w.windowHandle(), e);
+    qApp->processEvents();
+
+    // Show again
+    w.show();
+    qApp->processEvents();
+
+    // No crash, all good.
+    // Wrap up and leave
+    w.close();
 }
 
 QTEST_MAIN(tst_QWidget_window)

@@ -84,37 +84,38 @@ win32 {
         }
 }
 
-wince {
-        SOURCES += \
-                kernel/qfunctions_wince.cpp
-        HEADERS += \
-                kernel/qfunctions_wince.h
-}
-
 winrt {
         SOURCES += \
                 kernel/qfunctions_winrt.cpp
         HEADERS += \
+                kernel/qfunctions_fake_env_p.h \
                 kernel/qfunctions_winrt.h
 }
 
 mac {
     HEADERS += \
-        kernel/qcore_mac_p.h
+        kernel/qcfsocketnotifier_p.h \
+        kernel/qcore_mac_p.h \
+        kernel/qeventdispatcher_cf_p.h
 
     SOURCES += \
+        kernel/qcfsocketnotifier.cpp \
         kernel/qcoreapplication_mac.cpp \
-        kernel/qcore_mac.cpp
+        kernel/qcore_mac.cpp \
+        kernel/qcore_foundation.mm
 
     OBJECTIVE_SOURCES += \
-        kernel/qcore_mac_objc.mm
+        kernel/qcore_mac_objc.mm \
+        kernel/qeventdispatcher_cf.mm
 
     LIBS_PRIVATE += -framework Foundation
 
-    osx: LIBS_PRIVATE += -framework CoreServices
+    osx: LIBS_PRIVATE += -framework CoreServices -framework AppKit
 
-    # We need UIKit for UIDevice
-    ios: LIBS_PRIVATE += -framework UIKit
+    uikit {
+        # We need UIKit for UIDevice
+        LIBS_PRIVATE += -framework UIKit
+    }
 }
 
 nacl {
@@ -135,15 +136,21 @@ unix|integrity {
             kernel/qcore_unix_p.h \
             kernel/qcrashhandler_p.h \
             kernel/qeventdispatcher_unix_p.h \
+            kernel/qpoll_p.h \
             kernel/qtimerinfo_unix_p.h
+
+    contains(QT_CONFIG, poll_select): SOURCES += kernel/qpoll.cpp
+    contains(QT_CONFIG, poll_poll): DEFINES += QT_HAVE_POLL
+    contains(QT_CONFIG, poll_ppoll): DEFINES += QT_HAVE_POLL QT_HAVE_PPOLL
+    contains(QT_CONFIG, poll_pollts): DEFINES += QT_HAVE_POLL QT_HAVE_POLLTS
 
     contains(QT_CONFIG, glib) {
         SOURCES += \
             kernel/qeventdispatcher_glib.cpp
         HEADERS += \
             kernel/qeventdispatcher_glib_p.h
-        QMAKE_CXXFLAGS += $$QT_CFLAGS_GLIB
-        LIBS_PRIVATE +=$$QT_LIBS_GLIB
+        QMAKE_CXXFLAGS += $$QMAKE_CFLAGS_GLIB
+        LIBS_PRIVATE +=$$QMAKE_LIBS_GLIB
     }
 
    contains(QT_CONFIG, clock-gettime):include($$QT_SOURCE_TREE/config.tests/unix/clock-gettime/clock-gettime.pri)
@@ -168,13 +175,6 @@ vxworks {
                 kernel/qfunctions_vxworks.h
 }
 
-blackberry {
-        SOURCES += \
-                kernel/qeventdispatcher_blackberry.cpp
-        HEADERS += \
-                kernel/qeventdispatcher_blackberry_p.h
-}
-
 qqnx_pps {
         LIBS_PRIVATE += -lpps
         SOURCES += \
@@ -187,7 +187,7 @@ qqnx_pps {
                 kernel/qppsobjectprivate_p.h
 }
 
-android:!android-no-sdk {
+android {
         SOURCES += \
                    kernel/qjnionload.cpp \
                    kernel/qjnihelpers.cpp \

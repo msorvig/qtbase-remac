@@ -8,8 +8,7 @@ OBJS=project.o option.o property.o main.o ioutils.o proitems.o \
      makefile.o unixmake2.o unixmake.o  \
      mingw_make.o winmakefile.o projectgenerator.o \
      meta.o makefiledeps.o metamakefile.o xmloutput.o pbuilder_pbx.o \
-     msvc_vcproj.o msvc_vcxproj.o msvc_nmake.o msvc_objectmodel.o msbuild_objectmodel.o \
-     cesdkhandler.o
+     msvc_vcproj.o msvc_vcxproj.o msvc_nmake.o msvc_objectmodel.o msbuild_objectmodel.o
 
 #qt code
 QOBJS=qtextcodec.o qutfcodec.o qstring.o qstring_compat.o qstringbuilder.o qtextstream.o qiodevice.o \
@@ -36,7 +35,7 @@ DEPEND_SRC = \
 	   $(QMKGENSRC)/mac/pbuilder_pbx.cpp \
 	   $(QMKGENSRC)/win32/winmakefile.cpp \
 	   $(QMKGENSRC)/win32/mingw_make.cpp $(QMKGENSRC)/win32/msvc_nmake.cpp \
-	   $(QMKGENSRC)/win32/cesdkhandler.cpp $(QMKGENSRC)/mac/xmloutput.cpp  \
+	   $(QMKGENSRC)/mac/xmloutput.cpp \
 	   $(QMKGENSRC)/win32/msvc_vcproj.cpp $(QMKGENSRC)/win32/msvc_vcxproj.cpp \
 	   $(QMKGENSRC)/win32/msvc_objectmodel.cpp $(QMKGENSRC)/win32/msbuild_objectmodel.cpp \
 	   $(SOURCE_PATH)/src/corelib/codecs/qtextcodec.cpp $(SOURCE_PATH)/src/corelib/codecs/qutfcodec.cpp \
@@ -102,6 +101,7 @@ CPPFLAGS = -g $(EXTRA_CPPFLAGS) \
 	   -I$(BUILD_PATH)/src/corelib/global -DHAVE_QCONFIG_CPP \
 	   -I$(QMAKESPEC) \
 	   -I$(SOURCE_PATH)/tools/shared \
+	   -DQT_VERSION_STR=\"$(QT_VERSION)\" -DQT_VERSION_MAJOR=$(QT_MAJOR_VERSION) -DQT_VERSION_MINOR=$(QT_MINOR_VERSION) -DQT_VERSION_PATCH=$(QT_PATCH_VERSION) \
 	   -DQT_BUILD_QMAKE -DQT_BOOTSTRAPPED -DPROEVALUATOR_FULL \
 	   -DQT_NO_TEXTCODEC -DQT_NO_UNICODETABLES -DQT_NO_COMPONENT -DQT_NO_COMPRESS \
 	   -DQT_NO_THREAD -DQT_NO_QOBJECT -DQT_NO_GEOM_VARIANT -DQT_NO_DATASTREAM \
@@ -204,9 +204,6 @@ msvc_vcxproj.o: $(QMKSRC)/generators/win32/msvc_vcxproj.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 msvc_nmake.o: $(QMKSRC)/generators/win32/msvc_nmake.cpp
-	$(CXX) -c -o $@ $(CXXFLAGS) $<
-
-cesdkhandler.o: $(QMKSRC)/generators/win32/cesdkhandler.cpp
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
 pbuilder_pbx.o: $(QMKSRC)/generators/mac/pbuilder_pbx.cpp

@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -775,22 +770,22 @@ void WriteInitialization::acceptWidget(DomWidget *node)
     //
     // Special handling for qtableview/qtreeview fake header attributes
     //
-    static QStringList realPropertyNames =
-            (QStringList() << QLatin1String("visible")
-                           << QLatin1String("cascadingSectionResizes")
-                           << QLatin1String("defaultSectionSize")
-                           << QLatin1String("highlightSections")
-                           << QLatin1String("minimumSectionSize")
-                           << QLatin1String("showSortIndicator")
-                           << QLatin1String("stretchLastSection"));
+    static const QLatin1String realPropertyNames[] = {
+        QLatin1String("visible"),
+        QLatin1String("cascadingSectionResizes"),
+        QLatin1String("defaultSectionSize"),
+        QLatin1String("highlightSections"),
+        QLatin1String("minimumSectionSize"),
+        QLatin1String("showSortIndicator"),
+        QLatin1String("stretchLastSection"),
+    };
 
     if (m_uic->customWidgetsInfo()->extends(className, QLatin1String("QTreeView"))
                || m_uic->customWidgetsInfo()->extends(className, QLatin1String("QTreeWidget"))) {
         DomPropertyList headerProperties;
-        foreach (const QString &realPropertyName, realPropertyNames) {
-            const QString upperPropertyName = realPropertyName.at(0).toUpper()
-                                              + realPropertyName.mid(1);
-            const QString fakePropertyName = QLatin1String("header") + upperPropertyName;
+        for (auto realPropertyName : realPropertyNames) {
+            const QString fakePropertyName = QLatin1String("header")
+                    + QChar(realPropertyName.at(0)).toUpper() + realPropertyName.mid(1);
             if (DomProperty *fakeProperty = attributes.value(fakePropertyName)) {
                 fakeProperty->setAttributeName(realPropertyName);
                 headerProperties << fakeProperty;
@@ -802,16 +797,16 @@ void WriteInitialization::acceptWidget(DomWidget *node)
     } else if (m_uic->customWidgetsInfo()->extends(className, QLatin1String("QTableView"))
                || m_uic->customWidgetsInfo()->extends(className, QLatin1String("QTableWidget"))) {
 
-        static QStringList headerPrefixes =
-                (QStringList() << QLatin1String("horizontalHeader")
-                               << QLatin1String("verticalHeader"));
+        static const QLatin1String headerPrefixes[] = {
+            QLatin1String("horizontalHeader"),
+            QLatin1String("verticalHeader"),
+        };
 
-        foreach (const QString &headerPrefix, headerPrefixes) {
+        for (auto headerPrefix : headerPrefixes) {
             DomPropertyList headerProperties;
-            foreach (const QString &realPropertyName, realPropertyNames) {
-                const QString upperPropertyName = realPropertyName.at(0).toUpper()
-                                                  + realPropertyName.mid(1);
-                const QString fakePropertyName = headerPrefix + upperPropertyName;
+            for (auto realPropertyName : realPropertyNames) {
+                const QString fakePropertyName = headerPrefix
+                        + QChar(realPropertyName.at(0)).toUpper() + realPropertyName.mid(1);
                 if (DomProperty *fakeProperty = attributes.value(fakePropertyName)) {
                     fakeProperty->setAttributeName(realPropertyName);
                     headerProperties << fakeProperty;
@@ -1267,7 +1262,10 @@ void WriteInitialization::writeProperties(const QString &varName,
         } else {
             setFunction = QLatin1String("->setProperty(\"");
             setFunction += propertyName;
-            setFunction += QLatin1String("\", QVariant(");
+            setFunction += QLatin1String("\", QVariant");
+            if (p->kind() == DomProperty::Enum)
+                setFunction += QLatin1String("::fromValue");
+            setFunction += QLatin1Char('(');
         }
 
         QString varNewName = varName;
@@ -1282,7 +1280,8 @@ void WriteInitialization::writeProperties(const QString &varName,
             break;
         case DomProperty::Cstring:
             if (propertyName == QLatin1String("buddy") && m_uic->customWidgetsInfo()->extends(className, QLatin1String("QLabel"))) {
-                m_buddies.append(Buddy(varName, p->elementCstring()));
+                Buddy buddy = { varName, p->elementCstring() };
+                m_buddies.append(std::move(buddy));
             } else {
                 if (stdset)
                     propertyValue = fixString(p->elementCstring(), m_dindent);
@@ -2200,8 +2199,10 @@ QList<WriteInitialization::Item *> WriteInitialization::initializeTreeWidgetItem
 {
     // items
     QList<Item *> items;
+    const int numDomItems = domItems.size();
+    items.reserve(numDomItems);
 
-    for (int i = 0; i < domItems.size(); ++i) {
+    for (int i = 0; i < numDomItems; ++i) {
         const DomItem *domItem = domItems.at(i);
 
         Item *item = new Item(QLatin1String("QTreeWidgetItem"), m_indent, m_output, m_refreshOut, m_driver);
@@ -2226,8 +2227,8 @@ QList<WriteInitialization::Item *> WriteInitialization::initializeTreeWidgetItem
         // AbstractFromBuilder saves flags last, so they always end up in the last column's map.
         addQtFlagsInitializer(item, map, QLatin1String("flags"));
 
-        QList<Item *> subItems = initializeTreeWidgetItems(domItem->elementItem());
-        foreach (Item *subItem, subItems)
+        const QList<Item *> subItems = initializeTreeWidgetItems(domItem->elementItem());
+        for (Item *subItem : subItems)
             item->addChild(subItem);
     }
     return items;
@@ -2314,18 +2315,25 @@ QString WriteInitialization::trCall(const QString &str, const QString &commentHi
     const QString comment = commentHint.isEmpty() ? QString(QLatin1Char('0')) : fixString(commentHint, m_dindent);
 
     if (m_option.translateFunction.isEmpty()) {
-        result = QLatin1String("QApplication::translate(\"");
-        result += m_generatedClass;
-        result += QLatin1Char('"');
-        result += QLatin1String(", ");
+        if (m_option.idBased) {
+            result = QLatin1String("qtTrId(");
+        } else {
+            result = QLatin1String("QApplication::translate(\"");
+            result += m_generatedClass;
+            result += QLatin1Char('"');
+            result += QLatin1String(", ");
+        }
     } else {
         result = m_option.translateFunction;
         result += QLatin1Char('(');
     }
 
     result += fixString(str, m_dindent);
-    result += QLatin1String(", ");
-    result += comment;
+
+    if (!m_option.idBased) {
+        result += QLatin1String(", ");
+        result += comment;
+    }
 
     result += QLatin1Char(')');
     return result;
@@ -2463,7 +2471,7 @@ void WriteInitialization::acceptWidgetScripts(const DomScripts &widgetScripts, D
 
     // concatenate script snippets
     QString script;
-    foreach (const DomScript *domScript, scripts) {
+    for (const DomScript *domScript : qAsConst(scripts)) {
         const QString snippet = domScript->text();
         if (!snippet.isEmpty()) {
             script += snippet.trimmed();
@@ -2477,9 +2485,8 @@ void WriteInitialization::acceptWidgetScripts(const DomScripts &widgetScripts, D
     m_output << m_indent << "childWidgets.clear();\n";
     if (!childWidgets.empty()) {
         m_output << m_indent <<  "childWidgets";
-        foreach (DomWidget *child, childWidgets) {
+        for (DomWidget *child : childWidgets)
             m_output << " << " << m_driver->findOrInsertWidget(child);
-        }
         m_output << ";\n";
     }
     m_output << m_indent << "scriptContext.run("
@@ -2493,24 +2500,16 @@ static void generateMultiDirectiveBegin(QTextStream &outputStream, const QSet<QS
     if (directives.isEmpty())
         return;
 
-    QMap<QString, bool> map; // bool is dummy. The idea is to sort that (always generate in the same order) by putting a set into a map
-    foreach (const QString &str, directives)
-        map.insert(str, true);
-
-    if (map.size() == 1) {
-        outputStream << "#ifndef " << map.constBegin().key() << endl;
+    if (directives.size() == 1) {
+        outputStream << "#ifndef " << *directives.cbegin() << endl;
         return;
     }
 
-    outputStream << "#if";
-    bool doOr = false;
-    foreach (const QString &str, map.keys()) {
-        if (doOr)
-            outputStream << " ||";
-        outputStream << " !defined(" << str << ')';
-        doOr = true;
-    }
-    outputStream << endl;
+    auto list = directives.toList();
+    // sort (always generate in the same order):
+    std::sort(list.begin(), list.end());
+
+    outputStream << "#if !defined(" << list.join(QLatin1String(") || !defined(")) << ')' << endl;
 }
 
 static void generateMultiDirectiveEnd(QTextStream &outputStream, const QSet<QString> &directives)
@@ -2535,8 +2534,7 @@ WriteInitialization::Item::Item(const QString &itemClassName, const QString &ind
 
 WriteInitialization::Item::~Item()
 {
-    foreach (Item *child, m_children)
-        delete child;
+    qDeleteAll(m_children);
 }
 
 QString WriteInitialization::Item::writeSetupUi(const QString &parent, Item::EmptyItemPolicy emptyItemPolicy)
@@ -2573,7 +2571,7 @@ QString WriteInitialization::Item::writeSetupUi(const QString &parent, Item::Emp
         closeIfndef(m_setupUiStream, it.key());
         ++it;
     }
-    foreach (Item *child, m_children)
+    for (Item *child : qAsConst(m_children))
         child->writeSetupUi(uniqueName);
     return uniqueName;
 }

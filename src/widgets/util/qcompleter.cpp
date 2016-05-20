@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -432,7 +438,7 @@ void QCompletionEngine::filter(const QStringList& parts)
 
     QModelIndex parent;
     for (int i = 0; i < curParts.count() - 1; i++) {
-        QString part = curParts[i];
+        QString part = curParts.at(i);
         int emi = filter(part, parent, -1).exactMatchIndex;
         if (emi == -1)
             return;
@@ -442,10 +448,10 @@ void QCompletionEngine::filter(const QStringList& parts)
     // Note that we set the curParent to a valid parent, even if we have no matches
     // When filtering is disabled, we show all the items under this parent
     curParent = parent;
-    if (curParts.last().isEmpty())
+    if (curParts.constLast().isEmpty())
         curMatch = QMatchData(QIndexMapper(0, model->rowCount(curParent) - 1), -1, false);
     else
-        curMatch = filter(curParts.last(), curParent, 1); // build at least one
+        curMatch = filter(curParts.constLast(), curParent, 1); // build at least one
     curRow = curMatch.isValid() ? 0 : -1;
 }
 
@@ -474,7 +480,7 @@ QMatchData QCompletionEngine::filterHistory()
     for (int i = 0; i < source->rowCount(); i++) {
         QString str = source->index(i, c->column).data().toString();
         if (str.startsWith(c->prefix, c->cs)
-#if !defined(Q_OS_WIN) || defined(Q_OS_WINCE)
+#if !defined(Q_OS_WIN)
             && ((!isFsModel && !isDirModel) || QDir::toNativeSeparators(str) != QDir::separator())
 #endif
             )
@@ -749,9 +755,9 @@ void QUnsortedModelEngine::filterOnDemand(int n)
     const QAbstractItemModel *model = c->proxy->sourceModel();
     int lastRow = model->rowCount(curParent) - 1;
     QIndexMapper im(curMatch.indices.last() + 1, lastRow);
-    int lastIndex = buildIndices(curParts.last(), curParent, n, im, &curMatch);
+    int lastIndex = buildIndices(curParts.constLast(), curParent, n, im, &curMatch);
     curMatch.partial = (lastRow != lastIndex);
-    saveInCache(curParts.last(), curParent, curMatch);
+    saveInCache(curParts.constLast(), curParent, curMatch);
 }
 
 QMatchData QUnsortedModelEngine::filter(const QString& part, const QModelIndex& parent, int n)
@@ -1045,7 +1051,7 @@ void QCompleter::setModel(QAbstractItemModel *model)
         delete oldModel;
 #ifndef QT_NO_DIRMODEL
     if (qobject_cast<QDirModel *>(model)) {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
         setCaseSensitivity(Qt::CaseInsensitive);
 #else
         setCaseSensitivity(Qt::CaseSensitive);
@@ -1055,7 +1061,7 @@ void QCompleter::setModel(QAbstractItemModel *model)
 #ifndef QT_NO_FILESYSTEMMODEL
     QFileSystemModel *fsModel = qobject_cast<QFileSystemModel *>(model);
     if (fsModel) {
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
         setCaseSensitivity(Qt::CaseInsensitive);
 #else
         setCaseSensitivity(Qt::CaseSensitive);
@@ -1144,9 +1150,9 @@ void QCompleter::setFilterMode(Qt::MatchFlags filterMode)
     if (d->filterMode == filterMode)
         return;
 
-    if (filterMode != Qt::MatchStartsWith
-            && filterMode != Qt::MatchContains
-            && filterMode != Qt::MatchEndsWith) {
+    if (Q_UNLIKELY(filterMode != Qt::MatchStartsWith &&
+                   filterMode != Qt::MatchContains &&
+                   filterMode != Qt::MatchEndsWith)) {
         qWarning("Unhandled QCompleter::filterMode flag is used.");
         return;
     }
@@ -1337,6 +1343,11 @@ bool QCompleter::eventFilter(QObject *o, QEvent *e)
         }
 
         // default implementation for keys not handled by the widget when popup is open
+        if (ke->matches(QKeySequence::Cancel)) {
+            d->popup->hide();
+            return true;
+        }
+
         switch (key) {
 #ifdef QT_KEYPAD_NAVIGATION
         case Qt::Key_Select:
@@ -1357,7 +1368,6 @@ bool QCompleter::eventFilter(QObject *o, QEvent *e)
             break;
 
         case Qt::Key_Backtab:
-        case Qt::Key_Escape:
             d->popup->hide();
             break;
 
@@ -1637,7 +1647,7 @@ int QCompleter::maxVisibleItems() const
 void QCompleter::setMaxVisibleItems(int maxItems)
 {
     Q_D(QCompleter);
-    if (maxItems < 0) {
+    if (Q_UNLIKELY(maxItems < 0)) {
         qWarning("QCompleter::setMaxVisibleItems: "
                  "Invalid max visible items (%d) must be >= 0", maxItems);
         return;
@@ -1776,7 +1786,7 @@ QString QCompleter::pathFromIndex(const QModelIndex& index) const
         idx = parent.sibling(parent.row(), index.column());
     } while (idx.isValid());
 
-#if !defined(Q_OS_WIN) || defined(Q_OS_WINCE)
+#if !defined(Q_OS_WIN)
     if (list.count() == 1) // only the separator or some other text
         return list[0];
     list[0].clear() ; // the join below will provide the separator
@@ -1816,26 +1826,23 @@ QStringList QCompleter::splitPath(const QString& path) const
         return QStringList(completionPrefix());
 
     QString pathCopy = QDir::toNativeSeparators(path);
-    QString sep = QDir::separator();
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN)
     if (pathCopy == QLatin1String("\\") || pathCopy == QLatin1String("\\\\"))
         return QStringList(pathCopy);
-    QString doubleSlash(QLatin1String("\\\\"));
-    if (pathCopy.startsWith(doubleSlash))
+    const bool startsWithDoubleSlash = pathCopy.startsWith(QLatin1String("\\\\"));
+    if (startsWithDoubleSlash)
         pathCopy = pathCopy.mid(2);
-    else
-        doubleSlash.clear();
 #endif
 
-    QRegExp re(QLatin1Char('[') + QRegExp::escape(sep) + QLatin1Char(']'));
-    QStringList parts = pathCopy.split(re);
+    const QChar sep = QDir::separator();
+    QStringList parts = pathCopy.split(sep);
 
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
-    if (!doubleSlash.isEmpty())
-        parts[0].prepend(doubleSlash);
+#if defined(Q_OS_WIN)
+    if (startsWithDoubleSlash)
+        parts[0].prepend(QLatin1String("\\\\"));
 #else
-    if (pathCopy[0] == sep[0]) // readd the "/" at the beginning as the split removed it
-        parts[0] = QDir::fromNativeSeparators(QString(sep[0]));
+    if (pathCopy[0] == sep) // readd the "/" at the beginning as the split removed it
+        parts[0] = QLatin1Char('/');
 #endif
 
     return parts;
@@ -1878,5 +1885,7 @@ QStringList QCompleter::splitPath(const QString& path) const
 QT_END_NAMESPACE
 
 #include "moc_qcompleter.cpp"
+
+#include "moc_qcompleter_p.cpp"
 
 #endif // QT_NO_COMPLETER

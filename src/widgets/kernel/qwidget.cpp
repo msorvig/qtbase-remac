@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -60,6 +67,7 @@
 # include <private/qmainwindowlayout_p.h>
 #endif
 #include <qpa/qplatformwindow.h>
+#include <qpa/qplatformbackingstore.h>
 #include "private/qwidgetwindow_p.h"
 #include "qpainter.h"
 #include "qtooltip.h"
@@ -72,6 +80,7 @@
 #include <QtGui/qinputmethod.h>
 #include <QtGui/qopenglcontext.h>
 #include <QtGui/private/qopenglcontext_p.h>
+#include <QtGui/qoffscreensurface.h>
 
 #include <private/qgraphicseffect_p.h>
 #include <qbackingstore.h>
@@ -270,6 +279,9 @@ QWidgetPrivate::QWidgetPrivate(int version)
 #ifndef QT_NO_IM
       , inheritsInputMethodHints(0)
 #endif
+#ifndef QT_NO_OPENGL
+      , renderToTextureReallyDirty(1)
+#endif
 #if defined(Q_OS_WIN)
       , noPaintOnScreen(0)
 #endif
@@ -285,7 +297,7 @@ QWidgetPrivate::QWidgetPrivate(int version)
       , qd_hd(0)
 #endif
 {
-    if (!qApp) {
+    if (Q_UNLIKELY(!qApp)) {
         qFatal("QWidget: Must construct a QApplication before a QWidget");
         return;
     }
@@ -295,7 +307,7 @@ QWidgetPrivate::QWidgetPrivate(int version)
     // This allows incompatible versions to be loaded, possibly for testing.
     Q_UNUSED(version);
 #else
-    if (version != QObjectPrivateVersion)
+    if (Q_UNLIKELY(version != QObjectPrivateVersion))
         qFatal("Cannot mix incompatible Qt library (version 0x%x) with this library (version 0x%x)",
                 version, QObjectPrivateVersion);
 #endif
@@ -373,6 +385,7 @@ void QWidgetPrivate::updateWidgetTransform(QEvent *event)
         t.translate(p.x(), p.y());
         QGuiApplication::inputMethod()->setInputItemTransform(t);
         QGuiApplication::inputMethod()->setInputItemRectangle(q->rect());
+        QGuiApplication::inputMethod()->update(Qt::ImInputItemClipRectangle);
     }
 }
 
@@ -1095,11 +1108,7 @@ void QWidgetPrivate::adjustFlags(Qt::WindowFlags &flags, QWidget *w)
     if (customize)
         ; // don't modify window flags if the user explicitly set them.
     else if (type == Qt::Dialog || type == Qt::Sheet)
-#ifndef Q_OS_WINCE
         flags |= Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowContextHelpButtonHint | Qt::WindowCloseButtonHint;
-#else
-        flags |= Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint;
-#endif
     else if (type == Qt::Tool)
         flags |= Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint;
     else
@@ -1112,7 +1121,7 @@ void QWidgetPrivate::adjustFlags(Qt::WindowFlags &flags, QWidget *w)
 void QWidgetPrivate::init(QWidget *parentWidget, Qt::WindowFlags f)
 {
     Q_Q(QWidget);
-    if (!qobject_cast<QApplication *>(QCoreApplication::instance()))
+    if (Q_UNLIKELY(!qobject_cast<QApplication *>(QCoreApplication::instance())))
         qFatal("QWidget: Cannot create a QWidget without QApplication");
 
     Q_ASSERT(allWidgets);
@@ -1238,11 +1247,14 @@ void QWidgetPrivate::createRecursively()
 }
 
 
-
+// ### fixme: Qt 6: Remove parameter window from QWidget::create()
 
 /*!
-    Creates a new widget window if \a window is 0, otherwise sets the
-    widget's window to \a window.
+    Creates a new widget window.
+
+    The parameter \a window is ignored in Qt 5. Please use
+    QWindow::fromWinId() to create a QWindow wrapping a foreign
+    window and pass it to QWidget::createWindowContainer() instead.
 
     Initializes the window (sets the geometry etc.) if \a
     initializeWindow is true. If \a initializeWindow is false, no
@@ -1255,11 +1267,15 @@ void QWidgetPrivate::createRecursively()
 
     The QWidget constructor calls create(0,true,true) to create a
     window for this widget.
+
+    \sa createWindowContainer(), QWindow::fromWinId()
 */
 
 void QWidget::create(WId window, bool initializeWindow, bool destroyOldWindow)
 {
     Q_D(QWidget);
+    if (Q_UNLIKELY(window))
+        qWarning("QWidget::create(): Parameter 'window' does not have any effect.");
     if (testAttribute(Qt::WA_WState_Created) && window == 0 && internalWinId())
         return;
 
@@ -1283,7 +1299,7 @@ void QWidget::create(WId window, bool initializeWindow, bool destroyOldWindow)
             // We're about to create a native child widget that doesn't have a native parent;
             // enforce a native handle for the parent unless the Qt::WA_DontCreateNativeAncestors
             // attribute is set.
-            d->createWinId(window);
+            d->createWinId();
             // Nothing more to do.
             Q_ASSERT(testAttribute(Qt::WA_WState_Created));
             Q_ASSERT(internalWinId());
@@ -1405,7 +1421,8 @@ void QWidgetPrivate::create_sys(WId window, bool initializeWindow, bool destroyO
         win = topData()->window;
     }
 
-    foreach (const QByteArray &propertyName, q->dynamicPropertyNames()) {
+    const auto dynamicPropertyNames = q->dynamicPropertyNames();
+    for (const QByteArray &propertyName : dynamicPropertyNames) {
         if (!qstrncmp(propertyName, "_q_platform_", 12))
             win->setProperty(propertyName, q->property(propertyName));
     }
@@ -1482,9 +1499,12 @@ void QWidgetPrivate::create_sys(WId window, bool initializeWindow, bool destroyO
     if (extra && !extra->mask.isEmpty())
         setMask_sys(extra->mask);
 
-    // If widget is already shown, set window visible, too
-    if (q->isVisible())
+    if (data.crect.width() == 0 || data.crect.height() == 0) {
+        q->setAttribute(Qt::WA_OutsideWSRange, true);
+    } else if (q->isVisible()) {
+        // If widget is already shown, set window visible, too
         win->setVisible(true);
+    }
 }
 
 #ifdef Q_OS_WIN
@@ -1527,13 +1547,17 @@ QWidget::~QWidget()
     d->data.in_destructor = true;
 
 #if defined (QT_CHECK_STATE)
-    if (paintingActive())
+    if (Q_UNLIKELY(paintingActive()))
         qWarning("QWidget: %s (%s) deleted while being painted", className(), name());
 #endif
 
 #ifndef QT_NO_GESTURES
-    foreach (Qt::GestureType type, d->gestureContext.keys())
-        ungrabGesture(type);
+    if (QGestureManager *manager = QGestureManager::instance()) {
+        // \forall Qt::GestureType type : ungrabGesture(type) (inlined)
+        for (auto it = d->gestureContext.keyBegin(), end = d->gestureContext.keyEnd(); it != end; ++it)
+            manager->cleanupCachedGestures(this, *it);
+    }
+    d->gestureContext.clear();
 #endif
 
     // force acceptDrops false before winId is destroyed.
@@ -1818,24 +1842,49 @@ void QWidgetPrivate::deleteSysExtra()
 {
 }
 
+static void deleteBackingStore(QWidgetPrivate *d)
+{
+    QTLWExtra *topData = d->topData();
+
+    // The context must be current when destroying the backing store as it may attempt to
+    // release resources like textures and shader programs. The window may not be suitable
+    // anymore as there will often not be a platform window underneath at this stage. Fall
+    // back to a QOffscreenSurface in this case.
+    QScopedPointer<QOffscreenSurface> tempSurface;
+#ifndef QT_NO_OPENGL
+    if (d->textureChildSeen && topData->shareContext) {
+        if (topData->window->handle()) {
+            topData->shareContext->makeCurrent(topData->window);
+        } else {
+            tempSurface.reset(new QOffscreenSurface);
+            tempSurface->setFormat(topData->shareContext->format());
+            tempSurface->create();
+            topData->shareContext->makeCurrent(tempSurface.data());
+        }
+    }
+#endif
+
+    delete topData->backingStore;
+    topData->backingStore = 0;
+
+#ifndef QT_NO_OPENGL
+    if (d->textureChildSeen && topData->shareContext)
+        topData->shareContext->doneCurrent();
+#endif
+}
+
 void QWidgetPrivate::deleteTLSysExtra()
 {
     if (extra && extra->topextra) {
         //the qplatformbackingstore may hold a reference to the window, so the backingstore
         //needs to be deleted first. If the backingstore holds GL resources, we need to
-        // make the context current here, since the platform bs does not have a reference
-        // to the widget.
+        // make the context current here. This is taken care of by deleteBackingStore().
 
-#ifndef QT_NO_OPENGL
-        if (textureChildSeen && extra->topextra->shareContext)
-            extra->topextra->shareContext->makeCurrent(extra->topextra->window);
-#endif
         extra->topextra->backingStoreTracker.destroy();
-        delete extra->topextra->backingStore;
-        extra->topextra->backingStore = 0;
+        deleteBackingStore(this);
 #ifndef QT_NO_OPENGL
-        if (textureChildSeen && extra->topextra->shareContext)
-            extra->topextra->shareContext->doneCurrent();
+        qDeleteAll(extra->topextra->widgetTextures);
+        extra->topextra->widgetTextures.clear();
         delete extra->topextra->shareContext;
         extra->topextra->shareContext = 0;
 #endif
@@ -1847,7 +1896,6 @@ void QWidgetPrivate::deleteTLSysExtra()
         if (extra->topextra->window) {
             extra->topextra->window->destroy();
         }
-        setWinId(0);
         delete extra->topextra->window;
         extra->topextra->window = 0;
 
@@ -2353,9 +2401,8 @@ static inline void fillRegion(QPainter *painter, const QRegion &rgn, const QBrus
         painter->fillRect(0, 0, painter->device()->width(), painter->device()->height(), brush);
         painter->restore();
     } else {
-        const QVector<QRect> &rects = rgn.rects();
-        for (int i = 0; i < rects.size(); ++i)
-            painter->fillRect(rects.at(i), brush);
+        for (const QRect &rect : rgn)
+            painter->fillRect(rect, brush);
     }
 }
 
@@ -2491,13 +2538,12 @@ WId QWidget::winId() const
     return data->winid;
 }
 
-
-void QWidgetPrivate::createWinId(WId winid)
+void QWidgetPrivate::createWinId()
 {
     Q_Q(QWidget);
 
 #ifdef ALIEN_DEBUG
-    qDebug() << "QWidgetPrivate::createWinId for" << q << winid;
+    qDebug() << "QWidgetPrivate::createWinId for" << q;
 #endif
     const bool forceNativeWindow = q->testAttribute(Qt::WA_NativeWindow);
     if (!q->testAttribute(Qt::WA_WState_Created) || (forceNativeWindow && !q->internalWinId())) {
@@ -2514,15 +2560,7 @@ void QWidgetPrivate::createWinId(WId winid)
                 QWidget *w = qobject_cast<QWidget *>(pd->children.at(i));
                 if (w && !w->isWindow() && (!w->testAttribute(Qt::WA_WState_Created)
                                             || (!w->internalWinId() && w->testAttribute(Qt::WA_NativeWindow)))) {
-                    if (w!=q) {
-                        w->create();
-                    } else {
-                        w->create(winid);
-                        // if the window has already been created, we
-                        // need to raise it to its proper stacking position
-                        if (winid)
-                            w->raise();
-                    }
+                    w->create();
                 }
             }
         } else {
@@ -3264,7 +3302,7 @@ void QWidget::addActions(QList<QAction*> actions)
 */
 void QWidget::insertAction(QAction *before, QAction *action)
 {
-    if(!action) {
+    if (Q_UNLIKELY(!action)) {
         qWarning("QWidget::insertAction: Attempt to insert null action");
         return;
     }
@@ -3296,7 +3334,11 @@ void QWidget::insertAction(QAction *before, QAction *action)
 
     \sa removeAction(), QMenu, insertAction(), contextMenuPolicy
 */
+#if QT_VERSION >= QT_VERSION_CHECK(6,0,0)
+void QWidget::insertActions(QAction *before, const QList<QAction*> &actions)
+#else
 void QWidget::insertActions(QAction *before, QList<QAction*> actions)
+#endif
 {
     for(int i = 0; i < actions.count(); ++i)
         insertAction(before, actions.at(i));
@@ -3910,7 +3952,7 @@ bool QWidgetPrivate::setMinimumSize_helper(int &minw, int &minh)
         mw = 0;
     if (mh == QWIDGETSIZE_MAX)
         mh = 0;
-    if (minw > QWIDGETSIZE_MAX || minh > QWIDGETSIZE_MAX) {
+    if (Q_UNLIKELY(minw > QWIDGETSIZE_MAX || minh > QWIDGETSIZE_MAX)) {
         qWarning("QWidget::setMinimumSize: (%s/%s) "
                 "The largest allowed size is (%d,%d)",
                  q->objectName().toLocal8Bit().data(), q->metaObject()->className(), QWIDGETSIZE_MAX,
@@ -3918,7 +3960,7 @@ bool QWidgetPrivate::setMinimumSize_helper(int &minw, int &minh)
         minw = mw = qMin<int>(minw, QWIDGETSIZE_MAX);
         minh = mh = qMin<int>(minh, QWIDGETSIZE_MAX);
     }
-    if (minw < 0 || minh < 0) {
+    if (Q_UNLIKELY(minw < 0 || minh < 0)) {
         qWarning("QWidget::setMinimumSize: (%s/%s) Negative sizes (%d,%d) "
                 "are not possible",
                 q->objectName().toLocal8Bit().data(), q->metaObject()->className(), minw, minh);
@@ -3992,7 +4034,7 @@ void QWidget::setMinimumSize(int minw, int minh)
 bool QWidgetPrivate::setMaximumSize_helper(int &maxw, int &maxh)
 {
     Q_Q(QWidget);
-    if (maxw > QWIDGETSIZE_MAX || maxh > QWIDGETSIZE_MAX) {
+    if (Q_UNLIKELY(maxw > QWIDGETSIZE_MAX || maxh > QWIDGETSIZE_MAX)) {
         qWarning("QWidget::setMaximumSize: (%s/%s) "
                 "The largest allowed size is (%d,%d)",
                  q->objectName().toLocal8Bit().data(), q->metaObject()->className(), QWIDGETSIZE_MAX,
@@ -4000,7 +4042,7 @@ bool QWidgetPrivate::setMaximumSize_helper(int &maxw, int &maxh)
         maxw = qMin<int>(maxw, QWIDGETSIZE_MAX);
         maxh = qMin<int>(maxh, QWIDGETSIZE_MAX);
     }
-    if (maxw < 0 || maxh < 0) {
+    if (Q_UNLIKELY(maxw < 0 || maxh < 0)) {
         qWarning("QWidget::setMaximumSize: (%s/%s) Negative sizes (%d,%d) "
                 "are not possible",
                 q->objectName().toLocal8Bit().data(), q->metaObject()->className(), maxw, maxh);
@@ -4525,7 +4567,7 @@ const QPalette &QWidget::palette() const
     if (!isEnabled()) {
         data->pal.setCurrentColorGroup(QPalette::Disabled);
     } else if ((!isVisible() || isActiveWindow())
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
         && !QApplicationPrivate::isBlockedByModal(const_cast<QWidget *>(this))
 #endif
         ) {
@@ -4730,9 +4772,11 @@ QFont QWidgetPrivate::naturalWidgetFont(uint inheritedMask) const
         if (QWidget *p = q->parentWidget()) {
             if (!p->testAttribute(Qt::WA_StyleSheet) || useStyleSheetPropagationInWidgetStyles) {
                 if (!naturalFont.isCopyOf(QApplication::font())) {
-                    QFont inheritedFont = p->font();
-                    inheritedFont.resolve(inheritedMask);
-                    naturalFont = inheritedFont.resolve(naturalFont);
+                    if (inheritedMask != 0) {
+                        QFont inheritedFont = p->font();
+                        inheritedFont.resolve(inheritedMask);
+                        naturalFont = inheritedFont.resolve(naturalFont);
+                    } // else nothing to do (naturalFont = naturalFont)
                 } else {
                     naturalFont = p->font();
                 }
@@ -4740,9 +4784,11 @@ QFont QWidgetPrivate::naturalWidgetFont(uint inheritedMask) const
         }
 #ifndef QT_NO_GRAPHICSVIEW
         else if (extra && extra->proxyWidget) {
-            QFont inheritedFont = extra->proxyWidget->font();
-            inheritedFont.resolve(inheritedMask);
-            naturalFont = inheritedFont.resolve(naturalFont);
+            if (inheritedMask != 0) {
+                QFont inheritedFont = extra->proxyWidget->font();
+                inheritedFont.resolve(inheritedMask);
+                naturalFont = inheritedFont.resolve(naturalFont);
+            } // else nothing to do (naturalFont = naturalFont)
         }
 #endif //QT_NO_GRAPHICSVIEW
     }
@@ -5003,7 +5049,7 @@ void QWidgetPrivate::unsetCursor_sys()
     qt_qpa_set_cursor(q, false);
 }
 
-static inline void applyCursor(QWidget *w, QCursor c)
+static inline void applyCursor(QWidget *w, const QCursor &c)
 {
     if (QWindow *window = w->windowHandle())
         window->setCursor(c);
@@ -5116,12 +5162,12 @@ void QWidget::render(QPaintDevice *target, const QPoint &targetOffset,
 void QWidget::render(QPainter *painter, const QPoint &targetOffset,
                      const QRegion &sourceRegion, RenderFlags renderFlags)
 {
-    if (!painter) {
+    if (Q_UNLIKELY(!painter)) {
         qWarning("QWidget::render: Null pointer to painter");
         return;
     }
 
-    if (!painter->isActive()) {
+    if (Q_UNLIKELY(!painter->isActive())) {
         qWarning("QWidget::render: Cannot render with an inactive painter");
         return;
     }
@@ -5232,7 +5278,9 @@ QPixmap QWidget::grab(const QRect &rectangle)
     if (!r.intersects(rect()))
         return QPixmap();
 
-    QPixmap res(r.size());
+    const qreal dpr = devicePixelRatioF();
+    QPixmap res((QSizeF(r.size()) * dpr).toSize());
+    res.setDevicePixelRatio(dpr);
     if (!d->isOpaque)
         res.fill(Qt::transparent);
     d->render(&res, QPoint(), QRegion(r), renderFlags);
@@ -5510,7 +5558,7 @@ void QWidgetPrivate::drawWidget(QPaintDevice *pdev, const QRegion &rgn, const QP
     if (!toBePainted.isEmpty()) {
         if (!onScreen || alsoOnScreen) {
             //update the "in paint event" flag
-            if (q->testAttribute(Qt::WA_WState_InPaintEvent))
+            if (Q_UNLIKELY(q->testAttribute(Qt::WA_WState_InPaintEvent)))
                 qWarning("QWidget::repaint: Recursive repaint detected");
             q->setAttribute(Qt::WA_WState_InPaintEvent);
 
@@ -5572,7 +5620,7 @@ void QWidgetPrivate::drawWidget(QPaintDevice *pdev, const QRegion &rgn, const QP
                      << "geometry ==" << QRect(q->mapTo(q->window(), QPoint(0, 0)), q->size());
 #endif
 
-            bool grabbed = false;
+            bool skipPaintEvent = false;
 #ifndef QT_NO_OPENGL
             if (renderToTexture) {
                 // This widget renders into a texture which is composed later. We just need to
@@ -5586,14 +5634,18 @@ void QWidgetPrivate::drawWidget(QPaintDevice *pdev, const QRegion &rgn, const QP
                     } else {
                         // We are not drawing to a backingstore: fall back to QImage
                         p.drawImage(q->rect(), grabFramebuffer());
-                        grabbed = true;
+                        skipPaintEvent = true;
                     }
                     endBackingStorePainting();
                 }
+                if (renderToTextureReallyDirty)
+                    renderToTextureReallyDirty = 0;
+                else
+                    skipPaintEvent = true;
             }
 #endif // QT_NO_OPENGL
 
-            if (!grabbed) {
+            if (!skipPaintEvent) {
                 //actually send the paint event
                 sendPaintEvent(toBePainted);
             }
@@ -5617,7 +5669,7 @@ void QWidgetPrivate::drawWidget(QPaintDevice *pdev, const QRegion &rgn, const QP
                 setSystemClip(pdev, QRegion());
             }
             q->setAttribute(Qt::WA_WState_InPaintEvent, false);
-            if (q->paintingActive())
+            if (Q_UNLIKELY(q->paintingActive()))
                 qWarning("QWidget::repaint: It is dangerous to leave painters active on a widget outside of the PaintEvent");
 
             if (paintEngine && paintEngine->autoDestruct()) {
@@ -5666,7 +5718,7 @@ void QWidgetPrivate::sendPaintEvent(const QRegion &toBePainted)
 void QWidgetPrivate::render(QPaintDevice *target, const QPoint &targetOffset,
                             const QRegion &sourceRegion, QWidget::RenderFlags renderFlags)
 {
-    if (!target) {
+    if (Q_UNLIKELY(!target)) {
         qWarning("QWidget::render: null pointer to paint device");
         return;
     }
@@ -5800,7 +5852,7 @@ QRectF QWidgetEffectSourcePrivate::boundingRect(Qt::CoordinateSystem system) con
     if (system != Qt::DeviceCoordinates)
         return m_widget->rect();
 
-    if (!context) {
+    if (Q_UNLIKELY(!context)) {
         // Device coordinates without context not yet supported.
         qWarning("QGraphicsEffectSource::boundingRect: Not yet implemented, lacking device context");
         return QRectF();
@@ -5832,7 +5884,7 @@ QPixmap QWidgetEffectSourcePrivate::pixmap(Qt::CoordinateSystem system, QPoint *
                                            QGraphicsEffect::PixmapPadMode mode) const
 {
     const bool deviceCoordinates = (system == Qt::DeviceCoordinates);
-    if (!context && deviceCoordinates) {
+    if (Q_UNLIKELY(!context && deviceCoordinates)) {
         // Device coordinates without context not yet supported.
         qWarning("QGraphicsEffectSource::pixmap: Not yet implemented, lacking device context");
         return QPixmap();
@@ -5861,7 +5913,10 @@ QPixmap QWidgetEffectSourcePrivate::pixmap(Qt::CoordinateSystem system, QPoint *
 
     pixmapOffset -= effectRect.topLeft();
 
-    QPixmap pixmap(effectRect.size());
+    const qreal dpr = context->painter->device()->devicePixelRatio();
+    QPixmap pixmap(effectRect.size() * dpr);
+    pixmap.setDevicePixelRatio(dpr);
+
     pixmap.fill(Qt::transparent);
     m_widget->render(&pixmap, pixmapOffset, QRegion(), QWidget::DrawChildren);
     return pixmap;
@@ -6362,7 +6417,7 @@ void QWidget::setFocusProxy(QWidget * w)
         return;
 
     for (QWidget* fp  = w; fp; fp = fp->focusProxy()) {
-        if (fp == this) {
+        if (Q_UNLIKELY(fp == this)) {
             qWarning("QWidget: %s (%s) already in focus proxy chain", metaObject()->className(), objectName().toLocal8Bit().constData());
             return;
         }
@@ -6403,13 +6458,13 @@ bool QWidget::hasFocus() const
     const QWidget* w = this;
     while (w->d_func()->extra && w->d_func()->extra->focus_proxy)
         w = w->d_func()->extra->focus_proxy;
-    if (QWidget *window = w->window()) {
 #ifndef QT_NO_GRAPHICSVIEW
+    if (QWidget *window = w->window()) {
         QWExtra *e = window->d_func()->extra;
         if (e && e->proxyWidget && e->proxyWidget->hasFocus() && window->focusWidget() == w)
             return true;
-#endif
     }
+#endif // !QT_NO_GRAPHICSVIEW
     return (QApplication::focusWidget() == w);
 }
 
@@ -6876,7 +6931,7 @@ void QWidget::setTabOrder(QWidget* first, QWidget *second)
     if (!first || !second || first->focusPolicy() == Qt::NoFocus || second->focusPolicy() == Qt::NoFocus)
         return;
 
-    if (first->window() != second->window()) {
+    if (Q_UNLIKELY(first->window() != second->window())) {
         qWarning("QWidget::setTabOrder: 'first' and 'second' must be in the same window");
         return;
     }
@@ -7198,13 +7253,13 @@ void QWidgetPrivate::setGeometry_sys(int x, int y, int w, int h, bool isMove)
 
     bool needsShow = false;
 
-    if (q->isWindow()) {
+    if (q->isWindow() || q->windowHandle()) {
         if (!(data.window_state & Qt::WindowFullScreen) && (w == 0 || h == 0)) {
             q->setAttribute(Qt::WA_OutsideWSRange, true);
-            if (q->isVisible() && q->testAttribute(Qt::WA_Mapped))
+            if (q->isVisible())
                 hide_sys();
             data.crect = QRect(x, y, w, h);
-        } else if (q->isVisible() && q->testAttribute(Qt::WA_OutsideWSRange)) {
+        } else if (q->testAttribute(Qt::WA_OutsideWSRange)) {
             q->setAttribute(Qt::WA_OutsideWSRange, false);
             needsShow = true;
         }
@@ -7905,8 +7960,12 @@ void QWidgetPrivate::show_sys()
     if (q->testAttribute(Qt::WA_DontShowOnScreen)) {
         invalidateBuffer(q->rect());
         q->setAttribute(Qt::WA_Mapped);
-        if (q->isWindow() && q->windowModality() != Qt::NonModal && window) {
-            // add our window to the modal window list
+        // add our window the modal window list (native dialogs)
+        if (window && q->isWindow()
+#ifndef QT_NO_GRAPHICSVIEW
+            && (!extra || !extra->proxyWidget)
+#endif
+            && q->windowModality() != Qt::NonModal) {
             QGuiApplicationPrivate::showModalWindow(window);
         }
         return;
@@ -7917,8 +7976,10 @@ void QWidgetPrivate::show_sys()
     else
         QApplication::postEvent(q, new QUpdateLaterEvent(q->rect()));
 
-    if (!q->isWindow() && !q->testAttribute(Qt::WA_NativeWindow))
+    if ((!q->isWindow() && !q->testAttribute(Qt::WA_NativeWindow))
+            || q->testAttribute(Qt::WA_OutsideWSRange)) {
         return;
+    }
 
     if (window) {
         if (q->isWindow())
@@ -8037,8 +8098,12 @@ void QWidgetPrivate::hide_sys()
 
     if (q->testAttribute(Qt::WA_DontShowOnScreen)) {
         q->setAttribute(Qt::WA_Mapped, false);
-        if (q->isWindow() && q->windowModality() != Qt::NonModal && window) {
-            // remove our window from the modal window list
+        // remove our window from the modal window list (native dialogs)
+        if (window && q->isWindow()
+#ifndef QT_NO_GRAPHICSVIEW
+            && (!extra || !extra->proxyWidget)
+#endif
+            && q->windowModality() != Qt::NonModal) {
             QGuiApplicationPrivate::hideModalWindow(window);
         }
         // do not return here, if window non-zero, we must hide it
@@ -8505,13 +8570,9 @@ QSize QWidgetPrivate::adjustedSize() const
 #else // all others
         QRect screen = QApplication::desktop()->screenGeometry(q->pos());
 #endif
-#if defined (Q_OS_WINCE)
-        s.setWidth(qMin(s.width(), screen.width()));
-        s.setHeight(qMin(s.height(), screen.height()));
-#else
         s.setWidth(qMin(s.width(), screen.width()*2/3));
         s.setHeight(qMin(s.height(), screen.height()*2/3));
-#endif
+
         if (QTLWExtra *extra = maybeTopData())
             extra->sizeAdjusted = true;
     }
@@ -9130,6 +9191,9 @@ bool QWidget::event(QEvent *event)
             const QWindow *win = te->window;
             d->setWinId((win && win->handle()) ? win->handle()->winId() : 0);
         }
+#ifndef QT_NO_OPENGL
+        d->renderToTextureReallyDirty = 1;
+#endif
         break;
 #ifndef QT_NO_PROPERTIES
     case QEvent::DynamicPropertyChange: {
@@ -9381,7 +9445,8 @@ void QWidget::tabletEvent(QTabletEvent *event)
     call the base class implementation if you do not act upon the key.
 
     The default implementation closes popup widgets if the user
-    presses Esc. Otherwise the event is ignored, so that the widget's
+    presses the key sequence for QKeySequence::Cancel (typically the
+    Escape key). Otherwise the event is ignored, so that the widget's
     parent can interpret it.
 
     Note that QKeyEvent starts with isAccepted() == true, so you do not
@@ -9394,7 +9459,7 @@ void QWidget::tabletEvent(QTabletEvent *event)
 
 void QWidget::keyPressEvent(QKeyEvent *event)
 {
-    if ((windowType() == Qt::Popup) && event->key() == Qt::Key_Escape) {
+    if ((windowType() == Qt::Popup) && event->matches(QKeySequence::Cancel)) {
         event->accept();
         close();
     } else {
@@ -9479,7 +9544,7 @@ void QWidget::focusOutEvent(QFocusEvent *)
     if (focusPolicy() != Qt::NoFocus || !isWindow())
         update();
 
-#ifndef Q_OS_IOS
+#if !defined(QT_PLATFORM_UIKIT)
     // FIXME: revisit autoSIP logic, QTBUG-42906
     if (qApp->autoSipEnabled() && testAttribute(Qt::WA_InputMethodEnabled))
         QGuiApplication::inputMethod()->hide();
@@ -9720,6 +9785,8 @@ QVariant QWidget::inputMethodQuery(Qt::InputMethodQuery query) const
         return inputMethodQuery(Qt::ImCursorPosition);
     case Qt::ImHints:
         return (int)inputMethodHints();
+    case Qt::ImInputItemClipRectangle:
+        return d_func()->clipRect();
     default:
         return QVariant();
     }
@@ -10030,12 +10097,12 @@ QLayout *QWidget::layout() const
 
 void QWidget::setLayout(QLayout *l)
 {
-    if (!l) {
+    if (Q_UNLIKELY(!l)) {
         qWarning("QWidget::setLayout: Cannot set layout to 0");
         return;
     }
     if (layout()) {
-        if (layout() != l)
+        if (Q_UNLIKELY(layout() != l))
             qWarning("QWidget::setLayout: Attempting to set QLayout \"%s\" on %s \"%s\", which already has a"
                      " layout", l->objectName().toLocal8Bit().data(), metaObject()->className(),
                      objectName().toLocal8Bit().data());
@@ -10693,10 +10760,8 @@ void QWidget::scroll(int dx, int dy)
         // Graphics View maintains its own dirty region as a list of rects;
         // until we can connect item updates directly to the view, we must
         // separately add a translated dirty region.
-        if (!d->dirty.isEmpty()) {
-            foreach (const QRect &rect, (d->dirty.translated(dx, dy)).rects())
-                proxy->update(rect);
-        }
+        for (const QRect &rect : d->dirty)
+            proxy->update(rect.translated(dx, dy));
         proxy->scroll(dx, dy, proxy->subWidgetRect(this));
         return;
     }
@@ -10736,7 +10801,7 @@ void QWidget::scroll(int dx, int dy, const QRect &r)
         // until we can connect item updates directly to the view, we must
         // separately add a translated dirty region.
         if (!d->dirty.isEmpty()) {
-            foreach (const QRect &rect, (d->dirty.translated(dx, dy) & r).rects())
+            for (const QRect &rect : d->dirty.translated(dx, dy) & r)
                 proxy->update(rect);
         }
         proxy->scroll(dx, dy, r.translated(proxy->subWidgetRect(this).topLeft().toPoint()));
@@ -11380,7 +11445,7 @@ void QWidgetPrivate::setWindowModified_helper()
         return;
     bool on = q->testAttribute(Qt::WA_WindowModified);
     if (!platformWindow->setWindowModified(on)) {
-        if (!q->windowTitle().contains(QLatin1String("[*]")) && on)
+        if (Q_UNLIKELY(on && !q->windowTitle().contains(QLatin1String("[*]"))))
             qWarning("QWidget::setWindowModified: The window title does not contain a '[*]' placeholder");
         setWindowTitle_helper(q->windowTitle());
         setWindowIconText_helper(q->windowIconText());
@@ -11930,7 +11995,9 @@ QWidget *QWidgetPrivate::widgetInNavigationDirection(Direction direction)
 
     QWidget *targetWidget = 0;
     int shortestDistance = INT_MAX;
-    foreach(QWidget *targetCandidate, QApplication::allWidgets()) {
+
+    const auto targetCandidates = QApplication::allWidgets();
+    for (QWidget *targetCandidate : targetCandidates) {
 
         const QRect targetCandidateRect = targetCandidate->rect().translated(targetCandidate->mapToGlobal(QPoint()));
 
@@ -12029,7 +12096,7 @@ void QWidget::setBackingStore(QBackingStore *store)
         return;
 
     QBackingStore *oldStore = topData->backingStore;
-    delete topData->backingStore;
+    deleteBackingStore(d);
     topData->backingStore = store;
 
     QWidgetBackingStore *bs = d->maybeBackingStore();
@@ -12130,8 +12197,8 @@ QOpenGLContext *QWidgetPrivate::shareContext() const
 #ifdef QT_NO_OPENGL
     return 0;
 #else
-    if (!extra || !extra->topextra || !extra->topextra->window) {
-        qWarning() << "Asking for share context for widget that does not have a window handle";
+    if (Q_UNLIKELY(!extra || !extra->topextra || !extra->topextra->window)) {
+        qWarning("Asking for share context for widget that does not have a window handle");
         return 0;
     }
     QWidgetPrivate *that = const_cast<QWidgetPrivate *>(this);
@@ -12218,6 +12285,7 @@ void QWidget::grabGesture(Qt::GestureType gesture, Qt::GestureFlags flags)
 */
 void QWidget::ungrabGesture(Qt::GestureType gesture)
 {
+    // if you modify this function, check the inlined version in ~QWidget, too
     Q_D(QWidget);
     if (d->gestureContext.remove(gesture)) {
         if (QGestureManager *manager = QGestureManager::instance())
@@ -12319,6 +12387,12 @@ QPaintEngine *QWidget::paintEngine() const
     return 0; //##### @@@
 }
 
+// Do not call QWindow::mapToGlobal() until QPlatformWindow is properly showing.
+static inline bool canMapPosition(QWindow *window)
+{
+    return window->handle() && !qt_window_private(window)->resizeEventPending;
+}
+
 /*!
     \fn QPoint QWidget::mapToGlobal(const QPoint &pos) const
 
@@ -12330,23 +12404,22 @@ QPaintEngine *QWidget::paintEngine() const
 */
 QPoint QWidget::mapToGlobal(const QPoint &pos) const
 {
+#ifndef QT_NO_GRAPHICSVIEW
+    Q_D(const QWidget);
+    if (d->extra && d->extra->proxyWidget && d->extra->proxyWidget->scene()) {
+        const QList <QGraphicsView *> views = d->extra->proxyWidget->scene()->views();
+        if (!views.isEmpty()) {
+            const QPointF scenePos = d->extra->proxyWidget->mapToScene(pos);
+            const QPoint viewPortPos = views.first()->mapFromScene(scenePos);
+            return views.first()->viewport()->mapToGlobal(viewPortPos);
+        }
+    }
+#endif // !QT_NO_GRAPHICSVIEW
     int x = pos.x(), y = pos.y();
     const QWidget *w = this;
     while (w) {
-#ifndef QT_NO_GRAPHICSVIEW
-        const QWidgetPrivate *d = w->d_func();
-        if (d->extra && d->extra->proxyWidget && d->extra->proxyWidget->scene()) {
-            const QList <QGraphicsView *> views = d->extra->proxyWidget->scene()->views();
-            if (!views.isEmpty()) {
-                const QPointF scenePos = d->extra->proxyWidget->mapToScene(QPoint(x, y));
-                const QPoint viewPortPos = views.first()->mapFromScene(scenePos);
-                return views.first()->viewport()->mapToGlobal(viewPortPos);
-            }
-        }
-#endif // !QT_NO_GRAPHICSVIEW
-
         QWindow *window = w->windowHandle();
-        if (window && window->handle())
+        if (window && canMapPosition(window))
             return window->mapToGlobal(QPoint(x, y));
 
         x += w->data->crect.x();
@@ -12366,23 +12439,22 @@ QPoint QWidget::mapToGlobal(const QPoint &pos) const
 */
 QPoint QWidget::mapFromGlobal(const QPoint &pos) const
 {
+#ifndef QT_NO_GRAPHICSVIEW
+    Q_D(const QWidget);
+    if (d->extra && d->extra->proxyWidget && d->extra->proxyWidget->scene()) {
+        const QList <QGraphicsView *> views = d->extra->proxyWidget->scene()->views();
+        if (!views.isEmpty()) {
+            const QPoint viewPortPos = views.first()->viewport()->mapFromGlobal(pos);
+            const QPointF scenePos = views.first()->mapToScene(viewPortPos);
+            return d->extra->proxyWidget->mapFromScene(scenePos).toPoint();
+        }
+    }
+#endif // !QT_NO_GRAPHICSVIEW
     int x = pos.x(), y = pos.y();
     const QWidget *w = this;
     while (w) {
-#ifndef QT_NO_GRAPHICSVIEW
-        const QWidgetPrivate *d = w->d_func();
-        if (d->extra && d->extra->proxyWidget && d->extra->proxyWidget->scene()) {
-            const QList <QGraphicsView *> views = d->extra->proxyWidget->scene()->views();
-            if (!views.isEmpty()) {
-                const QPoint viewPortPos = views.first()->viewport()->mapFromGlobal(QPoint(x, y));
-                const QPointF scenePos = views.first()->mapToScene(viewPortPos);
-                return d->extra->proxyWidget->mapFromScene(scenePos).toPoint();
-            }
-        }
-#endif // !QT_NO_GRAPHICSVIEW
-
         QWindow *window = w->windowHandle();
-        if (window && window->handle())
+        if (window && canMapPosition(window))
             return window->mapFromGlobal(QPoint(x, y));
 
         x -= w->data->crect.x();
@@ -12630,7 +12702,7 @@ QWidget *QWidget::keyboardGrabber()
     does not allow an application to interrupt what the user is currently
     doing in another application.
 
-    \sa isActiveWindow(), window(), show()
+    \sa isActiveWindow(), window(), show(), QWindowsWindowFunctions::setWindowActivationBehavior()
 */
 void QWidget::activateWindow()
 {
@@ -12822,9 +12894,8 @@ void QWidget::setMask(const QRegion &newMask)
 void QWidgetPrivate::setMask_sys(const QRegion &region)
 {
     Q_Q(QWidget);
-    if (const QWindow *window = q->windowHandle())
-        if (QPlatformWindow *platformWindow = window->handle())
-            platformWindow->setMask(QHighDpi::toNativeLocalRegion(region, window));
+    if (QWindow *window = q->windowHandle())
+        window->setMask(region);
 }
 
 /*!

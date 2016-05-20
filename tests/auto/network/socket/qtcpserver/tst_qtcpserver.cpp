@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -70,17 +65,11 @@ class tst_QTcpServer : public QObject
 {
     Q_OBJECT
 
-public:
-    tst_QTcpServer();
-    virtual ~tst_QTcpServer();
-
-
-public slots:
+private slots:
     void initTestCase_data();
     void initTestCase();
     void init();
     void cleanup();
-private slots:
     void getSetCheck();
     void constructing();
     void clientServerLoop();
@@ -117,6 +106,8 @@ private slots:
 
     void eagainBlockingAccept();
 
+    void canAccessPendingConnectionsWhileNotListening();
+
 private:
 #ifndef QT_NO_BEARERMANAGEMENT
     QNetworkSession *networkSession;
@@ -136,14 +127,6 @@ void tst_QTcpServer::getSetCheck()
     QCOMPARE(INT_MIN, obj1.maxPendingConnections());
     obj1.setMaxPendingConnections(INT_MAX);
     QCOMPARE(INT_MAX, obj1.maxPendingConnections());
-}
-
-tst_QTcpServer::tst_QTcpServer()
-{
-}
-
-tst_QTcpServer::~tst_QTcpServer()
-{
 }
 
 void tst_QTcpServer::initTestCase_data()
@@ -486,11 +469,7 @@ void tst_QTcpServer::waitForConnectionTest()
     ThreadConnector connector(findLocalIpSocket.localAddress(), server.serverPort());
     connector.start();
 
-#if defined(Q_OS_WINCE)
-    QVERIFY(server.waitForNewConnection(9000, &timeout));
-#else
     QVERIFY(server.waitForNewConnection(3000, &timeout));
-#endif
     QVERIFY(!timeout);
 }
 
@@ -581,21 +560,6 @@ void tst_QTcpServer::addressReusable()
         QSKIP("No proxy support");
 #endif // QT_NO_NETWORKPROXY
     }
-#if defined(Q_OS_WINCE)
-    QString signalName = QString::fromLatin1("/test_signal.txt");
-    QFile::remove(signalName);
-    // The crashingServer process will crash once it gets a connection.
-    QProcess process;
-    QString processExe = crashingServerDir + "/crashingServer";
-    process.start(processExe);
-    QVERIFY2(process.waitForStarted(), qPrintable(
-        QString::fromLatin1("Could not start %1: %2").arg(processExe, process.errorString())));
-    int waitCount = 5;
-    while (waitCount-- && !QFile::exists(signalName))
-        QTest::qWait(1000);
-    QVERIFY(QFile::exists(signalName));
-    QFile::remove(signalName);
-#else
     // The crashingServer process will crash once it gets a connection.
     QProcess process;
     QString processExe = crashingServerDir + "/crashingServer";
@@ -603,7 +567,6 @@ void tst_QTcpServer::addressReusable()
     QVERIFY2(process.waitForStarted(), qPrintable(
         QString::fromLatin1("Could not start %1: %2").arg(processExe, process.errorString())));
     QVERIFY(process.waitForReadyRead(5000));
-#endif
 
     QTcpSocket socket;
     socket.connectToHost(QHostAddress::LocalHost, 49199);
@@ -1007,6 +970,23 @@ void tst_QTcpServer::eagainBlockingAccept()
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 500);
     s.close();
     server.close();
+}
+
+class NonListeningTcpServer : public QTcpServer
+{
+public:
+    void addSocketFromOutside(QTcpSocket* s)
+    {
+        addPendingConnection(s);
+    }
+};
+
+void tst_QTcpServer::canAccessPendingConnectionsWhileNotListening()
+{
+    NonListeningTcpServer server;
+    QTcpSocket socket;
+    server.addSocketFromOutside(&socket);
+    QCOMPARE(&socket, server.nextPendingConnection());
 }
 
 QTEST_MAIN(tst_QTcpServer)

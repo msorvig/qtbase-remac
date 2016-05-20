@@ -1,32 +1,38 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 Samuel Gaist <samuel.gaist@edeltech.ch>
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -43,13 +49,8 @@
 #include <qvariant.h>
 #include <qvector.h>
 
-#ifdef QT_USE_BUNDLED_LIBPNG
-#include <../../3rdparty/libpng/png.h>
-#include <../../3rdparty/libpng/pngconf.h>
-#else
 #include <png.h>
 #include <pngconf.h>
-#endif
 
 #if PNG_LIBPNG_VER >= 10400 && PNG_LIBPNG_VER <= 10502 \
         && defined(PNG_PEDANTIC_WARNINGS_SUPPORTED)
@@ -74,19 +75,7 @@
 #   endif
 #endif
 
-#ifdef Q_OS_WINCE
-#define CALLBACK_CALL_TYPE        __cdecl
-#else
-#define CALLBACK_CALL_TYPE
-#endif
-
 QT_BEGIN_NAMESPACE
-
-#if defined(Q_OS_WINCE) && defined(STANDARDSHELL_UI_MODEL)
-#  define Q_INTERNAL_WIN_NO_THROW __declspec(nothrow)
-#else
-#  define Q_INTERNAL_WIN_NO_THROW
-#endif
 
 // avoid going through QImage::scanLine() which calls detach
 #define FAST_SCAN_LINE(data, bpl, y) (data + (y) * bpl)
@@ -189,7 +178,7 @@ private:
 
 extern "C" {
 static
-void CALLBACK_CALL_TYPE iod_read_fn(png_structp png_ptr, png_bytep data, png_size_t length)
+void iod_read_fn(png_structp png_ptr, png_bytep data, png_size_t length)
 {
     QPngHandlerPrivate *d = (QPngHandlerPrivate *)png_get_io_ptr(png_ptr);
     QIODevice *in = d->q->device();
@@ -214,7 +203,7 @@ void CALLBACK_CALL_TYPE iod_read_fn(png_structp png_ptr, png_bytep data, png_siz
 
 
 static
-void CALLBACK_CALL_TYPE qpiw_write_fn(png_structp png_ptr, png_bytep data, png_size_t length)
+void qpiw_write_fn(png_structp png_ptr, png_bytep data, png_size_t length)
 {
     QPNGImageWriter* qpiw = (QPNGImageWriter*)png_get_io_ptr(png_ptr);
     QIODevice* out = qpiw->device();
@@ -228,7 +217,7 @@ void CALLBACK_CALL_TYPE qpiw_write_fn(png_structp png_ptr, png_bytep data, png_s
 
 
 static
-void CALLBACK_CALL_TYPE qpiw_flush_fn(png_structp /* png_ptr */)
+void qpiw_flush_fn(png_structp /* png_ptr */)
 {
 }
 
@@ -486,7 +475,7 @@ static void read_image_scaled(QImage *outImage, png_structp png_ptr, png_infop i
 }
 
 extern "C" {
-static void CALLBACK_CALL_TYPE qt_png_warning(png_structp /*png_ptr*/, png_const_charp message)
+static void qt_png_warning(png_structp /*png_ptr*/, png_const_charp message)
 {
     qWarning("libpng warning: %s", message);
 }
@@ -494,7 +483,7 @@ static void CALLBACK_CALL_TYPE qt_png_warning(png_structp /*png_ptr*/, png_const
 }
 
 
-void Q_INTERNAL_WIN_NO_THROW QPngHandlerPrivate::readPngTexts(png_info *info)
+void QPngHandlerPrivate::readPngTexts(png_info *info)
 {
     png_textp text_ptr;
     int num_text=0;
@@ -521,7 +510,7 @@ void Q_INTERNAL_WIN_NO_THROW QPngHandlerPrivate::readPngTexts(png_info *info)
 }
 
 
-bool Q_INTERNAL_WIN_NO_THROW QPngHandlerPrivate::readPngHeader()
+bool QPngHandlerPrivate::readPngHeader()
 {
     state = Error;
     png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING,0,0,0);
@@ -565,7 +554,7 @@ bool Q_INTERNAL_WIN_NO_THROW QPngHandlerPrivate::readPngHeader()
     return true;
 }
 
-bool Q_INTERNAL_WIN_NO_THROW QPngHandlerPrivate::readPngImage(QImage *outImage)
+bool QPngHandlerPrivate::readPngImage(QImage *outImage)
 {
     if (state == Error)
         return false;
@@ -809,7 +798,7 @@ bool QPNGImageWriter::writeImage(const QImage& image, int off_x, int off_y)
     return writeImage(image, -1, QString(), off_x, off_y);
 }
 
-bool Q_INTERNAL_WIN_NO_THROW QPNGImageWriter::writeImage(const QImage& image, volatile int quality_in, const QString &description,
+bool QPNGImageWriter::writeImage(const QImage& image, volatile int quality_in, const QString &description,
                                  int off_x_in, int off_y_in)
 {
     QPoint offset = image.offset();

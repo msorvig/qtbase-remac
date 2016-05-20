@@ -1,32 +1,39 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 David Faure <faure+bluesystems@kde.org>
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 Intel Corporation.
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,12 +46,19 @@
 #include "QtCore/qfileinfo.h"
 #include "QtCore/qdebug.h"
 #include "QtCore/qdatetime.h"
+#include "QtCore/qfileinfo.h"
+#include "QtCore/qcache.h"
+#include "QtCore/qglobalstatic.h"
+#include "QtCore/qmutex.h"
 
 #include "private/qcore_unix_p.h" // qt_safe_open
 #include "private/qabstractfileengine_p.h"
 #include "private/qtemporaryfile_p.h"
 
+#if !defined(Q_OS_INTEGRITY)
 #include <sys/file.h>  // flock
+#endif
+
 #include <sys/types.h> // kill
 #include <signal.h>    // kill
 #include <unistd.h>    // gethostname
@@ -54,9 +68,17 @@
 #elif defined(Q_OS_LINUX)
 #   include <unistd.h>
 #   include <cstdio>
-#elif defined(Q_OS_BSD4) && !defined(Q_OS_IOS)
+#elif defined(Q_OS_HAIKU)
+#   include <kernel/OS.h>
+#elif defined(Q_OS_BSD4) && !defined(QT_PLATFORM_UIKIT)
 #   include <sys/user.h>
+# if defined(__GLIBC__) && defined(__FreeBSD_kernel__)
+#   include <sys/cdefs.h>
+#   include <sys/param.h>
+#   include <sys/sysctl.h>
+# else
 #   include <libutil.h>
+# endif
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -83,10 +105,10 @@ static qint64 qt_write_loop(int fd, const char *data, qint64 len)
     return pos;
 }
 
-int QLockFilePrivate::checkFcntlWorksAfterFlock()
+int QLockFilePrivate::checkFcntlWorksAfterFlock(const QString &fn)
 {
 #ifndef QT_NO_TEMPORARYFILE
-    QTemporaryFile file;
+    QTemporaryFile file(fn);
     if (!file.open())
         return 0;
     const int fd = file.d_func()->engine()->handle();
@@ -108,24 +130,38 @@ int QLockFilePrivate::checkFcntlWorksAfterFlock()
 #endif
 }
 
-static QBasicAtomicInt fcntlOK = Q_BASIC_ATOMIC_INITIALIZER(-1);
+// Cache the result of checkFcntlWorksAfterFlock for each directory a lock
+// file is created in because in some filesystems, like NFS, both locks
+// are the same.  This does not take into account a filesystem changing.
+// QCache is set to hold a maximum of 10 entries, this is to avoid unbounded
+// growth, this is caching directories of files and it is assumed a low number
+// will be sufficient.
+typedef QCache<QString, bool> CacheType;
+Q_GLOBAL_STATIC_WITH_ARGS(CacheType, fcntlOK, (10));
+static QBasicMutex fcntlLock;
 
 /*!
   \internal
   Checks that the OS isn't using POSIX locks to emulate flock().
   OS X is one of those.
 */
-static bool fcntlWorksAfterFlock()
+static bool fcntlWorksAfterFlock(const QString &fn)
 {
-    int value = fcntlOK.load();
-    if (Q_UNLIKELY(value == -1)) {
-        value = QLockFilePrivate::checkFcntlWorksAfterFlock();
-        fcntlOK.store(value);
-    }
-    return value == 1;
+    QMutexLocker lock(&fcntlLock);
+    if (fcntlOK.isDestroyed())
+        return QLockFilePrivate::checkFcntlWorksAfterFlock(fn);
+    bool *worksPtr = fcntlOK->object(fn);
+    if (worksPtr)
+        return *worksPtr;
+
+    const bool val = QLockFilePrivate::checkFcntlWorksAfterFlock(fn);
+    worksPtr = new bool(val);
+    fcntlOK->insert(fn, worksPtr);
+
+    return val;
 }
 
-static bool setNativeLocks(int fd)
+static bool setNativeLocks(const QString &fileName, int fd)
 {
 #if defined(LOCK_EX) && defined(LOCK_NB)
     if (flock(fd, LOCK_EX | LOCK_NB) == -1) // other threads, and other processes on a local fs
@@ -137,8 +173,10 @@ static bool setNativeLocks(int fd)
     flockData.l_start = 0;
     flockData.l_len = 0; // 0 = entire file
     flockData.l_pid = getpid();
-    if (fcntlWorksAfterFlock() && fcntl(fd, F_SETLK, &flockData) == -1) // for networked filesystems
+    if (fcntlWorksAfterFlock(QDir::cleanPath(QFileInfo(fileName).absolutePath()) + QString('/'))
+        && fcntl(fd, F_SETLK, &flockData) == -1) { // for networked filesystems
         return false;
+    }
     return true;
 }
 
@@ -165,8 +203,10 @@ QLockFile::LockError QLockFilePrivate::tryLock_sys()
         }
     }
     // Ensure nobody else can delete the file while we have it
-    if (!setNativeLocks(fd))
-        qWarning() << "setNativeLocks failed:" << strerror(errno);
+    if (!setNativeLocks(fileName, fd)) {
+        const int errnoSaved = errno;
+        qWarning() << "setNativeLocks failed:" << qt_error_string(errnoSaved);
+    }
 
     if (qt_write_loop(fd, fileData.constData(), fileData.size()) < fileData.size()) {
         close(fd);
@@ -178,6 +218,13 @@ QLockFile::LockError QLockFilePrivate::tryLock_sys()
     // We hold the lock, continue.
     fileHandle = fd;
 
+    // Sync to disk if possible. Ignore errors (e.g. not supported).
+#if defined(_POSIX_SYNCHRONIZED_IO) && _POSIX_SYNCHRONIZED_IO > 0
+    fdatasync(fileHandle);
+#else
+    fsync(fileHandle);
+#endif
+
     return QLockFile::NoError;
 }
 
@@ -187,7 +234,7 @@ bool QLockFilePrivate::removeStaleLock()
     const int fd = qt_safe_open(lockFileName.constData(), O_WRONLY, 0644);
     if (fd < 0) // gone already?
         return false;
-    bool success = setNativeLocks(fd) && (::unlink(lockFileName) == 0);
+    bool success = setNativeLocks(fileName, fd) && (::unlink(lockFileName) == 0);
     close(fd);
     return success;
 }
@@ -233,10 +280,33 @@ QString QLockFilePrivate::processNameByPid(qint64 pid)
     }
     buf[len] = 0;
     return QFileInfo(QFile::decodeName(buf)).fileName();
-#elif defined(Q_OS_BSD4) && !defined(Q_OS_IOS)
+#elif defined(Q_OS_HAIKU)
+    thread_info info;
+    if (get_thread_info(pid, &info) != B_OK)
+        return QString();
+    return QFile::decodeName(info.name);
+#elif defined(Q_OS_BSD4) && !defined(QT_PLATFORM_UIKIT)
+# if defined(__GLIBC__) && defined(__FreeBSD_kernel__)
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
+    size_t len = 0;
+    if (sysctl(mib, 4, NULL, &len, NULL, 0) < 0)
+        return QString();
+    kinfo_proc *proc = static_cast<kinfo_proc *>(malloc(len));
+# else
     kinfo_proc *proc = kinfo_getproc(pid);
+# endif
     if (!proc)
         return QString();
+# if defined(__GLIBC__) && defined(__FreeBSD_kernel__)
+    if (sysctl(mib, 4, proc, &len, NULL, 0) < 0) {
+        free(proc);
+        return QString();
+    }
+    if (proc->ki_pid != pid) {
+        free(proc);
+        return QString();
+    }
+# endif
     QString name = QFile::decodeName(proc->ki_comm);
     free(proc);
     return name;

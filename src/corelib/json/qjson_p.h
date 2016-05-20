@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -115,6 +122,7 @@ QT_BEGIN_NAMESPACE
     Other measurements have shown a slightly bigger binary size than a compact text
     representation where all possible whitespace was stripped out.
 */
+#define Q_DECLARE_JSONPRIVATE_TYPEINFO(Class, Flags) } Q_DECLARE_TYPEINFO(QJsonPrivate::Class, Flags); namespace QJsonPrivate {
 namespace QJsonPrivate {
 
 class Array;
@@ -144,6 +152,13 @@ public:
         return *this;
     }
 };
+} // namespace QJsonPrivate
+
+template <typename T>
+class QTypeInfo<QJsonPrivate::q_littleendian<T> >
+    : public QTypeInfoMerger<QJsonPrivate::q_littleendian<T>, T> {};
+
+namespace QJsonPrivate {
 
 typedef q_littleendian<short> qle_short;
 typedef q_littleendian<unsigned short> qle_ushort;
@@ -280,7 +295,7 @@ static inline int compressedNumber(double d)
     if (non_int)
         return INT_MAX;
 
-    bool neg = (val >> 63);
+    bool neg = (val >> 63) != 0;
     val &= fraction_mask;
     val |= ((quint64)1 << 52);
     int res = (int)(val >> (52 - exp));
@@ -305,7 +320,7 @@ public:
     {
         d->length = str.length();
 #if Q_BYTE_ORDER == Q_BIG_ENDIAN
-        const qle_ushort *uc = (const qle_ushort *)str.unicode();
+        const ushort *uc = (const ushort *)str.unicode();
         for (int i = 0; i < str.length(); ++i)
             d->utf16[i] = uc[i];
 #else
@@ -395,7 +410,7 @@ public:
             // pack with itself, we'll discard the high part anyway
             chunk = _mm_packus_epi16(chunk, chunk);
             // unaligned 64-bit store
-            *(quint64*)&l[i] = _mm_cvtsi128_si64(chunk);
+            qUnalignedStore(l + i, _mm_cvtsi128_si64(chunk));
             i += 8;
         }
 #  endif
@@ -543,7 +558,7 @@ public:
     offset tableOffset;
     // content follows here
 
-    inline bool isObject() const { return is_object; }
+    inline bool isObject() const { return !!is_object; }
     inline bool isArray() const { return !isObject(); }
 
     inline offset *table() const { return (offset *) (((char *) this) + tableOffset); }
@@ -558,7 +573,8 @@ public:
     Entry *entryAt(int i) const {
         return reinterpret_cast<Entry *>(((char *)this) + table()[i]);
     }
-    int indexOf(const QString &key, bool *exists);
+    int indexOf(const QString &key, bool *exists) const;
+    int indexOf(QLatin1String key, bool *exists) const;
 
     bool isValid() const;
 };
@@ -605,6 +621,7 @@ public:
     static uint valueToStore(const QJsonValue &v, uint offset);
     static void copyData(const QJsonValue &v, char *dest, bool compressed);
 };
+Q_DECLARE_JSONPRIVATE_TYPEINFO(Value, Q_PRIMITIVE_TYPE)
 
 inline Value Array::at(int i) const
 {
@@ -659,6 +676,10 @@ public:
     inline bool operator !=(const QString &key) const { return !operator ==(key); }
     inline bool operator >=(const QString &key) const;
 
+    bool operator==(QLatin1String key) const;
+    inline bool operator!=(QLatin1String key) const { return !operator ==(key); }
+    inline bool operator>=(QLatin1String key) const;
+
     bool operator ==(const Entry &other) const;
     bool operator >=(const Entry &other) const;
 };
@@ -671,7 +692,18 @@ inline bool Entry::operator >=(const QString &key) const
         return (shallowKey() >= key);
 }
 
+inline bool Entry::operator >=(QLatin1String key) const
+{
+    if (value.latinKey)
+        return shallowLatin1Key() >= key;
+    else
+        return shallowKey() >= key;
+}
+
 inline bool operator <(const QString &key, const Entry &e)
+{ return e >= key; }
+
+inline bool operator<(QLatin1String key, const Entry &e)
 { return e >= key; }
 
 
@@ -788,7 +820,11 @@ public:
         if (reserve) {
             if (reserve < 128)
                 reserve = 128;
-            size = qMax(size + reserve, size *2);
+            size = qMax(size + reserve, qMin(size *2, (int)Value::MaxSize));
+            if (size > Value::MaxSize) {
+                qWarning("QJson: Document too large to store in data structure");
+                return 0;
+            }
         }
         char *raw = (char *)malloc(size);
         Q_CHECK_PTR(raw);

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,6 +45,7 @@
 #include "qxcbwindow.h"
 #include "qxcbscreen.h"
 #include "qwindow.h"
+#include "qxcbcursor.h"
 #include <private/qdnd_p.h>
 #include <qdebug.h>
 #include <qevent.h>
@@ -160,7 +167,7 @@ void QXcbDrag::init()
     source_time = XCB_CURRENT_TIME;
     target_time = XCB_CURRENT_TIME;
 
-    current_screen = 0;
+    QXcbCursor::queryPointer(connection(), &current_virtual_desktop, 0);
     drag_types.clear();
 }
 
@@ -190,7 +197,12 @@ void QXcbDrag::startDrag()
         xcb_change_property(xcb_connection(), XCB_PROP_MODE_REPLACE, connection()->clipboard()->owner(),
                             atom(QXcbAtom::XdndTypelist),
                             XCB_ATOM_ATOM, 32, drag_types.size(), (const void *)drag_types.constData());
+
+    setUseCompositing(current_virtual_desktop->compositingActive());
+    setScreen(current_virtual_desktop->screens().constFirst()->screen());
     QBasicDrag::startDrag();
+    if (connection()->mouseGrabber() == Q_NULLPTR)
+        shapedPixmapWindow()->setMouseGrabEnabled(true);
 }
 
 void QXcbDrag::endDrag()
@@ -308,38 +320,24 @@ void QXcbDrag::move(const QPoint &globalPos)
     if (source_sameanswer.contains(globalPos) && source_sameanswer.isValid())
         return;
 
-    const QList<QXcbScreen *> &screens = connection()->screens();
-    QXcbScreen *screen = connection()->primaryScreen();
-    for (int i = 0; i < screens.size(); ++i) {
-        if (screens.at(i)->geometry().contains(globalPos)) {
-            screen = screens.at(i);
-            break;
-        }
+    QXcbVirtualDesktop *virtualDesktop = Q_NULLPTR;
+    QPoint cursorPos;
+    QXcbCursor::queryPointer(connection(), &virtualDesktop, &cursorPos);
+    QXcbScreen *screen = virtualDesktop->screenAt(cursorPos);
+    QPoint deviceIndependentPos = QHighDpiScaling::mapPositionFromNative(globalPos, screen);
+
+    if (virtualDesktop != current_virtual_desktop) {
+        setUseCompositing(virtualDesktop->compositingActive());
+        recreateShapedPixmapWindow(static_cast<QPlatformScreen*>(screen)->screen(), deviceIndependentPos);
+        if (connection()->mouseGrabber() == Q_NULLPTR)
+            shapedPixmapWindow()->setMouseGrabEnabled(true);
+
+        current_virtual_desktop = virtualDesktop;
+    } else {
+        QBasicDrag::moveShapedPixmapWindow(deviceIndependentPos);
     }
 
-    QBasicDrag::moveShapedPixmapWindow(QHighDpiScaling::mapPositionFromNative(globalPos, screen));
-
-    if (screen != current_screen) {
-        // ### need to recreate the shaped pixmap window?
-//    int screen = QCursor::x11Screen();
-//    if ((qt_xdnd_current_screen == -1 && screen != X11->defaultScreen) || (screen != qt_xdnd_current_screen)) {
-//        // recreate the pixmap on the new screen...
-//        delete xdnd_data.deco;
-//        QWidget* parent = object->source()->window()->x11Info().screen() == screen
-//            ? object->source()->window() : QApplication::desktop()->screen(screen);
-//        xdnd_data.deco = new QShapedPixmapWidget(parent);
-//        if (!QWidget::mouseGrabber()) {
-//            updatePixmap();
-//            xdnd_data.deco->grabMouse();
-//        }
-//    }
-//    xdnd_data.deco->move(QCursor::pos() - xdnd_data.deco->pm_hot);
-        current_screen = screen;
-    }
-
-
-//    qt_xdnd_current_screen = screen;
-    xcb_window_t rootwin = current_screen->root();
+    xcb_window_t rootwin = current_virtual_desktop->root();
     xcb_translate_coordinates_reply_t *translate =
             ::translateCoordinates(connection(), rootwin, rootwin, globalPos.x(), globalPos.y());
     if (!translate)
@@ -431,6 +429,7 @@ void QXcbDrag::move(const QPoint &globalPos)
 
             xcb_client_message_event_t enter;
             enter.response_type = XCB_CLIENT_MESSAGE;
+            enter.sequence = 0;
             enter.window = target;
             enter.format = 32;
             enter.type = atom(QXcbAtom::XdndEnter);
@@ -459,6 +458,7 @@ void QXcbDrag::move(const QPoint &globalPos)
 
         xcb_client_message_event_t move;
         move.response_type = XCB_CLIENT_MESSAGE;
+        move.sequence = 0;
         move.window = target;
         move.format = 32;
         move.type = atom(QXcbAtom::XdndPosition);
@@ -487,6 +487,7 @@ void QXcbDrag::drop(const QPoint &globalPos)
 
     xcb_client_message_event_t drop;
     drop.response_type = XCB_CLIENT_MESSAGE;
+    drop.sequence = 0;
     drop.window = current_target;
     drop.format = 32;
     drop.type = atom(QXcbAtom::XdndDrop);
@@ -748,6 +749,7 @@ void QXcbDrag::handle_xdnd_position(QPlatformWindow *w, const xcb_client_message
 
     xcb_client_message_event_t response;
     response.response_type = XCB_CLIENT_MESSAGE;
+    response.sequence = 0;
     response.window = xdnd_dragsource;
     response.format = 32;
     response.type = atom(QXcbAtom::XdndStatus);
@@ -894,6 +896,7 @@ void QXcbDrag::send_leave()
 
     xcb_client_message_event_t leave;
     leave.response_type = XCB_CLIENT_MESSAGE;
+    leave.sequence = 0;
     leave.window = current_target;
     leave.format = 32;
     leave.type = atom(QXcbAtom::XdndLeave);
@@ -964,6 +967,7 @@ void QXcbDrag::handleDrop(QPlatformWindow *, const xcb_client_message_event_t *e
 
     xcb_client_message_event_t finished;
     finished.response_type = XCB_CLIENT_MESSAGE;
+    finished.sequence = 0;
     finished.window = xdnd_dragsource;
     finished.format = 32;
     finished.type = atom(QXcbAtom::XdndFinished);
@@ -1074,6 +1078,40 @@ void QXcbDrag::cancel()
         send_leave();
 }
 
+// find an ancestor with XdndAware on it
+static xcb_window_t findXdndAwareParent(QXcbConnection *c, xcb_window_t window)
+{
+    xcb_window_t target = 0;
+    forever {
+        // check if window has XdndAware
+        xcb_get_property_cookie_t gpCookie = Q_XCB_CALL(
+            xcb_get_property(c->xcb_connection(), false, window,
+                             c->atom(QXcbAtom::XdndAware), XCB_GET_PROPERTY_TYPE_ANY, 0, 0));
+        xcb_get_property_reply_t *gpReply = xcb_get_property_reply(
+            c->xcb_connection(), gpCookie, 0);
+        bool aware = gpReply && gpReply->type != XCB_NONE;
+        free(gpReply);
+        if (aware) {
+            target = window;
+            break;
+        }
+
+        // try window's parent
+        xcb_query_tree_cookie_t qtCookie = Q_XCB_CALL(
+            xcb_query_tree_unchecked(c->xcb_connection(), window));
+        xcb_query_tree_reply_t *qtReply = xcb_query_tree_reply(
+            c->xcb_connection(), qtCookie, NULL);
+        if (!qtReply)
+            break;
+        xcb_window_t root = qtReply->root;
+        xcb_window_t parent = qtReply->parent;
+        free(qtReply);
+        if (window == root)
+            break;
+        window = parent;
+    }
+    return target;
+}
 
 void QXcbDrag::handleSelectionRequest(const xcb_selection_request_event_t *event)
 {
@@ -1101,17 +1139,16 @@ void QXcbDrag::handleSelectionRequest(const xcb_selection_request_event_t *event
             // xcb_convert_selection() that we sent the XdndDrop event to.
             at = findTransactionByWindow(event->requestor);
         }
-//        if (at == -1 && event->time == XCB_CURRENT_TIME) {
-//            // previous Qt versions always requested the data on a child of the target window
-//            // using CurrentTime... but it could be asking for either drop data or the current drag's data
-//            Window target = findXdndAwareParent(event->requestor);
-//            if (target) {
-//                if (current_target && current_target == target)
-//                    at = -2;
-//                else
-//                    at = findXdndDropTransactionByWindow(target);
-//            }
-//        }
+
+        if (at == -1) {
+            xcb_window_t target = findXdndAwareParent(connection(), event->requestor);
+            if (target) {
+                if (event->time == XCB_CURRENT_TIME && current_target == target)
+                    at = -2;
+                else
+                    at = findTransactionByWindow(target);
+            }
+        }
     }
 
     QDrag *transactionDrag = 0;

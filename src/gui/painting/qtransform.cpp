@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,6 +52,14 @@
 #include <private/qbezier_p.h>
 
 QT_BEGIN_NAMESPACE
+
+#ifndef QT_NO_DEBUG
+Q_NEVER_INLINE
+static void nanWarning(const char *func)
+{
+    qWarning("QTransform::%s with NaN called", func);
+}
+#endif // QT_NO_DEBUG
 
 #define Q_NEAR_CLIP (sizeof(qreal) == sizeof(double) ? 0.000001 : 0.0001)
 
@@ -412,7 +426,7 @@ QTransform &QTransform::translate(qreal dx, qreal dy)
         return *this;
 #ifndef QT_NO_DEBUG
     if (qIsNaN(dx) | qIsNaN(dy)) {
-        qWarning() << "QTransform::translate with NaN called";
+        nanWarning("translate");
         return *this;
     }
 #endif
@@ -455,7 +469,7 @@ QTransform QTransform::fromTranslate(qreal dx, qreal dy)
 {
 #ifndef QT_NO_DEBUG
     if (qIsNaN(dx) | qIsNaN(dy)) {
-        qWarning() << "QTransform::fromTranslate with NaN called";
+        nanWarning("fromTranslate");
         return QTransform();
 }
 #endif
@@ -480,7 +494,7 @@ QTransform & QTransform::scale(qreal sx, qreal sy)
         return *this;
 #ifndef QT_NO_DEBUG
     if (qIsNaN(sx) | qIsNaN(sy)) {
-        qWarning() << "QTransform::scale with NaN called";
+        nanWarning("scale");
         return *this;
     }
 #endif
@@ -521,7 +535,7 @@ QTransform QTransform::fromScale(qreal sx, qreal sy)
 {
 #ifndef QT_NO_DEBUG
     if (qIsNaN(sx) | qIsNaN(sy)) {
-        qWarning() << "QTransform::fromScale with NaN called";
+        nanWarning("fromScale");
         return QTransform();
 }
 #endif
@@ -546,7 +560,7 @@ QTransform & QTransform::shear(qreal sh, qreal sv)
         return *this;
 #ifndef QT_NO_DEBUG
     if (qIsNaN(sh) | qIsNaN(sv)) {
-        qWarning() << "QTransform::shear with NaN called";
+        nanWarning("shear");
         return *this;
     }
 #endif
@@ -607,7 +621,7 @@ QTransform & QTransform::rotate(qreal a, Qt::Axis axis)
         return *this;
 #ifndef QT_NO_DEBUG
     if (qIsNaN(a)) {
-        qWarning() << "QTransform::rotate with NaN called";
+        nanWarning("rotate");
         return *this;
     }
 #endif
@@ -698,7 +712,7 @@ QTransform & QTransform::rotateRadians(qreal a, Qt::Axis axis)
 {
 #ifndef QT_NO_DEBUG
     if (qIsNaN(a)) {
-        qWarning() << "QTransform::rotateRadians with NaN called";
+        nanWarning("rotateRadians");
         return *this;
     }
 #endif
@@ -1005,10 +1019,11 @@ QTransform QTransform::operator*(const QTransform &m) const
     element of this matrix.
 */
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 /*!
     Assigns the given \a matrix's values to this matrix.
 */
-QTransform & QTransform::operator=(const QTransform &matrix)
+QTransform & QTransform::operator=(const QTransform &matrix) Q_DECL_NOTHROW
 {
     affine._m11 = matrix.affine._m11;
     affine._m12 = matrix.affine._m12;
@@ -1024,6 +1039,7 @@ QTransform & QTransform::operator=(const QTransform &matrix)
 
     return *this;
 }
+#endif
 
 /*!
     Resets the matrix to an identity matrix, i.e. all elements are set

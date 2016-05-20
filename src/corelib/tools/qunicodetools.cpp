@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -49,7 +55,7 @@ namespace QUnicodeTools {
 // -----------------------------------------------------------------------------------------------------
 //
 // The text boundaries determination algorithm.
-// See http://www.unicode.org/reports/tr29/tr29-25.html
+// See http://www.unicode.org/reports/tr29/tr29-27.html
 //
 // -----------------------------------------------------------------------------------------------------
 
@@ -244,8 +250,9 @@ namespace SB {
 
 enum State {
     Initial,
+    Lower,
     Upper,
-    UpATerm,
+    LUATerm,
     ATerm,
     ATermC,
     ACS,
@@ -260,10 +267,11 @@ enum State {
 
 static const uchar breakTable[BAfter + 1][QUnicodeTables::SentenceBreak_Close + 1] = {
 //     Other     CR       LF      Sep     Extend     Sp      Lower   Upper    OLetter  Numeric  ATerm   SContinue STerm     Close
-    { Initial, BAfterC, BAfter , BAfter , Initial, Initial, Initial, Upper  , Initial, Initial, ATerm  , Initial, STerm  , Initial }, // Initial
-    { Initial, BAfterC, BAfter , BAfter , Upper  , Initial, Initial, Upper  , Initial, Initial, UpATerm, STerm  , STerm  , Initial }, // Upper
+    { Initial, BAfterC, BAfter , BAfter , Initial, Initial, Lower  , Upper  , Initial, Initial, ATerm  , Initial, STerm  , Initial }, // Initial
+    { Initial, BAfterC, BAfter , BAfter , Lower  , Initial, Initial, Initial, Initial, Initial, LUATerm, Initial, STerm  , Initial }, // Lower
+    { Initial, BAfterC, BAfter , BAfter , Upper  , Initial, Initial, Upper  , Initial, Initial, LUATerm, STerm  , STerm  , Initial }, // Upper
 
-    { Lookup , BAfterC, BAfter , BAfter , UpATerm, ACS    , Initial, Upper  , Break  , Initial, ATerm  , STerm  , STerm  , ATermC  }, // UpATerm
+    { Lookup , BAfterC, BAfter , BAfter , LUATerm, ACS    , Initial, Upper  , Break  , Initial, ATerm  , STerm  , STerm  , ATermC  }, // LUATerm
     { Lookup , BAfterC, BAfter , BAfter , ATerm  , ACS    , Initial, Break  , Break  , Initial, ATerm  , STerm  , STerm  , ATermC  }, // ATerm
     { Lookup , BAfterC, BAfter , BAfter , ATermC , ACS    , Initial, Break  , Break  , Lookup , ATerm  , STerm  , STerm  , ATermC  }, // ATermC
     { Lookup , BAfterC, BAfter , BAfter , ACS    , ACS    , Initial, Break  , Break  , Lookup , ATerm  , STerm  , STerm  , Lookup  }, // ACS
@@ -341,7 +349,7 @@ static void getSentenceBreaks(const ushort *string, quint32 len, QCharAttributes
 // -----------------------------------------------------------------------------------------------------
 //
 // The line breaking algorithm.
-// See http://www.unicode.org/reports/tr14/tr14-33.html
+// See http://www.unicode.org/reports/tr14/tr14-35.html
 //
 // -----------------------------------------------------------------------------------------------------
 
@@ -408,26 +416,29 @@ inline Class toClass(QUnicodeTables::LineBreakClass lbc, QChar::Category categor
 /* In order to support the tailored implementation of LB25 properly
    the following changes were made in the pair table to allow breaks
    where the numeric expression doesn't match the template (i.e. [^NU](IS|SY)NU):
-   CL->PO from IB to DB
-   CP->PO from IB to DB
-   CL->PR from IB to DB
-   CP->PR from IB to DB
-   PO->OP from IB to DB
-   PR->OP from IB to DB
-   IS->NU from IB to DB
-   SY->NU from IB to DB
+   (CL)(PO) from IB to DB
+   (CP)(PO) from IB to DB
+   (CL)(PR) from IB to DB
+   (CP)(PR) from IB to DB
+   (PO)(OP) from IB to DB
+   (PR)(OP) from IB to DB
+   (IS)(NU) from IB to DB
+   (SY)(NU) from IB to DB
 */
 
-// The following line break classes are not treated by the pair table
-// and must be resolved outside:
-//  AI, BK, CB, CJ, CR, LF, NL, SA, SG, SP, XX
+/* In order to implementat LB21a properly a special rule HH has been introduced and
+   the following changes were made in the pair table to disallow breaks after Hebrew + Hyphen:
+   (HL)(HY|BA) from IB to CI
+   (HY|BA)(!CB) from DB to HH
+*/
 
 enum Action {
     ProhibitedBreak, PB = ProhibitedBreak,
     DirectBreak, DB = DirectBreak,
     IndirectBreak, IB = IndirectBreak,
     CombiningIndirectBreak, CI = CombiningIndirectBreak,
-    CombiningProhibitedBreak, CP = CombiningProhibitedBreak
+    CombiningProhibitedBreak, CP = CombiningProhibitedBreak,
+    ProhibitedBreakAfterHebrewPlusHyphen, HH = ProhibitedBreakAfterHebrewPlusHyphen
 };
 
 static const uchar breakTable[QUnicodeTables::LineBreak_CB + 1][QUnicodeTables::LineBreak_CB + 1] = {
@@ -438,18 +449,18 @@ static const uchar breakTable[QUnicodeTables::LineBreak_CB + 1][QUnicodeTables::
 /* QU */ { PB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, IB },
 /* GL */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, IB },
 /* NS */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
-/* EX */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
-/* SY */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
+/* EX */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
+/* SY */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, IB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
 /* IS */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, IB, IB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
 /* PR */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, IB, DB, IB, IB, DB, DB, PB, CI, PB, IB, IB, IB, IB, IB, DB, DB },
 /* PO */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
 /* NU */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
 /* AL */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
-/* HL */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
+/* HL */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, IB, IB, IB, DB, IB, CI, CI, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
 /* ID */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, IB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
 /* IN */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, IB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
-/* HY */ { DB, PB, PB, IB, DB, IB, PB, PB, PB, DB, DB, IB, DB, DB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
-/* BA */ { DB, PB, PB, IB, DB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
+/* HY */ { HH, PB, PB, IB, HH, IB, PB, PB, PB, HH, HH, IB, HH, HH, HH, HH, IB, IB, HH, HH, PB, CI, PB, HH, HH, HH, HH, HH, HH, DB },
+/* BA */ { HH, PB, PB, IB, HH, IB, PB, PB, PB, HH, HH, HH, HH, HH, HH, HH, IB, IB, HH, HH, PB, CI, PB, HH, HH, HH, HH, HH, HH, DB },
 /* BB */ { IB, PB, PB, IB, IB, IB, PB, PB, PB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, IB, PB, CI, PB, IB, IB, IB, IB, IB, IB, DB },
 /* B2 */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, PB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB },
 /* ZW */ { DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB },
@@ -463,6 +474,10 @@ static const uchar breakTable[QUnicodeTables::LineBreak_CB + 1][QUnicodeTables::
 /* RI */ { DB, PB, PB, IB, IB, IB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, IB, IB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, IB, DB },
 /* CB */ { DB, PB, PB, IB, IB, DB, PB, PB, PB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, DB, PB, CI, PB, DB, DB, DB, DB, DB, DB, DB }
 };
+
+// The following line break classes are not treated by the pair table
+// and must be resolved outside:
+//  AI, BK, CB, CJ, CR, LF, NL, SA, SG, SP, XX
 
 } // namespace LB
 
@@ -554,6 +569,10 @@ static void getLineBreaks(const ushort *string, quint32 len, QCharAttributes *at
         case LB::CombiningProhibitedBreak:
             if (lcls != QUnicodeTables::LineBreak_SP)
                 goto next_no_cls_update;
+            break;
+        case LB::ProhibitedBreakAfterHebrewPlusHyphen:
+            if (lcls != QUnicodeTables::LineBreak_HL)
+                attributes[pos].lineBreak = true;
             break;
         case LB::ProhibitedBreak:
             // nothing to do
@@ -659,17 +678,17 @@ Q_CORE_EXPORT void initCharAttributes(const ushort *string, int length,
 
 // ----------------------------------------------------------------------------
 //
-// The Unicode script property. See http://www.unicode.org/reports/tr24/tr24-22.html
+// The Unicode script property. See http://www.unicode.org/reports/tr24/tr24-24.html
 //
 // ----------------------------------------------------------------------------
 
 Q_CORE_EXPORT void initScripts(const ushort *string, int length, uchar *scripts)
 {
     int sor = 0;
-    int eor = -1;
+    int eor = 0;
     uchar script = QChar::Script_Common;
-    for (int i = 0; i < length; ++i) {
-        eor = i;
+
+    for (int i = 0; i < length; ++i, eor = i) {
         uint ucs4 = string[i];
         if (QChar::isHighSurrogate(ucs4) && i + 1 < length) {
             ushort low = string[i + 1];
@@ -681,60 +700,37 @@ Q_CORE_EXPORT void initScripts(const ushort *string, int length, uchar *scripts)
 
         const QUnicodeTables::Properties *prop = QUnicodeTables::properties(ucs4);
 
-        if (Q_LIKELY(prop->script == script || prop->script <= QChar::Script_Inherited))
+        uchar nscript = prop->script;
+
+        if (Q_LIKELY(nscript == script || nscript <= QChar::Script_Common))
             continue;
+
+        // inherit preceding Common-s
+        if (Q_UNLIKELY(script <= QChar::Script_Common)) {
+            // also covers a case where the base character of Common script followed
+            // by one or more combining marks of non-Inherited, non-Common script
+            script = nscript;
+            continue;
+        }
 
         // Never break between a combining mark (gc= Mc, Mn or Me) and its base character.
         // Thus, a combining mark — whatever its script property value is — should inherit
         // the script property value of its base character.
         static const int test = (FLAG(QChar::Mark_NonSpacing) | FLAG(QChar::Mark_SpacingCombining) | FLAG(QChar::Mark_Enclosing));
-        if (Q_UNLIKELY(FLAG(prop->category) & test)) {
-            // In cases where the base character itself has the Common script property value,
-            // and it is followed by one or more combining marks with a specific script property value,
-            // it may be even better for processing to let the base acquire the script property value
-            // from the first mark. This approach can be generalized by treating all the characters
-            // of a combining character sequence as having the script property value
-            // of the first non-Inherited, non-Common character in the sequence if there is one,
-            // and otherwise treating all the characters as having the Common script property value.
-            if (Q_LIKELY(script > QChar::Script_Common || prop->script <= QChar::Script_Common))
-                continue;
+        if (Q_UNLIKELY(FLAG(prop->category) & test))
+            continue;
 
-            script = QChar::Script(prop->script);
-        }
+        Q_ASSERT(script > QChar::Script_Common);
+        Q_ASSERT(sor < eor);
+        ::memset(scripts + sor, script, (eor - sor) * sizeof(uchar));
+        sor = eor;
 
-#if 0 // ### Disabled due to regressions. The font selection algorithm is not prepared for this change.
-        if (Q_LIKELY(script != QChar::Script_Common)) {
-            // override preceding Common-s
-            while (sor > 0 && scripts[sor - 1] == QChar::Script_Common)
-                --sor;
-        } else {
-            // see if we are inheriting preceding run
-            if (sor > 0)
-                script = scripts[sor - 1];
-        }
-#endif
-
-        while (sor < eor)
-            scripts[sor++] = script;
-
-        script = prop->script;
+        script = nscript;
     }
-    eor = length;
 
-#if 0 // ### Disabled due to regressions. The font selection algorithm is not prepared for this change.
-    if (Q_LIKELY(script != QChar::Script_Common)) {
-        // override preceding Common-s
-        while (sor > 0 && scripts[sor - 1] == QChar::Script_Common)
-            --sor;
-    } else {
-        // see if we are inheriting preceding run
-        if (sor > 0)
-            script = scripts[sor - 1];
-    }
-#endif
-
-    while (sor < eor)
-        scripts[sor++] = script;
+    Q_ASSERT(script >= QChar::Script_Common);
+    Q_ASSERT(eor == length);
+    ::memset(scripts + sor, script, (eor - sor) * sizeof(uchar));
 }
 
 } // namespace QUnicodeTools

@@ -67,17 +67,14 @@ for(ever) {
     unset(BAD_QT)
     for(QTLIB, FULL_QT$$var_sfx) {
         MODULE_NAME = $$eval(QT.$${QTLIB}.name)
+        MODULE_MODULE = $$eval(QT.$${QTLIB}.module)
         MODULE_INCLUDES = $$eval(QT.$${QTLIB}.includes)
         MODULE_LIBS = $$eval(QT.$${QTLIB}.libs)
+        MODULE_FRAMEWORKS = $$eval(QT.$${QTLIB}.frameworks)
         MODULE_CONFIG = $$eval(QT.$${QTLIB}.module_config)
 
         isEmpty(MODULE_NAME) {
             BAD_QT += $$QTLIB
-            next()
-        }
-
-        target_qt:isEqual(TARGET, $$MODULE_NAME) {
-            warning("$$TARGET cannot have a QT$$var_sfx of $$QTLIB")
             next()
         }
 
@@ -93,56 +90,65 @@ for(ever) {
         MODULE_LIBS_ADD = $$MODULE_LIBS
         MODULE_LIBS_ADD -= $$QMAKE_DEFAULT_LIBDIRS
 
-        LINKAGE =
-        mac:contains(MODULE_CONFIG, lib_bundle) {
-            FRAMEWORK_INCLUDE = $${MODULE_LIBS}/$${MODULE_NAME}.framework/Headers
-            !qt_no_framework_direct_includes {
-                INCLUDEPATH *= $$FRAMEWORK_INCLUDE
+        !contains(MODULE_CONFIG, v2) {
+            # Backwards compatibility with pre-5.6 module .pri files
+
+            contains(MODULE_CONFIG, lib_bundle) {
+                MODULE_FRAMEWORKS = $$MODULE_LIBS
+                inc = $$MODULE_LIBS/$${MODULE_NAME}.framework/Headers
+                MODULE_INCLUDES = $$inc
+                contains(MODULE_CONFIG, internal_module): \
+                    MODULE_INCLUDES += \
+                        $$inc/$$eval(QT.$${QTLIB}.VERSION) \
+                        $$inc/$$eval(QT.$${QTLIB}.VERSION)/$$MODULE_NAME
+            } else {
+                # Re-insert the major version in the library name (cf qt5LibraryTarget above)
+                MODULE_NAME ~= s,^Qt,Qt$$QT_MAJOR_VERSION,
             }
-            contains(MODULE_CONFIG, internal_module): \
-                INCLUDEPATH += \
-                    $$FRAMEWORK_INCLUDE/$$eval(QT.$${QTLIB}.VERSION) \
-                    $$FRAMEWORK_INCLUDE/$$eval(QT.$${QTLIB}.VERSION)/$$MODULE_NAME
-            QMAKE_FRAMEWORKPATH *= $${MODULE_LIBS}
-            !contains(MODULE_CONFIG, no_link): \
-                LINKAGE += -framework $${MODULE_NAME}$${QT_LIBINFIX}
-        } else {
-            INCLUDEPATH *= $$MODULE_INCLUDES
+
+            # Only link to this module if a libs directory is set, else this is just a module
+            # to give access to sources or include files, and not for linking.
+            !isEmpty(MODULE_LIBS):!contains(MODULE_CONFIG, no_link): \
+                MODULE_MODULE = $${MODULE_NAME}$${QT_LIBINFIX}
         }
 
-        # Only link to this module if a libs directory is set, else this is just a module
-        # to give access to sources or include files, and not for linking.
-        !isEmpty(MODULE_LIBS):!contains(MODULE_CONFIG, no_link) {
-
-            # Re-insert the major version in the library name (cf qt5LibraryTarget above)
-            # unless it's a framework build
-            !mac|!contains(MODULE_CONFIG, lib_bundle): \
-                MODULE_NAME ~= s,^Qt,Qt$$QT_MAJOR_VERSION,
-
-            win32 {
-                # Make sure the version number isn't appended again to the lib name
-                QMAKE_$${upper($$MODULE_NAME$$QT_LIBINFIX)}_VERSION_OVERRIDE = 0
-                QMAKE_$${upper($$MODULE_NAME$$QT_LIBINFIX)}D_VERSION_OVERRIDE = 0
-            }
-
-            isEmpty(LINKAGE) {
+        # Frameworks shouldn't need include paths, but much code does not use
+        # module-qualified #includes, so by default we add paths which point
+        # directly into the frameworks. Private modules have somewhat convoluted
+        # header paths, so adding them is necessary in every case.
+        !if(contains(MODULE_CONFIG, lib_bundle):qt_no_framework_direct_includes) \
+                |contains(MODULE_CONFIG, internal_module): \
+            INCLUDEPATH *= $$MODULE_INCLUDES
+        QMAKE_FRAMEWORKPATH *= $$MODULE_FRAMEWORKS
+        !isEmpty(MODULE_MODULE) {
+            contains(MODULE_CONFIG, lib_bundle) {
+                LIBS$$var_sfx += -framework $$MODULE_MODULE
+            } else {
                 !isEmpty(MODULE_LIBS_ADD): \
-                    LINKAGE = -L$$MODULE_LIBS_ADD
-                lib = $${MODULE_NAME}$${QT_LIBINFIX}$$qtPlatformTargetSuffix()
-                LINKAGE += -l$$lib
+                    LIBS$$var_sfx += -L$$MODULE_LIBS_ADD
+
+                lib = $$MODULE_MODULE$$qtPlatformTargetSuffix()
+                LIBS$$var_sfx += -l$$lib
 
                 contains(MODULE_CONFIG, staticlib): \
                     PRE_TARGETDEPS *= $$MODULE_LIBS/$${QMAKE_PREFIX_STATICLIB}$${lib}.$${QMAKE_EXTENSION_STATICLIB}
-            }
 
-            LIBS$$var_sfx += $$LINKAGE
-
-            !isEmpty(QMAKE_LSB) {
-                !isEmpty(MODULE_LIBS_ADD): \
-                    QMAKE_LFLAGS *= --lsb-libpath=$$MODULE_LIBS_ADD
-                QMAKE_LFLAGS *= --lsb-shared-libs=$${MODULE_NAME}$${QT_LIBINFIX}
-                QMAKE_LIBDIR *= /opt/lsb/lib
+                !isEmpty(QMAKE_LSB) {
+                    !isEmpty(MODULE_LIBS_ADD): \
+                        QMAKE_LFLAGS *= --lsb-libpath=$$MODULE_LIBS_ADD
+                    QMAKE_LFLAGS *= --lsb-shared-libs=$$lib
+                    QMAKE_LIBDIR *= /opt/lsb/lib
+                }
             }
+        }
+        # Add capabilities as defined by modules used in the project
+        winrt {
+            MODULE_WINRT_CAPABILITIES = $$eval(QT.$${QTLIB}.winrt_capabilities)
+            !isEmpty(MODULE_WINRT_CAPABILITIES): \
+                WINRT_MANIFEST.capabilities_default += $$MODULE_WINRT_CAPABILITIES
+            MODULE_WINRT_CAPABILITIES_DEVICE = $$eval(QT.$${QTLIB}.winrt_capabilities_device)
+            !isEmpty(MODULE_WINRT_CAPABILITIES_DEVICE): \
+                WINRT_MANIFEST.capabilities_device_default += $$MODULE_WINRT_CAPABILITIES_DEVICE
         }
     }
     !isEmpty(BAD_QT):error("Unknown module(s) in QT$$var_sfx: $$replace(BAD_QT, _private$, -private)")
@@ -161,22 +167,10 @@ qt_module_deps = $$resolve_depends(qt_module_deps, "QT.")
 
 !no_qt_rpath:!static:contains(QT_CONFIG, rpath):!contains(QT_CONFIG, static):\
         contains(qt_module_deps, core) {
-    relative_qt_rpath:defined(target.path, var) {
-        mac {
-            if(equals(TEMPLATE, app):app_bundle)|\
-                    if(equals(TEMPLATE, lib):plugin:plugin_bundle) {
-                ios:  binpath = $$target.path/$${TARGET}.app
-                else: binpath = $$target.path/$${TARGET}.app/Contents/MacOS
-            } else: equals(TEMPLATE, lib):!plugin:lib_bundle {
-                binpath = $$target.path/$${TARGET}.framework/Versions/Current
-            } else {
-                binpath = $$target.path
-            }
-            QMAKE_RPATHDIR += @loader_path/$$relative_path($$[QT_INSTALL_LIBS], $$binpath)
-        } else {
-            QMAKE_LFLAGS += -Wl,-z,origin
-            QMAKE_RPATHDIR += $ORIGIN/$$relative_path($$[QT_INSTALL_LIBS], $$target.path)
-        }
+    relative_qt_rpath:!isEmpty(QMAKE_REL_RPATH_BASE):contains(INSTALLS, target):\
+            isEmpty(target.files):isEmpty(target.commands):isEmpty(target.extra) {
+        # NOT the /dev property, as INSTALLS use host paths
+        QMAKE_RPATHDIR += $$relative_path($$[QT_INSTALL_LIBS], $$qtRelativeRPathBase())
     } else {
         QMAKE_RPATHDIR += $$[QT_INSTALL_LIBS/dev]
     }
@@ -218,7 +212,7 @@ contains(qt_module_deps, qml): \
 
     !isEmpty(IMPORTS._KEYS_) {
         # add import plugins to LIBS line
-        for (key, IMPORTS._KEYS_): {
+        for (key, IMPORTS._KEYS_) {
             PATH = $$eval(IMPORTS.$${key}.path)
             PLUGIN = $$eval(IMPORTS.$${key}.plugin)
             !isEmpty(PATH):!isEmpty(PLUGIN): LIBS *= -L$$PATH -l$${PLUGIN}$$qtPlatformTargetSuffix()
@@ -245,7 +239,7 @@ contains(qt_module_deps, qml): \
         }
         QML_IMPORT_CPP = $$OUT_PWD/$$lower($$basename(TARGET))_qml_plugin_import.cpp
         write_file($$QML_IMPORT_CPP, IMPORT_FILE_CONT)|error("Aborting.")
-        SOURCES += $$QML_IMPORT_CPP
+        GENERATED_SOURCES += $$QML_IMPORT_CPP
         QMAKE_DISTCLEAN += $$QML_IMPORT_CPP
 
         # copy qml files. this part is platform spesific.
@@ -341,7 +335,7 @@ contains(QT_CONFIG, static) {
             }
             IMPORT_CPP = $$OUT_PWD/$$lower($$basename(TARGET))_plugin_import.cpp
             write_file($$IMPORT_CPP, IMPORT_FILE_CONT)|error("Aborting.")
-            SOURCES += $$IMPORT_CPP
+            GENERATED_SOURCES += $$IMPORT_CPP
             QMAKE_DISTCLEAN += $$IMPORT_CPP
         }
     }
@@ -354,14 +348,10 @@ for(QT_CURRENT_VERIFY, $$list($$QT_PLUGIN_VERIFY)) {
        QT_PLUGINPATH = $$eval(QT_PLUGIN.$${QTPLUG}.TYPE)
 
         # Generate the plugin linker line
-        target_qt:isEqual(TARGET, QTPLUG) {
-            warning($$TARGET cannot have a QTPLUGIN of $$QTPLUG)
-        } else {
-            QT_LINKAGE = -l$${QTPLUG}$$qtPlatformTargetSuffix()
-        }
+        QT_LINKAGE = -l$${QTPLUG}$$qtPlatformTargetSuffix()
 
         # Only link against plugin in static builds
-        isEqual(QT_CURRENT_VERIFY, QTPLUGIN): {
+        isEqual(QT_CURRENT_VERIFY, QTPLUGIN) {
             !isEmpty(QT_PLUGINPATH) {
                 plugpath = $$eval(QT_PLUGIN.$${QTPLUG}.PATH)
                 isEmpty(plugpath): \
@@ -375,7 +365,7 @@ for(QT_CURRENT_VERIFY, $$list($$QT_PLUGIN_VERIFY)) {
 
         # The following block is currently broken, because qt_plugin_XXX.prf files
         # are not generated for dynamic builds.
-        false:isEqual(QT_CURRENT_VERIFY, DEPLOYMENT_PLUGIN):shared:if(wince*|winrt) {
+        false:isEqual(QT_CURRENT_VERIFY, DEPLOYMENT_PLUGIN):shared:winrt {
             QT_ITEM =
             debug: QT_ITEM = $${QTPLUG}d4.dll
             else: QT_ITEM = $${QTPLUG}4.dll

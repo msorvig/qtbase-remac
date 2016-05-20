@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -500,11 +506,8 @@ public:
     static int registerTypedef(const char *typeName, int aliasId);
     static int registerNormalizedTypedef(const QT_PREPEND_NAMESPACE(QByteArray) &normalizedTypeName, int aliasId);
     static int type(const char *typeName);
-#ifndef Q_QDOC
+
     static int type(const QT_PREPEND_NAMESPACE(QByteArray) &typeName);
-#else
-    static int type(const QByteArray &typeName);
-#endif
     static const char *typeName(int type);
     static int sizeOf(int type);
     static TypeFlags typeFlags(int type);
@@ -594,8 +597,11 @@ public:
     }
 
 #ifdef Q_QDOC
+    template<typename MemberFunction, int>
     static bool registerConverter(MemberFunction function);
+    template<typename MemberFunctionOk, char>
     static bool registerConverter(MemberFunctionOk function);
+    template<typename UnaryFunction>
     static bool registerConverter(UnaryFunction function);
 #else
     // member function as in "QString QFont::toString() const"
@@ -1183,6 +1189,7 @@ public:
 public:
     template<class T> QAssociativeIterableImpl(const T*p)
       : _iterable(p)
+      , _iterator(Q_NULLPTR)
       , _metaType_id_key(qMetaTypeId<typename T::key_type>())
       , _metaType_flags_key(QTypeInfo<typename T::key_type>::isPointer)
       , _metaType_id_value(qMetaTypeId<typename T::mapped_type>())
@@ -1202,6 +1209,7 @@ public:
 
     QAssociativeIterableImpl()
       : _iterable(Q_NULLPTR)
+      , _iterator(Q_NULLPTR)
       , _metaType_id_key(QMetaType::UnknownType)
       , _metaType_flags_key(0)
       , _metaType_id_value(QMetaType::UnknownType)
@@ -1226,7 +1234,7 @@ public:
 
     inline void destroyIter() { _destroyIter(&_iterator); }
 
-    inline VariantData getCurrentKey() const { return _getKey(&_iterator, _metaType_id_key, _metaType_flags_value); }
+    inline VariantData getCurrentKey() const { return _getKey(&_iterator, _metaType_id_key, _metaType_flags_key); }
     inline VariantData getCurrentValue() const { return _getValue(&_iterator, _metaType_id_value, _metaType_flags_value); }
 
     inline void find(const VariantData &key)
@@ -1849,6 +1857,7 @@ inline int qRegisterMetaTypeStreamOperators()
     } QT_END_NAMESPACE                                                  \
     /**/
 
+#ifndef Q_MOC_RUN
 #define Q_DECLARE_METATYPE(TYPE) Q_DECLARE_METATYPE_IMPL(TYPE)
 #define Q_DECLARE_METATYPE_IMPL(TYPE)                                   \
     QT_BEGIN_NAMESPACE                                                  \
@@ -1868,7 +1877,7 @@ inline int qRegisterMetaTypeStreamOperators()
             }                                                           \
     };                                                                  \
     QT_END_NAMESPACE
-
+#endif // Q_MOC_RUN
 
 #define Q_DECLARE_BUILTIN_METATYPE(TYPE, METATYPEID, NAME) \
     QT_BEGIN_NAMESPACE \
@@ -1891,7 +1900,9 @@ QT_FOR_EACH_STATIC_WIDGETS_CLASS(QT_FORWARD_DECLARE_STATIC_TYPES_ITER)
 typedef QList<QVariant> QVariantList;
 typedef QMap<QString, QVariant> QVariantMap;
 typedef QHash<QString, QVariant> QVariantHash;
+#ifndef Q_QDOC
 typedef QList<QByteArray> QByteArrayList;
+#endif
 
 #define Q_DECLARE_METATYPE_TEMPLATE_1ARG(SINGLE_ARG_TEMPLATE) \
 QT_BEGIN_NAMESPACE \

@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -39,6 +49,7 @@
 ****************************************************************************/
 
 #include "puzzlewidget.h"
+#include "pieceslist.h"
 
 #include <QDrag>
 #include <QDragEnterEvent>
@@ -65,7 +76,7 @@ void PuzzleWidget::clear()
 
 void PuzzleWidget::dragEnterEvent(QDragEnterEvent *event)
 {
-    if (event->mimeData()->hasFormat("image/x-puzzle-piece"))
+    if (event->mimeData()->hasFormat(PiecesList::puzzleMimeType()))
         event->accept();
     else
         event->ignore();
@@ -83,8 +94,8 @@ void PuzzleWidget::dragMoveEvent(QDragMoveEvent *event)
 {
     QRect updateRect = highlightedRect.united(targetSquare(event->pos()));
 
-    if (event->mimeData()->hasFormat("image/x-puzzle-piece")
-        && findPiece(targetSquare(event->pos())) == -1) {
+    if (event->mimeData()->hasFormat(PiecesList::puzzleMimeType())
+        && pieceRects.indexOf(targetSquare(event->pos())) == -1) {
 
         highlightedRect = targetSquare(event->pos());
         event->setDropAction(Qt::MoveAction);
@@ -99,10 +110,10 @@ void PuzzleWidget::dragMoveEvent(QDragMoveEvent *event)
 
 void PuzzleWidget::dropEvent(QDropEvent *event)
 {
-    if (event->mimeData()->hasFormat("image/x-puzzle-piece")
-        && findPiece(targetSquare(event->pos())) == -1) {
+    if (event->mimeData()->hasFormat(PiecesList::puzzleMimeType())
+        && pieceRects.indexOf(targetSquare(event->pos())) == -1) {
 
-        QByteArray pieceData = event->mimeData()->data("image/x-puzzle-piece");
+        QByteArray pieceData = event->mimeData()->data(PiecesList::puzzleMimeType());
         QDataStream dataStream(&pieceData, QIODevice::ReadOnly);
         QRect square = targetSquare(event->pos());
         QPixmap pixmap;
@@ -130,19 +141,10 @@ void PuzzleWidget::dropEvent(QDropEvent *event)
     }
 }
 
-int PuzzleWidget::findPiece(const QRect &pieceRect) const
-{
-    for (int i = 0; i < pieceRects.size(); ++i) {
-        if (pieceRect == pieceRects[i])
-            return i;
-    }
-    return -1;
-}
-
 void PuzzleWidget::mousePressEvent(QMouseEvent *event)
 {
     QRect square = targetSquare(event->pos());
-    int found = findPiece(square);
+    int found = pieceRects.indexOf(square);
 
     if (found == -1)
         return;
@@ -164,7 +166,7 @@ void PuzzleWidget::mousePressEvent(QMouseEvent *event)
     dataStream << pixmap << location;
 
     QMimeData *mimeData = new QMimeData;
-    mimeData->setData("image/x-puzzle-piece", itemData);
+    mimeData->setData(PiecesList::puzzleMimeType(), itemData);
 
     QDrag *drag = new QDrag(this);
     drag->setMimeData(mimeData);

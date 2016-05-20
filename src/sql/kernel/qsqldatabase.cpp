@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtSql module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -33,51 +39,6 @@
 
 #include "qsqldatabase.h"
 #include "qsqlquery.h"
-
-#ifdef Q_OS_WIN32
-// Conflicting declarations of LPCBYTE in sqlfront.h and winscard.h
-#define _WINSCARD_H_
-#endif
-
-#ifdef QT_SQL_PSQL
-#include "../drivers/psql/qsql_psql_p.h"
-#endif
-#ifdef QT_SQL_MYSQL
-#include "../drivers/mysql/qsql_mysql_p.h"
-#endif
-#ifdef QT_SQL_ODBC
-#include "../drivers/odbc/qsql_odbc_p.h"
-#endif
-#ifdef QT_SQL_OCI
-#include "../drivers/oci/qsql_oci_p.h"
-#endif
-#ifdef QT_SQL_TDS
-// conflicting RETCODE typedef between odbc and freetds
-#define RETCODE DBRETCODE
-#include "../drivers/tds/qsql_tds_p.h"
-#undef RETCODE
-#endif
-#ifdef QT_SQL_DB2
-#include "../drivers/db2/qsql_db2_p.h"
-#endif
-#ifdef QT_SQL_SQLITE
-#include "../drivers/sqlite/qsql_sqlite_p.h"
-#endif
-#ifdef QT_SQL_SQLITE2
-#include "../drivers/sqlite2/qsql_sqlite2_p.h"
-#endif
-#ifdef QT_SQL_IBASE
-#undef SQL_FLOAT  // avoid clash with ODBC
-#undef SQL_DOUBLE
-#undef SQL_TIMESTAMP
-#undef SQL_TYPE_TIME
-#undef SQL_TYPE_DATE
-#undef SQL_DATE
-#define SCHAR IBASE_SCHAR  // avoid clash with ODBC (older versions of ibase.h with Firebird)
-#include "../drivers/ibase/qsql_ibase_p.h"
-#undef SCHAR
-#endif
-
 #include "qdebug.h"
 #include "qcoreapplication.h"
 #include "qreadwritelock.h"
@@ -93,11 +54,9 @@
 
 QT_BEGIN_NAMESPACE
 
-#ifndef QT_NO_LIBRARY
 Q_GLOBAL_STATIC_WITH_ARGS(QFactoryLoader, loader,
                           (QSqlDriverFactoryInterface_iid,
                            QLatin1String("/sqldrivers")))
-#endif
 
 #if !defined(Q_CC_MSVC) || _MSC_VER >= 1900
 // ### Qt6: remove the #ifdef
@@ -538,40 +497,6 @@ QStringList QSqlDatabase::drivers()
 {
     QStringList list;
 
-#ifdef QT_SQL_PSQL
-    list << QLatin1String("QPSQL7");
-    list << QLatin1String("QPSQL");
-#endif
-#ifdef QT_SQL_MYSQL
-    list << QLatin1String("QMYSQL3");
-    list << QLatin1String("QMYSQL");
-#endif
-#ifdef QT_SQL_ODBC
-    list << QLatin1String("QODBC3");
-    list << QLatin1String("QODBC");
-#endif
-#ifdef QT_SQL_OCI
-    list << QLatin1String("QOCI8");
-    list << QLatin1String("QOCI");
-#endif
-#ifdef QT_SQL_TDS
-    list << QLatin1String("QTDS7");
-    list << QLatin1String("QTDS");
-#endif
-#ifdef QT_SQL_DB2
-    list << QLatin1String("QDB2");
-#endif
-#ifdef QT_SQL_SQLITE
-    list << QLatin1String("QSQLITE");
-#endif
-#ifdef QT_SQL_SQLITE2
-    list << QLatin1String("QSQLITE2");
-#endif
-#ifdef QT_SQL_IBASE
-    list << QLatin1String("QIBASE");
-#endif
-
-#ifndef QT_NO_LIBRARY
     if (QFactoryLoader *fl = loader()) {
         typedef QMultiMap<int, QString> PluginKeyMap;
         typedef PluginKeyMap::const_iterator PluginKeyMapConstIterator;
@@ -582,7 +507,6 @@ QStringList QSqlDatabase::drivers()
             if (!list.contains(it.value()))
                 list << it.value();
     }
-#endif
 
     DriverDict dict = QSqlDatabasePrivate::driverDict();
     for (DriverDict::const_iterator i = dict.constBegin(); i != dict.constEnd(); ++i) {
@@ -724,45 +648,6 @@ void QSqlDatabasePrivate::init(const QString &type)
     drvName = type;
 
     if (!driver) {
-#ifdef QT_SQL_PSQL
-        if (type == QLatin1String("QPSQL") || type == QLatin1String("QPSQL7"))
-            driver = new QPSQLDriver();
-#endif
-#ifdef QT_SQL_MYSQL
-        if (type == QLatin1String("QMYSQL") || type == QLatin1String("QMYSQL3"))
-            driver = new QMYSQLDriver();
-#endif
-#ifdef QT_SQL_ODBC
-        if (type == QLatin1String("QODBC") || type == QLatin1String("QODBC3"))
-            driver = new QODBCDriver();
-#endif
-#ifdef QT_SQL_OCI
-        if (type == QLatin1String("QOCI") || type == QLatin1String("QOCI8"))
-            driver = new QOCIDriver();
-#endif
-#ifdef QT_SQL_TDS
-        if (type == QLatin1String("QTDS") || type == QLatin1String("QTDS7"))
-            driver = new QTDSDriver();
-#endif
-#ifdef QT_SQL_DB2
-        if (type == QLatin1String("QDB2"))
-            driver = new QDB2Driver();
-#endif
-#ifdef QT_SQL_SQLITE
-        if (type == QLatin1String("QSQLITE"))
-            driver = new QSQLiteDriver();
-#endif
-#ifdef QT_SQL_SQLITE2
-        if (type == QLatin1String("QSQLITE2"))
-            driver = new QSQLite2Driver();
-#endif
-#ifdef QT_SQL_IBASE
-        if (type == QLatin1String("QIBASE"))
-            driver = new QIBaseDriver();
-#endif
-    }
-
-    if (!driver) {
         DriverDict dict = QSqlDatabasePrivate::driverDict();
         for (DriverDict::const_iterator it = dict.constBegin();
              it != dict.constEnd() && !driver; ++it) {
@@ -772,10 +657,8 @@ void QSqlDatabasePrivate::init(const QString &type)
         }
     }
 
-#ifndef QT_NO_LIBRARY
     if (!driver && loader())
         driver = qLoadPlugin<QSqlDriver, QSqlDriverPlugin>(loader(), type);
-#endif // QT_NO_LIBRARY
 
     if (!driver) {
         qWarning("QSqlDatabase: %s driver not loaded", type.toLatin1().data());

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -113,21 +119,33 @@ QString QStandardPaths::writableLocation(StandardLocation type)
     {
         const uid_t myUid = geteuid();
         // http://standards.freedesktop.org/basedir-spec/latest/
+        QFileInfo fileInfo;
         QString xdgRuntimeDir = QFile::decodeName(qgetenv("XDG_RUNTIME_DIR"));
         if (xdgRuntimeDir.isEmpty()) {
             const QString userName = QFileSystemEngine::resolveUserName(myUid);
             xdgRuntimeDir = QDir::tempPath() + QLatin1String("/runtime-") + userName;
-            QDir dir(xdgRuntimeDir);
-            if (!dir.exists()) {
+            fileInfo.setFile(xdgRuntimeDir);
+            if (!fileInfo.isDir()) {
                 if (!QDir().mkdir(xdgRuntimeDir)) {
                     qWarning("QStandardPaths: error creating runtime directory %s: %s", qPrintable(xdgRuntimeDir), qPrintable(qt_error_string(errno)));
                     return QString();
                 }
             }
             qWarning("QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '%s'", qPrintable(xdgRuntimeDir));
+        } else {
+            fileInfo.setFile(xdgRuntimeDir);
+            if (!fileInfo.exists()) {
+                qWarning("QStandardPaths: XDG_RUNTIME_DIR points to non-existing path '%s', "
+                         "please create it with 0700 permissions.", qPrintable(xdgRuntimeDir));
+                return QString();
+            }
+            if (!fileInfo.isDir()) {
+                qWarning("QStandardPaths: XDG_RUNTIME_DIR points to '%s' which is not a directory",
+                         qPrintable(xdgRuntimeDir));
+                return QString();
+            }
         }
         // "The directory MUST be owned by the user"
-        QFileInfo fileInfo(xdgRuntimeDir);
         if (fileInfo.ownerId() != myUid) {
             qWarning("QStandardPaths: wrong ownership on runtime directory %s, %d instead of %d", qPrintable(xdgRuntimeDir),
                      fileInfo.ownerId(), myUid);
@@ -135,13 +153,15 @@ QString QStandardPaths::writableLocation(StandardLocation type)
         }
         // "and he MUST be the only one having read and write access to it. Its Unix access mode MUST be 0700."
         // since the current user is the owner, set both xxxUser and xxxOwner
-        QFile file(xdgRuntimeDir);
         const QFile::Permissions wantedPerms = QFile::ReadUser | QFile::WriteUser | QFile::ExeUser
                                                | QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner;
-        if (file.permissions() != wantedPerms && !file.setPermissions(wantedPerms)) {
-            qWarning("QStandardPaths: could not set correct permissions on runtime directory %s: %s",
-                     qPrintable(xdgRuntimeDir), qPrintable(file.errorString()));
-            return QString();
+        if (fileInfo.permissions() != wantedPerms) {
+            QFile file(xdgRuntimeDir);
+            if (!file.setPermissions(wantedPerms)) {
+                qWarning("QStandardPaths: could not set correct permissions on runtime directory %s: %s",
+                         qPrintable(xdgRuntimeDir), qPrintable(file.errorString()));
+                return QString();
+            }
         }
         return xdgRuntimeDir;
     }

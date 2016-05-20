@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -87,7 +93,7 @@ QXcbGlxIntegration::QXcbGlxIntegration()
     : m_connection(Q_NULLPTR)
     , m_glx_first_event(0)
 {
-    qCDebug(QT_XCB_GLINTEGRATION) << "Xcb GLX gl-integration created";
+    qCDebug(lcQpaGl) << "Xcb GLX gl-integration created";
 }
 
 QXcbGlxIntegration::~QXcbGlxIntegration()
@@ -112,7 +118,7 @@ bool QXcbGlxIntegration::initialize(QXcbConnection *connection)
     xcb_glx_query_version_reply_t *xglx_query = xcb_glx_query_version_reply(m_connection->xcb_connection(),
                                                                             xglx_query_cookie, &error);
     if (!xglx_query || error) {
-        qCWarning(QT_XCB_GLINTEGRATION) << "QXcbConnection: Failed to initialize GLX";
+        qCWarning(lcQpaGl) << "QXcbConnection: Failed to initialize GLX";
         free(error);
         return false;
     }
@@ -121,7 +127,7 @@ bool QXcbGlxIntegration::initialize(QXcbConnection *connection)
 
     m_native_interface_handler.reset(new QXcbGlxNativeInterfaceHandler(connection->nativeInterface()));
 
-    qCDebug(QT_XCB_GLINTEGRATION) << "Xcb GLX gl-integration successfully initialized";
+    qCDebug(lcQpaGl) << "Xcb GLX gl-integration successfully initialized";
     return true;
 }
 
@@ -183,7 +189,7 @@ QXcbWindow *QXcbGlxIntegration::createWindow(QWindow *window) const
 QPlatformOpenGLContext *QXcbGlxIntegration::createPlatformOpenGLContext(QOpenGLContext *context) const
 {
     QXcbScreen *screen = static_cast<QXcbScreen *>(context->screen()->handle());
-    QGLXContext *platformContext = new QGLXContext(screen, context->format(),
+    QGLXContext *platformContext = new QGLXContext(screen, screen->surfaceFormatFor(context->format()),
                                                    context->shareHandle(), context->nativeHandle());
     context->setNativeHandle(platformContext->nativeHandle());
     return platformContext;
@@ -195,7 +201,12 @@ QPlatformOffscreenSurface *QXcbGlxIntegration::createPlatformOffscreenSurface(QO
     static bool glxPbufferUsable = true;
     if (!vendorChecked) {
         vendorChecked = true;
-        const char *glxvendor = glXGetClientString(glXGetCurrentDisplay(), GLX_VENDOR);
+        Display *display = glXGetCurrentDisplay();
+#ifdef XCB_USE_XLIB
+        if (!display)
+            display = static_cast<Display *>(m_connection->xlib_display());
+#endif
+        const char *glxvendor = glXGetClientString(display, GLX_VENDOR);
         if (glxvendor && !strcmp(glxvendor, "ATI"))
             glxPbufferUsable = false;
     }

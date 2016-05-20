@@ -1,31 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -42,6 +49,7 @@
 #include <qfileinfo.h>
 #include <qregexp.h>
 #include <qwineventnotifier.h>
+#include <private/qsystemlibrary_p.h>
 #include <private/qthread_p.h>
 #include <qdebug.h>
 
@@ -497,11 +505,22 @@ void QProcessPrivate::startProcess()
                                  0, 0, 0,
                                  stdinChannel.pipe[0], stdoutChannel.pipe[1], stderrChannel.pipe[1]
     };
-    success = CreateProcess(0, (wchar_t*)args.utf16(),
-                            0, 0, TRUE, dwCreationFlags,
-                            environment.isEmpty() ? 0 : envlist.data(),
-                            workingDirectory.isEmpty() ? 0 : (wchar_t*)QDir::toNativeSeparators(workingDirectory).utf16(),
-                            &startupInfo, pid);
+
+    const QString nativeWorkingDirectory = QDir::toNativeSeparators(workingDirectory);
+    QProcess::CreateProcessArguments cpargs = {
+        0, (wchar_t*)args.utf16(),
+        0, 0, TRUE, dwCreationFlags,
+        environment.isEmpty() ? 0 : envlist.data(),
+        nativeWorkingDirectory.isEmpty() ? Q_NULLPTR : (wchar_t*)nativeWorkingDirectory.utf16(),
+        &startupInfo, pid
+    };
+    if (modifyCreateProcessArgs)
+        modifyCreateProcessArgs(&cpargs);
+    success = CreateProcess(cpargs.applicationName, cpargs.arguments, cpargs.processAttributes,
+                            cpargs.threadAttributes, cpargs.inheritHandles, cpargs.flags,
+                            cpargs.environment, cpargs.currentDirectory, cpargs.startupInfo,
+                            cpargs.processInformation);
+
     QString errorString;
     if (!success) {
         // Capture the error string before we do CloseHandle below
@@ -543,7 +562,7 @@ void QProcessPrivate::startProcess()
     _q_startupNotification();
 }
 
-bool QProcessPrivate::processStarted()
+bool QProcessPrivate::processStarted(QString * /*errorMessage*/)
 {
     return processState == QProcess::Running;
 }
@@ -634,7 +653,7 @@ bool QProcessPrivate::waitForReadyRead(int msecs)
     QIncrementalSleepTimer timer(msecs);
 
     forever {
-        if (!stdinChannel.buffer.isEmpty() && !_q_canWrite())
+        if (!writeBuffer.isEmpty() && !_q_canWrite())
             return false;
         if (stdinChannel.writer && stdinChannel.writer->waitForWrite(0))
             timer.resetIncrements();
@@ -647,7 +666,8 @@ bool QProcessPrivate::waitForReadyRead(int msecs)
             return false;
         if (WaitForSingleObjectEx(pid->hProcess, 0, false) == WAIT_OBJECT_0) {
             bool readyReadEmitted = drainOutputPipes();
-            _q_processDied();
+            if (pid)
+                _q_processDied();
             return readyReadEmitted;
         }
 
@@ -665,14 +685,11 @@ bool QProcessPrivate::waitForBytesWritten(int msecs)
     QIncrementalSleepTimer timer(msecs);
 
     forever {
-        // Check if we have any data pending: the pipe writer has
-        // bytes waiting to written, or it has written data since the
-        // last time we called stdinChannel.writer->waitForWrite().
-        bool pendingDataInPipe = stdinChannel.writer && (stdinChannel.writer->bytesToWrite() || stdinChannel.writer->hadWritten());
+        bool pendingDataInPipe = stdinChannel.writer && stdinChannel.writer->bytesToWrite();
 
         // If we don't have pending data, and our write buffer is
         // empty, we fail.
-        if (!pendingDataInPipe && stdinChannel.buffer.isEmpty())
+        if (!pendingDataInPipe && writeBuffer.isEmpty())
             return false;
 
         // If we don't have pending data and we do have data in our
@@ -736,7 +753,7 @@ bool QProcessPrivate::waitForFinished(int msecs)
     QIncrementalSleepTimer timer(msecs);
 
     forever {
-        if (!stdinChannel.buffer.isEmpty() && !_q_canWrite())
+        if (!writeBuffer.isEmpty() && !_q_canWrite())
             return false;
         if (stdinChannel.writer && stdinChannel.writer->waitForWrite(0))
             timer.resetIncrements();
@@ -752,7 +769,8 @@ bool QProcessPrivate::waitForFinished(int msecs)
 
         if (WaitForSingleObject(pid->hProcess, timer.nextSleepTime()) == WAIT_OBJECT_0) {
             drainOutputPipes();
-            _q_processDied();
+            if (pid)
+                _q_processDied();
             return true;
         }
 
@@ -787,31 +805,64 @@ qint64 QProcessPrivate::pipeWriterBytesToWrite() const
     return stdinChannel.writer ? stdinChannel.writer->bytesToWrite() : qint64(0);
 }
 
-qint64 QProcessPrivate::writeToStdin(const char *data, qint64 maxlen)
+bool QProcessPrivate::writeToStdin()
 {
     Q_Q(QProcess);
 
     if (!stdinChannel.writer) {
         stdinChannel.writer = new QWindowsPipeWriter(stdinChannel.pipe[1], q);
+        QObject::connect(stdinChannel.writer, &QWindowsPipeWriter::bytesWritten,
+                         q, &QProcess::bytesWritten);
         QObjectPrivate::connect(stdinChannel.writer, &QWindowsPipeWriter::canWrite,
                                 this, &QProcessPrivate::_q_canWrite);
-        stdinChannel.writer->start();
+    } else {
+        if (stdinChannel.writer->isWriteOperationActive())
+            return true;
     }
 
-    return stdinChannel.writer->write(data, maxlen);
+    stdinChannel.writer->write(writeBuffer.read());
+    return true;
 }
 
-bool QProcessPrivate::waitForWrite(int msecs)
+// Use ShellExecuteEx() to trigger an UAC prompt when CreateProcess()fails
+// with ERROR_ELEVATION_REQUIRED.
+static bool startDetachedUacPrompt(const QString &programIn, const QStringList &arguments,
+                                   const QString &workingDir, qint64 *pid)
 {
-    if (!stdinChannel.writer || stdinChannel.writer->waitForWrite(msecs))
-        return true;
+    typedef BOOL (WINAPI *ShellExecuteExType)(SHELLEXECUTEINFOW *);
 
-    setError(QProcess::Timedout);
-    return false;
+    static const ShellExecuteExType shellExecuteEx = // XP ServicePack 1 onwards.
+        reinterpret_cast<ShellExecuteExType>(QSystemLibrary::resolve(QLatin1String("shell32"),
+                                                                     "ShellExecuteExW"));
+    if (!shellExecuteEx)
+        return false;
+
+    const QString args = qt_create_commandline(QString(), arguments); // needs arguments only
+    SHELLEXECUTEINFOW shellExecuteExInfo;
+    memset(&shellExecuteExInfo, 0, sizeof(SHELLEXECUTEINFOW));
+    shellExecuteExInfo.cbSize = sizeof(SHELLEXECUTEINFOW);
+    shellExecuteExInfo.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_UNICODE | SEE_MASK_FLAG_NO_UI;
+    shellExecuteExInfo.lpVerb = L"runas";
+    const QString program = QDir::toNativeSeparators(programIn);
+    shellExecuteExInfo.lpFile = reinterpret_cast<LPCWSTR>(program.utf16());
+    if (!args.isEmpty())
+        shellExecuteExInfo.lpParameters = reinterpret_cast<LPCWSTR>(args.utf16());
+    if (!workingDir.isEmpty())
+        shellExecuteExInfo.lpDirectory = reinterpret_cast<LPCWSTR>(workingDir.utf16());
+    shellExecuteExInfo.nShow = SW_SHOWNORMAL;
+
+    if (!shellExecuteEx(&shellExecuteExInfo))
+        return false;
+    if (pid)
+        *pid = qint64(GetProcessId(shellExecuteExInfo.hProcess));
+    CloseHandle(shellExecuteExInfo.hProcess);
+    return true;
 }
 
 bool QProcessPrivate::startDetached(const QString &program, const QStringList &arguments, const QString &workingDir, qint64 *pid)
 {
+    static const DWORD errorElevationRequired = 740;
+
     QString args = qt_create_commandline(program, arguments);
     bool success = false;
     PROCESS_INFORMATION pinfo;
@@ -831,6 +882,8 @@ bool QProcessPrivate::startDetached(const QString &program, const QStringList &a
         CloseHandle(pinfo.hProcess);
         if (pid)
             *pid = pinfo.dwProcessId;
+    } else if (GetLastError() == errorElevationRequired) {
+        success = startDetachedUacPrompt(program, arguments, workingDir, pid);
     }
 
     return success;

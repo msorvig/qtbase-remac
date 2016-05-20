@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -47,13 +53,19 @@
 #include <qloggingcategory.h>
 #include <qplatformintegration.h>
 #include <qplatformservices.h>
+#include <qdbusconnectioninterface.h>
+#include <private/qlockfile_p.h>
 #include <private/qguiapplication_p.h>
+
+// Defined in Windows headers which get included by qlockfile_p.h
+#undef interface
 
 QT_BEGIN_NAMESPACE
 
 Q_LOGGING_CATEGORY(qLcTray, "qt.qpa.tray")
 
 static const QString KDEItemFormat = QStringLiteral("org.kde.StatusNotifierItem-%1-%2");
+static const QString KDEWatcherService = QStringLiteral("org.kde.StatusNotifierWatcher");
 static const QString TempFileTemplate =  QDir::tempPath() + QStringLiteral("/qt-trayicon-XXXXXX.png");
 static const QString XdgNotificationService = QStringLiteral("org.freedesktop.Notifications");
 static const QString XdgNotificationPath = QStringLiteral("/org/freedesktop/Notifications");
@@ -136,9 +148,17 @@ void QDBusTrayIcon::setStatus(const QString &status)
 
 QTemporaryFile *QDBusTrayIcon::tempIcon(const QIcon &icon)
 {
-    // Hack for Unity, which doesn't handle icons sent across D-Bus:
+    // Hack for indicator-application, which doesn't handle icons sent across D-Bus:
     // save the icon to a temp file and set the icon name to that filename.
-    static bool necessary = (QGuiApplicationPrivate::platformIntegration()->services()->desktopEnvironment().split(':').contains("UNITY"));
+    static bool necessity_checked = false;
+    static bool necessary = false;
+    if (!necessity_checked) {
+        QDBusConnection session = QDBusConnection::sessionBus();
+        uint pid = session.interface()->servicePid(KDEWatcherService).value();
+        QString processName = QLockFilePrivate::processNameByPid(pid);
+        necessary = processName.endsWith(QStringLiteral("indicator-application-service"));
+        necessity_checked = true;
+    }
     if (!necessary)
         return Q_NULLPTR;
     QTemporaryFile *ret = new QTemporaryFile(TempFileTemplate, this);
@@ -184,16 +204,13 @@ void QDBusTrayIcon::updateToolTip(const QString &tooltip)
 
 QPlatformMenu *QDBusTrayIcon::createMenu() const
 {
-    qCDebug(qLcTray);
-    QDBusPlatformMenu *ret = new QDBusPlatformMenu();
-    if (!m_menu)
-        const_cast<QDBusTrayIcon *>(this)->m_menu = ret;
-    return ret;
+    return new QDBusPlatformMenu();
 }
 
 void QDBusTrayIcon::updateMenu(QPlatformMenu * menu)
 {
     qCDebug(qLcTray) << menu;
+    bool needsRegistering = !m_menu;
     if (!m_menu)
         m_menu = qobject_cast<QDBusPlatformMenu *>(menu);
     if (!m_menuAdaptor) {
@@ -205,6 +222,8 @@ void QDBusTrayIcon::updateMenu(QPlatformMenu * menu)
                 m_menuAdaptor, SIGNAL(LayoutUpdated(uint,int)));
     }
     m_menu->emitUpdated();
+    if (needsRegistering)
+        dBusConnection()->registerTrayIconMenu(this);
 }
 
 void QDBusTrayIcon::showMessage(const QString &title, const QString &msg, const QIcon &icon,

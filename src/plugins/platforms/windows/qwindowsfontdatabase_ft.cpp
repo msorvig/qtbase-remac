@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -47,10 +53,6 @@
 #include <QtGui/QFontDatabase>
 
 #include <wchar.h>
-#ifdef Q_OS_WINCE
-#include <QtCore/QFile>
-#include <QtEndian>
-#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -101,8 +103,6 @@ static FontFile * createFontFile(const QString &fileName, int index)
 
 extern bool localizedName(const QString &name);
 extern QString getEnglishName(const QString &familyName);
-
-#ifndef Q_OS_WINCE
 
 namespace {
 struct FontKey
@@ -159,176 +159,6 @@ static const FontKey *findFontKey(const QString &name, int *indexIn = Q_NULLPTR)
      return Q_NULLPTR;
 }
 
-#else // Q_OS_WINCE
-
-typedef struct {
-    quint16 majorVersion;
-    quint16 minorVersion;
-    quint16 numTables;
-    quint16 searchRange;
-    quint16 entrySelector;
-    quint16 rangeShift;
-} OFFSET_TABLE;
-
-typedef struct {
-    quint32 tag;
-    quint32 checkSum;
-    quint32 offset;
-    quint32 length;
-} TABLE_DIRECTORY;
-
-typedef struct {
-    quint16 fontSelector;
-    quint16 nrCount;
-    quint16 storageOffset;
-} NAME_TABLE_HEADER;
-
-typedef struct {
-    quint16 platformID;
-    quint16 encodingID;
-    quint16 languageID;
-    quint16 nameID;
-    quint16 stringLength;
-    quint16 stringOffset;
-} NAME_RECORD;
-
-static QString fontNameFromTTFile(const QString &filename)
-{
-    QFile f(filename);
-    QString retVal;
-    qint64 bytesRead;
-    qint64 bytesToRead;
-
-    if (f.open(QIODevice::ReadOnly)) {
-        OFFSET_TABLE ttOffsetTable;
-        bytesToRead = sizeof(OFFSET_TABLE);
-        bytesRead = f.read((char*)&ttOffsetTable, bytesToRead);
-        if (bytesToRead != bytesRead)
-            return retVal;
-        ttOffsetTable.numTables = qFromBigEndian(ttOffsetTable.numTables);
-        ttOffsetTable.majorVersion = qFromBigEndian(ttOffsetTable.majorVersion);
-        ttOffsetTable.minorVersion = qFromBigEndian(ttOffsetTable.minorVersion);
-
-        if (ttOffsetTable.majorVersion != 1 || ttOffsetTable.minorVersion != 0)
-            return retVal;
-
-        TABLE_DIRECTORY tblDir;
-        bool found = false;
-
-        for (int i = 0; i < ttOffsetTable.numTables; i++) {
-            bytesToRead = sizeof(TABLE_DIRECTORY);
-            bytesRead = f.read((char*)&tblDir, bytesToRead);
-            if (bytesToRead != bytesRead)
-                return retVal;
-            if (qFromBigEndian(tblDir.tag) == MAKE_TAG('n', 'a', 'm', 'e')) {
-                found = true;
-                tblDir.length = qFromBigEndian(tblDir.length);
-                tblDir.offset = qFromBigEndian(tblDir.offset);
-                break;
-            }
-        }
-
-        if (found) {
-            f.seek(tblDir.offset);
-            NAME_TABLE_HEADER ttNTHeader;
-            bytesToRead = sizeof(NAME_TABLE_HEADER);
-            bytesRead = f.read((char*)&ttNTHeader, bytesToRead);
-            if (bytesToRead != bytesRead)
-                return retVal;
-            ttNTHeader.nrCount = qFromBigEndian(ttNTHeader.nrCount);
-            ttNTHeader.storageOffset = qFromBigEndian(ttNTHeader.storageOffset);
-            NAME_RECORD ttRecord;
-            found = false;
-
-            for (int i = 0; i < ttNTHeader.nrCount; i++) {
-                bytesToRead = sizeof(NAME_RECORD);
-                bytesRead = f.read((char*)&ttRecord, bytesToRead);
-                if (bytesToRead != bytesRead)
-                    return retVal;
-                ttRecord.nameID = qFromBigEndian(ttRecord.nameID);
-                if (ttRecord.nameID == 1) {
-                    ttRecord.stringLength = qFromBigEndian(ttRecord.stringLength);
-                    ttRecord.stringOffset = qFromBigEndian(ttRecord.stringOffset);
-                    int nPos = f.pos();
-                    f.seek(tblDir.offset + ttRecord.stringOffset + ttNTHeader.storageOffset);
-
-                    QByteArray nameByteArray = f.read(ttRecord.stringLength);
-                    if (!nameByteArray.isEmpty()) {
-                        if (ttRecord.encodingID == 256 || ttRecord.encodingID == 768) {
-                            //This is UTF-16 in big endian
-                            int stringLength = ttRecord.stringLength / 2;
-                            retVal.resize(stringLength);
-                            QChar *data = retVal.data();
-                            const ushort *srcData = (const ushort *)nameByteArray.data();
-                            for (int i = 0; i < stringLength; ++i)
-                                data[i] = qFromBigEndian(srcData[i]);
-                            return retVal;
-                        } else if (ttRecord.encodingID == 0) {
-                            //This is Latin1
-                            retVal = QString::fromLatin1(nameByteArray);
-                        } else {
-                            qWarning("Could not retrieve Font name from file: %s", qPrintable(QDir::toNativeSeparators(filename)));
-                        }
-                        break;
-                    }
-                    f.seek(nPos);
-                }
-            }
-        }
-        f.close();
-    }
-    return retVal;
-}
-
-static inline QString fontSettingsOrganization() { return QStringLiteral("Qt-Project"); }
-static inline QString fontSettingsApplication()  { return QStringLiteral("Qtbase"); }
-static inline QString fontSettingsGroup()        { return QStringLiteral("CEFontCache"); }
-
-static QString findFontFile(const QString &faceName)
-{
-    static QHash<QString, QString> fontCache;
-
-    if (fontCache.isEmpty()) {
-        QSettings settings(QSettings::SystemScope, fontSettingsOrganization(), fontSettingsApplication());
-        settings.beginGroup(fontSettingsGroup());
-        foreach (const QString &fontName, settings.allKeys())
-            fontCache.insert(fontName, settings.value(fontName).toString());
-        settings.endGroup();
-    }
-
-    QString value = fontCache.value(faceName);
-
-    //Fallback if we haven't cached the font yet or the font got removed/renamed iterate again over all fonts
-    if (value.isEmpty() || !QFile::exists(value)) {
-        QSettings settings(QSettings::SystemScope, fontSettingsOrganization(), fontSettingsApplication());
-        settings.beginGroup(fontSettingsGroup());
-
-        //empty the cache first, as it seems that it is dirty
-        settings.remove(QString());
-
-        QDirIterator it(QStringLiteral("/Windows"), QStringList(QStringLiteral("*.ttf")), QDir::Files | QDir::Hidden | QDir::System);
-
-        while (it.hasNext()) {
-            const QString fontFile = it.next();
-            const QString fontName = fontNameFromTTFile(fontFile);
-            if (fontName.isEmpty())
-                continue;
-            fontCache.insert(fontName, fontFile);
-            settings.setValue(fontName, fontFile);
-
-            if (localizedName(fontName)) {
-                QString englishFontName = getEnglishName(fontName);
-                fontCache.insert(englishFontName, fontFile);
-                settings.setValue(englishFontName, fontFile);
-            }
-        }
-        settings.endGroup();
-        value = fontCache.value(faceName);
-    }
-    return value;
-}
-#endif // Q_OS_WINCE
-
 static bool addFontToDatabase(const QString &faceName,
                               const QString &fullName,
                               uchar charSet,
@@ -343,17 +173,16 @@ static bool addFontToDatabase(const QString &faceName,
 
     static const int SMOOTH_SCALABLE = 0xffff;
     const QString foundryName; // No such concept.
-    const NEWTEXTMETRIC *tm = (NEWTEXTMETRIC *)textmetric;
-    const bool fixed = !(tm->tmPitchAndFamily & TMPF_FIXED_PITCH);
-    const bool ttf = (tm->tmPitchAndFamily & TMPF_TRUETYPE);
-    const bool scalable = tm->tmPitchAndFamily & (TMPF_VECTOR|TMPF_TRUETYPE);
-    const int size = scalable ? SMOOTH_SCALABLE : tm->tmHeight;
-    const QFont::Style style = tm->tmItalic ? QFont::StyleItalic : QFont::StyleNormal;
+    const bool fixed = !(textmetric->tmPitchAndFamily & TMPF_FIXED_PITCH);
+    const bool ttf = (textmetric->tmPitchAndFamily & TMPF_TRUETYPE);
+    const bool scalable = textmetric->tmPitchAndFamily & (TMPF_VECTOR|TMPF_TRUETYPE);
+    const int size = scalable ? SMOOTH_SCALABLE : textmetric->tmHeight;
+    const QFont::Style style = textmetric->tmItalic ? QFont::StyleItalic : QFont::StyleNormal;
     const bool antialias = false;
-    const QFont::Weight weight = QPlatformFontDatabase::weightFromInteger(tm->tmWeight);
+    const QFont::Weight weight = QPlatformFontDatabase::weightFromInteger(textmetric->tmWeight);
     const QFont::Stretch stretch = QFont::Unstretched;
 
-#ifndef QT_NO_DEBUG_OUTPUT
+#ifndef QT_NO_DEBUG_STREAM
     if (QWindowsContext::verbose > 2) {
         QString message;
         QTextStream str(&message);
@@ -401,29 +230,22 @@ static bool addFontToDatabase(const QString &faceName,
     }
 
     int index = 0;
-#ifndef Q_OS_WINCE
     const FontKey *key = findFontKey(faceName, &index);
     if (!key) {
         key = findFontKey(fullName, &index);
+        if (!key && !registerAlias && englishName.isEmpty() && localizedName(faceName))
+            englishName = getEnglishName(faceName);
         if (!key && !englishName.isEmpty())
             key = findFontKey(englishName, &index);
         if (!key)
             return false;
     }
     QString value = key->fileName;
-#else
-    QString value = findFontFile(faceName);
-#endif
-
     if (value.isEmpty())
         return false;
 
     if (!QDir::isAbsolutePath(value))
-#ifndef Q_OS_WINCE
         value.prepend(QFile::decodeName(qgetenv("windir") + "\\Fonts\\"));
-#else
-        value.prepend(QFile::decodeName("/Windows/"));
-#endif
 
     QPlatformFontDatabase::registerFont(faceName, QString(), foundryName, weight, style, stretch,
         antialias, scalable, size, fixed, writingSystems, createFontFile(value, index));
@@ -447,37 +269,21 @@ static bool addFontToDatabase(const QString &faceName,
     return true;
 }
 
-#ifdef Q_OS_WINCE
-static QByteArray getFntTable(HFONT hfont, uint tag)
+static int QT_WIN_CALLBACK storeFont(const LOGFONT *logFont, const TEXTMETRIC *textmetric,
+                                     DWORD type, LPARAM)
 {
-    HDC hdc = GetDC(0);
-    HGDIOBJ oldFont = SelectObject(hdc, hfont);
-    quint32 t = qFromBigEndian<quint32>(tag);
-    QByteArray buffer;
-
-    DWORD length = GetFontData(hdc, t, 0, NULL, 0);
-    if (length != GDI_ERROR) {
-        buffer.resize(length);
-        GetFontData(hdc, t, 0, reinterpret_cast<uchar *>(buffer.data()), length);
-    }
-    SelectObject(hdc, oldFont);
-    return buffer;
-}
-#endif
-
-static int QT_WIN_CALLBACK storeFont(ENUMLOGFONTEX* f, NEWTEXTMETRICEX *textmetric,
-                                     int type, LPARAM)
-{
-
+    const ENUMLOGFONTEX *f = reinterpret_cast<const ENUMLOGFONTEX *>(logFont);
     const QString faceName = QString::fromWCharArray(f->elfLogFont.lfFaceName);
     const QString fullName = QString::fromWCharArray(f->elfFullName);
     const uchar charSet = f->elfLogFont.lfCharSet;
 
-    const FONTSIGNATURE signature = textmetric->ntmFontSig;
-    // NEWTEXTMETRICEX is a NEWTEXTMETRIC, which according to the documentation is
-    // identical to a TEXTMETRIC except for the last four members, which we don't use
-    // anyway
-    addFontToDatabase(faceName, fullName, charSet, (TEXTMETRIC *)textmetric, &signature, type, false);
+    // NEWTEXTMETRICEX (passed for TT fonts) is a NEWTEXTMETRIC, which according
+    // to the documentation is identical to a TEXTMETRIC except for the last four
+    // members, which we don't use anyway
+    const FONTSIGNATURE *signature = Q_NULLPTR;
+    if (type & TRUETYPE_FONTTYPE)
+        signature = &reinterpret_cast<const NEWTEXTMETRICEX *>(textmetric)->ntmFontSig;
+    addFontToDatabase(faceName, fullName, charSet, textmetric, signature, type, false);
 
     // keep on enumerating
     return 1;
@@ -504,7 +310,7 @@ void QWindowsFontDatabaseFT::populateFamily(const QString &familyName)
     familyName.toWCharArray(lf.lfFaceName);
     lf.lfFaceName[familyName.size()] = 0;
     lf.lfPitchAndFamily = 0;
-    EnumFontFamiliesEx(dummy, &lf, (FONTENUMPROC)storeFont, 0, 0);
+    EnumFontFamiliesEx(dummy, &lf, storeFont, 0, 0);
     ReleaseDC(0, dummy);
 }
 
@@ -520,21 +326,22 @@ struct PopulateFamiliesContext
 };
 } // namespace
 
-#ifndef Q_OS_WINCE
-
 // Delayed population of font families
 
-static int QT_WIN_CALLBACK populateFontFamilies(ENUMLOGFONTEX* f, NEWTEXTMETRICEX *tm, int, LPARAM lparam)
+static int QT_WIN_CALLBACK populateFontFamilies(const LOGFONT *logFont, const TEXTMETRIC *textmetric,
+                                                DWORD, LPARAM lparam)
 {
+    const ENUMLOGFONTEX *f = reinterpret_cast<const ENUMLOGFONTEX *>(logFont);
     // the "@family" fonts are just the same as "family". Ignore them.
     const wchar_t *faceNameW = f->elfLogFont.lfFaceName;
     if (faceNameW[0] && faceNameW[0] != L'@' && wcsncmp(faceNameW, L"WST_", 4)) {
         // Register only font families for which a font file exists for delayed population
+        const bool ttf = textmetric->tmPitchAndFamily & TMPF_TRUETYPE;
         const QString faceName = QString::fromWCharArray(faceNameW);
         const FontKey *key = findFontKey(faceName);
         if (!key) {
             key = findFontKey(QString::fromWCharArray(f->elfFullName));
-            if (!key && (tm->ntmTm.tmPitchAndFamily & TMPF_TRUETYPE) && localizedName(faceName))
+            if (!key && ttf && localizedName(faceName))
                 key = findFontKey(getEnglishName(faceName));
         }
         if (key) {
@@ -544,7 +351,6 @@ static int QT_WIN_CALLBACK populateFontFamilies(ENUMLOGFONTEX* f, NEWTEXTMETRICE
                 context->seenSystemDefaultFont = true;
 
             // Register current font's english name as alias
-            const bool ttf = (tm->ntmTm.tmPitchAndFamily & TMPF_TRUETYPE);
             if (ttf && localizedName(faceName)) {
                 const QString englishName = getEnglishName(faceName);
                 if (!englishName.isEmpty()) {
@@ -568,80 +374,12 @@ void QWindowsFontDatabaseFT::populateFontDatabase()
     lf.lfFaceName[0] = 0;
     lf.lfPitchAndFamily = 0;
     PopulateFamiliesContext context(QWindowsFontDatabase::systemDefaultFont().family());
-    EnumFontFamiliesEx(dummy, &lf, (FONTENUMPROC)populateFontFamilies, reinterpret_cast<LPARAM>(&context), 0);
+    EnumFontFamiliesEx(dummy, &lf, populateFontFamilies, reinterpret_cast<LPARAM>(&context), 0);
     ReleaseDC(0, dummy);
     // Work around EnumFontFamiliesEx() not listing the system font
     if (!context.seenSystemDefaultFont)
         QPlatformFontDatabase::registerFontFamily(context.systemDefaultFont);
 }
-
-#else // !Q_OS_WINCE
-
-// Non-delayed population of fonts (Windows CE).
-
-static int QT_WIN_CALLBACK populateFontCe(ENUMLOGFONTEX* f, NEWTEXTMETRICEX *textmetric,
-                                          int type, LPARAM lparam)
-{
-    // the "@family" fonts are just the same as "family". Ignore them.
-    const wchar_t *faceNameW = f->elfLogFont.lfFaceName;
-    if (faceNameW[0] && faceNameW[0] != L'@' && wcsncmp(faceNameW, L"WST_", 4)) {
-        const uchar charSet = f->elfLogFont.lfCharSet;
-
-        FONTSIGNATURE signature;
-        QByteArray table;
-
-        if (type & TRUETYPE_FONTTYPE) {
-            HFONT hfont = CreateFontIndirect(&f->elfLogFont);
-            table = getFntTable(hfont, MAKE_TAG('O', 'S', '/', '2'));
-            DeleteObject((HGDIOBJ)hfont);
-        }
-
-        if (table.length() >= 86) {
-            // See also qfontdatabase_mac.cpp, offsets taken from OS/2 table in the TrueType spec
-            uchar *tableData = reinterpret_cast<uchar *>(table.data());
-
-            signature.fsUsb[0] = qFromBigEndian<quint32>(tableData + 42);
-            signature.fsUsb[1] = qFromBigEndian<quint32>(tableData + 46);
-            signature.fsUsb[2] = qFromBigEndian<quint32>(tableData + 50);
-            signature.fsUsb[3] = qFromBigEndian<quint32>(tableData + 54);
-
-            signature.fsCsb[0] = qFromBigEndian<quint32>(tableData + 78);
-            signature.fsCsb[1] = qFromBigEndian<quint32>(tableData + 82);
-        } else {
-            memset(&signature, 0, sizeof(signature));
-        }
-
-        // NEWTEXTMETRICEX is a NEWTEXTMETRIC, which according to the documentation is
-        // identical to a TEXTMETRIC except for the last four members, which we don't use
-        // anyway
-        const QString faceName = QString::fromWCharArray(f->elfLogFont.lfFaceName);
-        if (addFontToDatabase(faceName, QString::fromWCharArray(f->elfFullName),
-                              charSet, (TEXTMETRIC *)textmetric, &signature, type, true)) {
-            PopulateFamiliesContext *context = reinterpret_cast<PopulateFamiliesContext *>(lparam);
-            if (!context->seenSystemDefaultFont && faceName == context->systemDefaultFont)
-                context->seenSystemDefaultFont = true;
-        }
-    }
-
-    // keep on enumerating
-    return 1;
-}
-
-void QWindowsFontDatabaseFT::populateFontDatabase()
-{
-    LOGFONT lf;
-    lf.lfCharSet = DEFAULT_CHARSET;
-    HDC dummy = GetDC(0);
-    lf.lfFaceName[0] = 0;
-    lf.lfPitchAndFamily = 0;
-    PopulateFamiliesContext context(QWindowsFontDatabase::systemDefaultFont().family());
-    EnumFontFamiliesEx(dummy, &lf, (FONTENUMPROC)populateFontCe, reinterpret_cast<LPARAM>(&context), 0);
-    ReleaseDC(0, dummy);
-    // Work around EnumFontFamiliesEx() not listing the system font, see below.
-    if (!context.seenSystemDefaultFont)
-         populateFamily(context.systemDefaultFont);
-}
-#endif // Q_OS_WINCE
 
 QFontEngine * QWindowsFontDatabaseFT::fontEngine(const QFontDef &fontDef, void *handle)
 {
@@ -660,22 +398,9 @@ QFontEngine *QWindowsFontDatabaseFT::fontEngine(const QByteArray &fontData, qrea
 QStringList QWindowsFontDatabaseFT::fallbacksForFamily(const QString &family, QFont::Style style, QFont::StyleHint styleHint, QChar::Script script) const
 {
     QStringList result;
-
     result.append(QWindowsFontDatabase::familyForStyleHint(styleHint));
-
-#ifdef Q_OS_WINCE
-    QSettings settings(QLatin1String("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\FontLink\\SystemLink"), QSettings::NativeFormat);
-    const QStringList fontList = settings.value(family).toStringList();
-    foreach (const QString &fallback, fontList) {
-        const int sep = fallback.indexOf(QLatin1Char(','));
-        if (sep > 0)
-            result << fallback.mid(sep + 1);
-    }
-#endif
-
     result.append(QWindowsFontDatabase::extraTryFontsForFamily(family));
-
-    result.append(QPlatformFontDatabase::fallbacksForFamily(family, style, styleHint, script));
+    result.append(QBasicFontDatabase::fallbacksForFamily(family, style, styleHint, script));
 
     qCDebug(lcQpaFonts) << __FUNCTION__ << family << style << styleHint
         << script << result;

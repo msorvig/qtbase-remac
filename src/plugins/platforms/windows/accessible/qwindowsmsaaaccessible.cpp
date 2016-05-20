@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -49,6 +55,7 @@
 #include <QtGui/qguiapplication.h>
 #include <qpa/qplatformnativeinterface.h>
 #include <QtGui/qwindow.h>
+#include <QtGui/private/qhighdpiscaling_p.h>
 
 //#include <uiautomationcoreapi.h>
 #ifndef UiaRootObjectId
@@ -60,7 +67,7 @@
 #endif
 
 
-#include "../qtwindows_additional.h"
+#include <QtCore/qt_windows.h>
 
 
 QT_BEGIN_NAMESPACE
@@ -94,9 +101,9 @@ HRESULT STDMETHODCALLTYPE QWindowsEnumerate::QueryInterface(REFIID id, LPVOID *i
 {
     *iface = 0;
     if (id == IID_IUnknown)
-        *iface = (IUnknown*)this;
+        *iface = static_cast<IUnknown *>(this);
     else if (id == IID_IEnumVARIANT)
-        *iface = (IEnumVARIANT*)this;
+        *iface = static_cast<IEnumVARIANT *>(this);
 
     if (*iface) {
         AddRef();
@@ -144,13 +151,13 @@ HRESULT STDMETHODCALLTYPE QWindowsEnumerate::Next(unsigned long  celt, VARIANT F
     ULONG l;
     for (l = 0; l < celt; l++) {
         VariantInit(&rgVar[l]);
-        if ((current+1) > (ULONG)array.size()) {
+        if (current + 1 > ULONG(array.size())) {
             *pCeltFetched = l;
             return S_FALSE;
         }
 
         rgVar[l].vt = VT_I4;
-        rgVar[l].lVal = array[(int)current];
+        rgVar[l].lVal = array[int(current)];
         ++current;
     }
     *pCeltFetched = l;
@@ -166,8 +173,8 @@ HRESULT STDMETHODCALLTYPE QWindowsEnumerate::Reset()
 HRESULT STDMETHODCALLTYPE QWindowsEnumerate::Skip(unsigned long celt)
 {
     current += celt;
-    if (current > (ULONG)array.size()) {
-        current = array.size();
+    if (current > ULONG(array.size())) {
+        current = ULONG(array.size());
         return S_FALSE;
     }
     return S_OK;
@@ -195,13 +202,13 @@ HRESULT STDMETHODCALLTYPE QWindowsMsaaAccessible::QueryInterface(REFIID id, LPVO
                                     << strIID << ", iface:" << accessibleInterface();
     }
     if (id == IID_IUnknown) {
-        *iface = (IUnknown*)(IDispatch*)this;
+        *iface =  static_cast<IUnknown *>(static_cast<IDispatch *>(this));
     } else if (id == IID_IDispatch) {
-        *iface = (IDispatch*)this;
+        *iface = static_cast<IDispatch *>(this);
     } else if (id == IID_IAccessible) {
-        *iface = (IAccessible*)this;
+        *iface = static_cast<IAccessible *>(this);
     } else if (id == IID_IOleWindow) {
-        *iface = (IOleWindow*)this;
+        *iface = static_cast<IOleWindow *>(this);
     }
 
     if (*iface) {
@@ -497,7 +504,8 @@ HRESULT STDMETHODCALLTYPE QWindowsMsaaAccessible::accHitTest(long xLeft, long yT
     if (!accessible)
         return E_FAIL;
 
-    QAccessibleInterface *child = accessible->childAt(xLeft, yTop);
+    const QPoint pos = QHighDpi::fromNativeLocalPosition(QPoint(xLeft, yTop), accessible->window());
+    QAccessibleInterface *child = accessible->childAt(pos.x(), pos.y());
     if (child == 0) {
         // no child found, return this item if it contains the coordinates
         if (accessible->rect().contains(xLeft, yTop)) {
@@ -539,7 +547,7 @@ HRESULT STDMETHODCALLTYPE QWindowsMsaaAccessible::accLocation(long *pxLeft, long
     QAccessibleInterface *acc = childPointer(accessible, varID);
     if (!acc || !acc->isValid())
         return E_FAIL;
-    const QRect rect = acc->rect();
+    const QRect rect = QHighDpi::toNativePixels(acc->rect(), accessible->window());
 
     *pxLeft = rect.x();
     *pyTop = rect.y();

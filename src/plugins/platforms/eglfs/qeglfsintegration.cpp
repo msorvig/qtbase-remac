@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -43,6 +49,7 @@
 #include <QtCore/QLoggingCategory>
 #include <qpa/qwindowsysteminterface.h>
 #include <qpa/qplatforminputcontextfactory_p.h>
+#include <private/qgenericunixthemes_p.h>
 
 #include "qeglfsintegration.h"
 #include "qeglfswindow.h"
@@ -67,13 +74,13 @@
 #include <QtPlatformSupport/private/qlibinputhandler_p.h>
 #endif
 
-#if !defined(QT_NO_EVDEV) && (!defined(Q_OS_ANDROID) || defined(Q_OS_ANDROID_NO_SDK))
+#if !defined(QT_NO_EVDEV) && !defined(Q_OS_ANDROID)
 #include <QtPlatformSupport/private/qevdevmousemanager_p.h>
 #include <QtPlatformSupport/private/qevdevkeyboardmanager_p.h>
 #include <QtPlatformSupport/private/qevdevtouchmanager_p.h>
 #endif
 
-#if !defined(QT_NO_TSLIB) && (!defined(Q_OS_ANDROID) || defined(Q_OS_ANDROID_NO_SDK))
+#if !defined(QT_NO_TSLIB) && !defined(Q_OS_ANDROID)
 #include <QtPlatformSupport/private/qtslib_p.h>
 #endif
 
@@ -117,12 +124,12 @@ void QEglFSIntegration::initialize()
 {
     qt_egl_device_integration()->platformInit();
 
-    m_display = eglGetDisplay(nativeDisplay());
-    if (m_display == EGL_NO_DISPLAY)
+    m_display = qt_egl_device_integration()->createDisplay(nativeDisplay());
+    if (Q_UNLIKELY(m_display == EGL_NO_DISPLAY))
         qFatal("Could not open egl display");
 
     EGLint major, minor;
-    if (!eglInitialize(m_display, &major, &minor))
+    if (Q_UNLIKELY(!eglInitialize(m_display, &major, &minor)))
         qFatal("Could not initialize egl display");
 
     m_inputContext = QPlatformInputContextFactory::create();
@@ -167,6 +174,11 @@ QPlatformFontDatabase *QEglFSIntegration::fontDatabase() const
     return m_fontDb.data();
 }
 
+QPlatformTheme *QEglFSIntegration::createPlatformTheme(const QString &name) const
+{
+    return QGenericUnixTheme::createUnixTheme(name);
+}
+
 QPlatformBackingStore *QEglFSIntegration::createPlatformBackingStore(QWindow *window) const
 {
     QOpenGLCompositorBackingStore *bs = new QOpenGLCompositorBackingStore(window);
@@ -179,7 +191,7 @@ QPlatformBackingStore *QEglFSIntegration::createPlatformBackingStore(QWindow *wi
 QPlatformWindow *QEglFSIntegration::createPlatformWindow(QWindow *window) const
 {
     QWindowSystemInterface::flushWindowSystemEvents();
-    QEglFSWindow *w = new QEglFSWindow(window);
+    QEglFSWindow *w = qt_egl_device_integration()->createWindow(window);
     w->create();
     if (window->type() != Qt::ToolTip)
         w->requestActivateWindow();
@@ -188,11 +200,8 @@ QPlatformWindow *QEglFSIntegration::createPlatformWindow(QWindow *window) const
 
 QPlatformOpenGLContext *QEglFSIntegration::createPlatformOpenGLContext(QOpenGLContext *context) const
 {
-    // If there is a "root" window into which raster and QOpenGLWidget content is
-    // composited, all other contexts must share with its context.
-    QOpenGLContext *compositingContext = QOpenGLCompositor::instance()->context();
     EGLDisplay dpy = context->screen() ? static_cast<QEglFSScreen *>(context->screen()->handle())->display() : display();
-    QPlatformOpenGLContext *share = compositingContext ? compositingContext->handle() : context->shareHandle();
+    QPlatformOpenGLContext *share = context->shareHandle();
     QVariant nativeHandle = context->nativeHandle();
 
     QEglFSContext *ctx;
@@ -213,10 +222,14 @@ QPlatformOffscreenSurface *QEglFSIntegration::createPlatformOffscreenSurface(QOf
 {
     EGLDisplay dpy = surface->screen() ? static_cast<QEglFSScreen *>(surface->screen()->handle())->display() : display();
     QSurfaceFormat fmt = qt_egl_device_integration()->surfaceFormatFor(surface->requestedFormat());
-    if (qt_egl_device_integration()->supportsPBuffers())
-        return new QEGLPbuffer(dpy, fmt, surface);
-    else
+    if (qt_egl_device_integration()->supportsPBuffers()) {
+        QEGLPlatformContext::Flags flags = 0;
+        if (!qt_egl_device_integration()->supportsSurfacelessContexts())
+            flags |= QEGLPlatformContext::NoSurfaceless;
+        return new QEGLPbuffer(dpy, fmt, surface, flags);
+    } else {
         return new QEglFSOffscreenWindow(dpy, fmt, surface);
+    }
     // Never return null. Multiple QWindows are not supported by this plugin.
 }
 
@@ -247,7 +260,8 @@ enum ResourceType {
     EglContext,
     EglConfig,
     NativeDisplay,
-    XlibDisplay
+    XlibDisplay,
+    WaylandDisplay
 };
 
 static int resourceType(const QByteArray &key)
@@ -258,7 +272,8 @@ static int resourceType(const QByteArray &key)
         QByteArrayLiteral("eglcontext"),
         QByteArrayLiteral("eglconfig"),
         QByteArrayLiteral("nativedisplay"),
-        QByteArrayLiteral("display")
+        QByteArrayLiteral("display"),
+        QByteArrayLiteral("server_wl_display")
     };
     const QByteArray *end = names + sizeof(names) / sizeof(names[0]);
     const QByteArray *result = std::find(names, end, key);
@@ -277,6 +292,9 @@ void *QEglFSIntegration::nativeResourceForIntegration(const QByteArray &resource
         break;
     case NativeDisplay:
         result = reinterpret_cast<void*>(nativeDisplay());
+        break;
+    case WaylandDisplay:
+        result = qt_egl_device_integration()->wlDisplay();
         break;
     default:
         break;
@@ -370,7 +388,7 @@ QPlatformNativeInterface::NativeResourceForContextFunction QEglFSIntegration::na
 
 QFunctionPointer QEglFSIntegration::platformFunction(const QByteArray &function) const
 {
-#if !defined(QT_NO_EVDEV) && (!defined(Q_OS_ANDROID) || defined(Q_OS_ANDROID_NO_SDK))
+#if !defined(QT_NO_EVDEV) && !defined(Q_OS_ANDROID)
     if (function == QEglFSFunctions::loadKeymapTypeIdentifier())
         return QFunctionPointer(loadKeymapStatic);
 #else
@@ -382,7 +400,7 @@ QFunctionPointer QEglFSIntegration::platformFunction(const QByteArray &function)
 
 void QEglFSIntegration::loadKeymapStatic(const QString &filename)
 {
-#if !defined(QT_NO_EVDEV) && (!defined(Q_OS_ANDROID) || defined(Q_OS_ANDROID_NO_SDK))
+#if !defined(QT_NO_EVDEV) && !defined(Q_OS_ANDROID)
     QEglFSIntegration *self = static_cast<QEglFSIntegration *>(QGuiApplicationPrivate::platformIntegration());
     if (self->m_kbdMgr)
         self->m_kbdMgr->loadKeymap(filename);
@@ -402,7 +420,7 @@ void QEglFSIntegration::createInputHandlers()
     }
 #endif
 
-#if !defined(QT_NO_EVDEV) && (!defined(Q_OS_ANDROID) || defined(Q_OS_ANDROID_NO_SDK))
+#if !defined(QT_NO_EVDEV) && !defined(Q_OS_ANDROID)
     m_kbdMgr = new QEvdevKeyboardManager(QLatin1String("EvdevKeyboard"), QString() /* spec */, this);
     new QEvdevMouseManager(QLatin1String("EvdevMouse"), QString() /* spec */, this);
 #ifndef QT_NO_TSLIB
@@ -433,6 +451,7 @@ EGLConfig QEglFSIntegration::chooseConfig(EGLDisplay display, const QSurfaceForm
     };
 
     Chooser chooser(display);
+    chooser.setSurfaceType(qt_egl_device_integration()->surfaceType());
     chooser.setSurfaceFormat(format);
     return chooser.chooseConfig();
 }

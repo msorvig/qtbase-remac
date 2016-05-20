@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -111,7 +117,7 @@ public:
     {
         Q_D(QTornOffMenu);
         // make the torn-off menu a sibling of p (instead of a child)
-        QWidget *parentWidget = d->causedStack.isEmpty() ? p : d->causedStack.last();
+        QWidget *parentWidget = d->causedStack.isEmpty() ? p : d->causedStack.constLast();
         if (parentWidget->parentWidget())
             parentWidget = parentWidget->parentWidget();
         setParent(parentWidget, Qt::Window | Qt::Tool);
@@ -192,11 +198,10 @@ void QMenuPrivate::syncPlatformMenu()
         return;
 
     QPlatformMenuItem *beforeItem = Q_NULLPTR;
-    QListIterator<QAction*> it(q->actions());
-    it.toBack();
-    while (it.hasPrevious()) {
+    const QList<QAction*> actions = q->actions();
+    for (QList<QAction*>::const_reverse_iterator it = actions.rbegin(), end = actions.rend(); it != end; ++it) {
         QPlatformMenuItem *menuItem = platformMenu->createMenuItem();
-        QAction *action = it.previous();
+        QAction *action = *it;
         menuItem->setTag(reinterpret_cast<quintptr>(action));
         QObject::connect(menuItem, SIGNAL(activated()), action, SLOT(trigger()), Qt::QueuedConnection);
         QObject::connect(menuItem, SIGNAL(hovered()), action, SIGNAL(hovered()), Qt::QueuedConnection);
@@ -503,8 +508,8 @@ void QMenuPrivate::hideMenu(QMenu *menu)
     if (activeMenu == menu)
         activeMenu = 0;
     menu->d_func()->causedPopup.action = 0;
-    menu->d_func()->causedPopup.widget = 0;
     menu->close();
+    menu->d_func()->causedPopup.widget = 0;
     if (previousMouseMenu.data() == menu)
         handleEnterLeaveEvents(&previousMouseMenu, Q_NULLPTR);
 }
@@ -585,7 +590,9 @@ void QMenuPrivate::setCurrentAction(QAction *action, int popup, SelectionReason 
     if (reason != SelectedFromKeyboard) {
         if (QMenu *menu = qobject_cast<QMenu*>(causedPopup.widget)) {
             if (causedPopup.action && menu->d_func()->activeMenu == q)
-                menu->d_func()->setCurrentAction(causedPopup.action, 0, reason, false);
+                // Reselect parent menu action only if mouse is over a menu and parent menu action is not already selected (QTBUG-47987)
+                if (hasReceievedEnter && menu->d_func()->currentAction != causedPopup.action)
+                    menu->d_func()->setCurrentAction(causedPopup.action, 0, reason, false);
         }
     }
 
@@ -1263,14 +1270,17 @@ void QMenuPrivate::_q_platformMenuAboutToShow()
     Q_Q(QMenu);
 
 #ifdef Q_OS_OSX
-    if (platformMenu)
-        Q_FOREACH (QAction *action, q->actions())
-            if (QWidget *widget = widgetItems.value(const_cast<QAction *>(action)))
+    if (platformMenu) {
+        const auto actions = q->actions();
+        for (QAction *action : actions) {
+            if (QWidget *widget = widgetItems.value(action))
                 if (widget->parent() == q) {
                     QPlatformMenuItem *menuItem = platformMenu->menuItemForTag(reinterpret_cast<quintptr>(action));
                     moveWidgetToPlatformItem(widget, menuItem);
                     platformMenu->syncMenuItem(menuItem);
                 }
+        }
+    }
 #endif
 
     emit q->aboutToShow();
@@ -1471,10 +1481,9 @@ QMenu::QMenu(QWidget *parent)
     \sa title
 */
 QMenu::QMenu(const QString &title, QWidget *parent)
-    : QWidget(*new QMenuPrivate, parent, Qt::Popup)
+    : QMenu(parent)
 {
     Q_D(QMenu);
-    d->init();
     d->menuAction->setText(title);
 }
 
@@ -1938,7 +1947,7 @@ bool QMenu::isTearOffEnabled() const
   contents in a new window. When the menu is in this mode and the menu
   is visible returns \c true; otherwise false.
 
-  \sa hideTearOffMenu(), isTearOffEnabled()
+  \sa showTearOffMenu(), hideTearOffMenu(), isTearOffEnabled()
 */
 bool QMenu::isTearOffMenuVisible() const
 {
@@ -1948,15 +1957,54 @@ bool QMenu::isTearOffMenuVisible() const
 }
 
 /*!
-   This function will forcibly hide the torn off menu making it
-   disappear from the users desktop.
+   \since 5.7
 
-   \sa isTearOffMenuVisible(), isTearOffEnabled()
+   This function will forcibly show the torn off menu making it
+   appear on the user's desktop at the specified \e global position \a pos.
+
+   \sa hideTearOffMenu(), isTearOffMenuVisible(), isTearOffEnabled()
+*/
+void QMenu::showTearOffMenu(const QPoint &pos)
+{
+    Q_D(QMenu);
+    if (!d->tornPopup)
+        d->tornPopup = new QTornOffMenu(this);
+    const QSize &s = sizeHint();
+    d->tornPopup->setGeometry(pos.x(), pos.y(), s.width(), s.height());
+    d->tornPopup->show();
+}
+
+/*!
+   \overload
+   \since 5.7
+
+   This function will forcibly show the torn off menu making it
+   appear on the user's desktop under the mouse currsor.
+
+   \sa hideTearOffMenu(), isTearOffMenuVisible(), isTearOffEnabled()
+*/
+void QMenu::showTearOffMenu()
+{
+    showTearOffMenu(QCursor::pos());
+}
+
+/*!
+   This function will forcibly hide the torn off menu making it
+   disappear from the user's desktop.
+
+   \sa showTearOffMenu(), isTearOffMenuVisible(), isTearOffEnabled()
 */
 void QMenu::hideTearOffMenu()
 {
-    if (QWidget *w = d_func()->tornPopup)
-        w->close();
+    Q_D(QMenu);
+    if (d->tornPopup) {
+        d->tornPopup->close();
+        // QTornOffMenu sets WA_DeleteOnClose, so we
+        // should consider the torn-off menu deleted.
+        // This way showTearOffMenu() will not try to
+        // reuse the dying torn-off menu.
+        d->tornPopup = Q_NULLPTR;
+    }
 }
 
 
@@ -2587,7 +2635,11 @@ void QMenu::mousePressEvent(QMouseEvent *e)
     Q_D(QMenu);
     if (d->aboutToHide || d->mouseEventTaken(e))
         return;
-    if (!rect().contains(e->pos())) {
+    // Workaround for XCB on multiple screens which doesn't have offset. If the menu is open on one screen
+    // and mouse clicks on second screen, e->pos() is QPoint(0,0) and the menu doesn't hide. This trick makes
+    // possible to hide the menu when mouse clicks on another screen (e->screenPos() returns correct value).
+    // Only when mouse clicks in QPoint(0,0) on second screen, the menu doesn't hide.
+    if ((e->pos().isNull() && !e->screenPos().isNull()) || !rect().contains(e->pos())) {
          if (d->noReplayFor
              && QRect(d->noReplayFor->mapToGlobal(QPoint()), d->noReplayFor->size()).contains(e->globalPos()))
              setAttribute(Qt::WA_NoMouseReplay);
@@ -2679,7 +2731,7 @@ QMenu::event(QEvent *e)
             if (kev->key() == Qt::Key_Up || kev->key() == Qt::Key_Down
                 || kev->key() == Qt::Key_Left || kev->key() == Qt::Key_Right
                 || kev->key() == Qt::Key_Enter || kev->key() == Qt::Key_Return
-                || kev->key() == Qt::Key_Escape) {
+                || kev->matches(QKeySequence::Cancel)) {
                 e->accept();
                 return true;
             }
@@ -2965,27 +3017,6 @@ void QMenu::keyPressEvent(QKeyEvent *e)
         }
         break;
 
-    case Qt::Key_Escape:
-#ifdef QT_KEYPAD_NAVIGATION
-    case Qt::Key_Back:
-#endif
-        key_consumed = true;
-        if (d->tornoff) {
-            close();
-            return;
-        }
-        {
-            QPointer<QWidget> caused = d->causedPopup.widget;
-            d->hideMenu(this); // hide after getting causedPopup
-#ifndef QT_NO_MENUBAR
-            if (QMenuBar *mb = qobject_cast<QMenuBar*>(caused)) {
-                mb->d_func()->setCurrentAction(d->menuAction);
-                mb->d_func()->setKeyboardMode(true);
-            }
-#endif
-        }
-        break;
-
     case Qt::Key_Space:
         if (!style()->styleHint(QStyle::SH_Menu_SpaceActivatesItem, 0, this))
             break;
@@ -3020,6 +3051,28 @@ void QMenu::keyPressEvent(QKeyEvent *e)
 #endif
     default:
         key_consumed = false;
+    }
+
+    if (!key_consumed && (e->matches(QKeySequence::Cancel)
+#ifdef QT_KEYPAD_NAVIGATION
+        || e->key() == Qt::Key_Back
+#endif
+    )) {
+        key_consumed = true;
+        if (d->tornoff) {
+            close();
+            return;
+        }
+        {
+            QPointer<QWidget> caused = d->causedPopup.widget;
+            d->hideMenu(this); // hide after getting causedPopup
+#ifndef QT_NO_MENUBAR
+            if (QMenuBar *mb = qobject_cast<QMenuBar*>(caused)) {
+                mb->d_func()->setCurrentAction(d->menuAction);
+                mb->d_func()->setKeyboardMode(true);
+            }
+#endif
+        }
     }
 
     if (!key_consumed) {                                // send to menu bar
@@ -3142,7 +3195,7 @@ void QMenu::mouseMoveEvent(QMouseEvent *e)
         d->activeMenu->d_func()->setCurrentAction(0);
 
     QMenuSloppyState::MouseEventResult sloppyEventResult = d->sloppyState.processMouseEvent(e->localPos(), action, d->currentAction);
-    if (sloppyEventResult == QMenuSloppyState::EventShouldBePropogated) {
+    if (sloppyEventResult == QMenuSloppyState::EventShouldBePropagated) {
         d->setCurrentAction(action, d->mousePopupDelay);
     } else if (sloppyEventResult == QMenuSloppyState::EventDiscardsSloppyState) {
         d->sloppyState.reset();
@@ -3219,6 +3272,7 @@ static void copyActionToPlatformItem(const QAction *action, QPlatformMenuItem *i
     item->setShortcut(action->shortcut());
     item->setCheckable(action->isCheckable());
     item->setChecked(action->isChecked());
+    item->setHasExclusiveGroup(action->actionGroup() && action->actionGroup()->isExclusive());
     item->setFont(action->font());
     item->setRole((QPlatformMenuItem::MenuRole) action->menuRole());
     item->setEnabled(action->isEnabled());
@@ -3297,17 +3351,6 @@ void QMenu::actionEvent(QActionEvent *e)
 
         d->platformMenu->syncSeparatorsCollapsible(d->collapsibleSeparators);
     }
-
-#if defined(Q_OS_WINCE) && !defined(QT_NO_MENUBAR)
-    if (!d->wce_menu)
-        d->wce_menu = new QMenuPrivate::QWceMenuPrivate;
-    if (e->type() == QEvent::ActionAdded)
-        d->wce_menu->addAction(e->action(), d->wce_menu->findAction(e->before()));
-    else if (e->type() == QEvent::ActionRemoved)
-        d->wce_menu->removeAction(e->action());
-    else if (e->type() == QEvent::ActionChanged)
-        d->wce_menu->syncAction(e->action());
-#endif
 
     if (isVisible()) {
         d->updateActionRects();

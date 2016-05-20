@@ -35,7 +35,7 @@ SUBDIRS=\
     qurlquery \
     qwinoverlappedionotifier \
 
-!win32|wince* {
+!win32 {
     SUBDIRS -=\
         qwinoverlappedionotifier
 }
@@ -63,4 +63,5 @@ winrt: SUBDIRS -= \
     qprocess \
     qprocess-noapplication \
     qprocessenvironment \
+    qstorageinfo \
     qwinoverlappedionotifier

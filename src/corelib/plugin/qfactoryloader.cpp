@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -49,16 +55,6 @@
 #include "qjsonarray.h"
 
 QT_BEGIN_NAMESPACE
-
-namespace {
-
-// avoid duplicate QStringLiteral data:
-inline QString iidKeyLiteral() { return QStringLiteral("IID"); }
-inline QString versionKeyLiteral() { return QStringLiteral("version"); }
-inline QString metaDataKeyLiteral() { return QStringLiteral("MetaData"); }
-inline QString keysKeyLiteral() { return QStringLiteral("Keys"); }
-
-}
 
 class QFactoryLoaderPrivate : public QObjectPrivate
 {
@@ -112,7 +108,11 @@ void QFactoryLoader::update()
         if (!QDir(path).exists(QLatin1String(".")))
             continue;
 
-        QStringList plugins = QDir(path).entryList(QDir::Files);
+        QStringList plugins = QDir(path).entryList(
+#ifdef Q_OS_WIN
+                    QStringList(QStringLiteral("*.dll")),
+#endif
+                    QDir::Files);
         QLibraryPrivate *library = 0;
 
 #ifdef Q_OS_MAC
@@ -145,8 +145,8 @@ void QFactoryLoader::update()
             library = QLibraryPrivate::findOrCreate(QFileInfo(fileName).canonicalFilePath());
             if (!library->isPlugin()) {
                 if (qt_debug_component()) {
-                    qDebug() << library->errorString;
-                    qDebug() << "         not a plugin";
+                    qDebug() << library->errorString << endl
+                             << "         not a plugin";
                 }
                 library->release();
                 continue;
@@ -155,12 +155,12 @@ void QFactoryLoader::update()
             QStringList keys;
             bool metaDataOk = false;
 
-            QString iid = library->metaData.value(iidKeyLiteral()).toString();
+            QString iid = library->metaData.value(QLatin1String("IID")).toString();
             if (iid == QLatin1String(d->iid.constData(), d->iid.size())) {
-                QJsonObject object = library->metaData.value(metaDataKeyLiteral()).toObject();
+                QJsonObject object = library->metaData.value(QLatin1String("MetaData")).toObject();
                 metaDataOk = true;
 
-                QJsonArray k = object.value(keysKeyLiteral()).toArray();
+                QJsonArray k = object.value(QLatin1String("Keys")).toArray();
                 for (int i = 0; i < k.size(); ++i)
                     keys += d->cs ? k.at(i).toString() : k.at(i).toString().toLower();
             }
@@ -183,18 +183,20 @@ void QFactoryLoader::update()
                 QLibraryPrivate *previous = d->keyMap.value(key);
                 int prev_qt_version = 0;
                 if (previous) {
-                    prev_qt_version = (int)previous->metaData.value(versionKeyLiteral()).toDouble();
+                    prev_qt_version = (int)previous->metaData.value(QLatin1String("version")).toDouble();
                 }
-                int qt_version = (int)library->metaData.value(versionKeyLiteral()).toDouble();
+                int qt_version = (int)library->metaData.value(QLatin1String("version")).toDouble();
                 if (!previous || (prev_qt_version > QT_VERSION && qt_version <= QT_VERSION)) {
                     d->keyMap[key] = library;
                     ++keyUsageCount;
                 }
             }
-            if (keyUsageCount || keys.isEmpty())
+            if (keyUsageCount || keys.isEmpty()) {
+                library->setLoadHints(QLibrary::PreventUnloadHint); // once loaded, don't unload
                 d->libraryList += library;
-            else
+            } else {
                 library->release();
+            }
         }
     }
 #else
@@ -263,9 +265,10 @@ QList<QJsonObject> QFactoryLoader::metaData() const
         metaData.append(d->libraryList.at(i)->metaData);
 #endif
 
-    foreach (const QStaticPlugin &plugin, QPluginLoader::staticPlugins()) {
+    const auto staticPlugins = QPluginLoader::staticPlugins();
+    for (const QStaticPlugin &plugin : staticPlugins) {
         const QJsonObject object = plugin.metaData();
-        if (object.value(iidKeyLiteral()) != QLatin1String(d->iid.constData(), d->iid.size()))
+        if (object.value(QLatin1String("IID")) != QLatin1String(d->iid.constData(), d->iid.size()))
             continue;
         metaData.append(object);
     }
@@ -299,7 +302,7 @@ QObject *QFactoryLoader::instance(int index) const
     QVector<QStaticPlugin> staticPlugins = QPluginLoader::staticPlugins();
     for (int i = 0; i < staticPlugins.count(); ++i) {
         const QJsonObject object = staticPlugins.at(i).metaData();
-        if (object.value(iidKeyLiteral()) != QLatin1String(d->iid.constData(), d->iid.size()))
+        if (object.value(QLatin1String("IID")) != QLatin1String(d->iid.constData(), d->iid.size()))
             continue;
 
         if (index == 0)
@@ -313,12 +316,10 @@ QObject *QFactoryLoader::instance(int index) const
 QMultiMap<int, QString> QFactoryLoader::keyMap() const
 {
     QMultiMap<int, QString> result;
-    const QString metaDataKey = metaDataKeyLiteral();
-    const QString keysKey = keysKeyLiteral();
     const QList<QJsonObject> metaDataList = metaData();
     for (int i = 0; i < metaDataList.size(); ++i) {
-        const QJsonObject metaData = metaDataList.at(i).value(metaDataKey).toObject();
-        const QJsonArray keys = metaData.value(keysKey).toArray();
+        const QJsonObject metaData = metaDataList.at(i).value(QLatin1String("MetaData")).toObject();
+        const QJsonArray keys = metaData.value(QLatin1String("Keys")).toArray();
         const int keyCount = keys.size();
         for (int k = 0; k < keyCount; ++k)
             result.insert(i, keys.at(k).toString());
@@ -328,12 +329,10 @@ QMultiMap<int, QString> QFactoryLoader::keyMap() const
 
 int QFactoryLoader::indexOf(const QString &needle) const
 {
-    const QString metaDataKey = metaDataKeyLiteral();
-    const QString keysKey = keysKeyLiteral();
     const QList<QJsonObject> metaDataList = metaData();
     for (int i = 0; i < metaDataList.size(); ++i) {
-        const QJsonObject metaData = metaDataList.at(i).value(metaDataKey).toObject();
-        const QJsonArray keys = metaData.value(keysKey).toArray();
+        const QJsonObject metaData = metaDataList.at(i).value(QLatin1String("MetaData")).toObject();
+        const QJsonArray keys = metaData.value(QLatin1String("Keys")).toArray();
         const int keyCount = keys.size();
         for (int k = 0; k < keyCount; ++k) {
             if (!keys.at(k).toString().compare(needle, Qt::CaseInsensitive))

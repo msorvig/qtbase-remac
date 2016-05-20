@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -800,8 +806,8 @@ bool QResourceRoot::mappingRootSubdir(const QString &path, QString *match) const
 {
     const QString root = mappingRoot();
     if(!root.isEmpty()) {
-        const QStringList root_segments = root.split(QLatin1Char('/'), QString::SkipEmptyParts),
-                          path_segments = path.split(QLatin1Char('/'), QString::SkipEmptyParts);
+        const QVector<QStringRef> root_segments = root.splitRef(QLatin1Char('/'), QString::SkipEmptyParts),
+                                  path_segments = path.splitRef(QLatin1Char('/'), QString::SkipEmptyParts);
         if(path_segments.size() <= root_segments.size()) {
             int matched = 0;
             for(int i = 0; i < path_segments.size(); ++i) {
@@ -811,7 +817,7 @@ bool QResourceRoot::mappingRootSubdir(const QString &path, QString *match) const
             }
             if(matched == path_segments.size()) {
                 if(match && root_segments.size() > matched)
-                    *match = root_segments.at(matched);
+                    *match = root_segments.at(matched).toString();
                 return true;
             }
         }
@@ -1179,6 +1185,7 @@ QResource::unregisterResource(const uchar *rccData, const QString &resourceRoot)
     return false;
 }
 
+#if !defined(QT_BOOTSTRAPPED)
 //resource engine
 class QResourceFileEnginePrivate : public QAbstractFileEnginePrivate
 {
@@ -1187,9 +1194,10 @@ protected:
 private:
     uchar *map(qint64 offset, qint64 size, QFile::MemoryMapFlags flags);
     bool unmap(uchar *ptr);
+    void uncompress() const;
     qint64 offset;
     QResource resource;
-    QByteArray uncompressed;
+    mutable QByteArray uncompressed;
 protected:
     QResourceFileEnginePrivate() : offset(0) { }
 };
@@ -1224,13 +1232,6 @@ QResourceFileEngine::QResourceFileEngine(const QString &file) :
 {
     Q_D(QResourceFileEngine);
     d->resource.setFileName(file);
-    if(d->resource.isCompressed() && d->resource.size()) {
-#ifndef QT_NO_COMPRESS
-        d->uncompressed = qUncompress(d->resource.data(), d->resource.size());
-#else
-        Q_ASSERT(!"QResourceFileEngine::open: Qt built without support for compression");
-#endif
-    }
 }
 
 QResourceFileEngine::~QResourceFileEngine()
@@ -1252,8 +1253,11 @@ bool QResourceFileEngine::open(QIODevice::OpenMode flags)
     }
     if(flags & QIODevice::WriteOnly)
         return false;
-    if(!d->resource.isValid())
-       return false;
+    d->uncompress();
+    if (!d->resource.isValid()) {
+        d->errorString = qt_error_string(ENOENT);
+        return false;
+    }
     return true;
 }
 
@@ -1315,8 +1319,10 @@ qint64 QResourceFileEngine::size() const
     Q_D(const QResourceFileEngine);
     if(!d->resource.isValid())
         return 0;
-    if(d->resource.isCompressed())
+    if (d->resource.isCompressed()) {
+        d->uncompress();
         return d->uncompressed.size();
+    }
     return d->resource.size();
 }
 
@@ -1484,5 +1490,18 @@ bool QResourceFileEnginePrivate::unmap(uchar *ptr)
     Q_UNUSED(ptr);
     return true;
 }
+
+void QResourceFileEnginePrivate::uncompress() const
+{
+    if (resource.isCompressed() && uncompressed.isEmpty() && resource.size()) {
+#ifndef QT_NO_COMPRESS
+        uncompressed = qUncompress(resource.data(), resource.size());
+#else
+        Q_ASSERT(!"QResourceFileEngine::open: Qt built without support for compression");
+#endif
+    }
+}
+
+#endif // !defined(QT_BOOTSTRAPPED)
 
 QT_END_NAMESPACE

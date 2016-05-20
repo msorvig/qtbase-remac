@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -171,14 +166,16 @@ static bool doSocketRead(QTcpSocket *socket, int minBytesAvailable, int timeout 
 {
     QElapsedTimer timer;
     timer.start();
+    int t = timeout;
     forever {
         if (socket->bytesAvailable() >= minBytesAvailable)
             return true;
-        timeout = qt_subtract_from_timeout(timeout, timer.elapsed());
-        if (socket->state() == QAbstractSocket::UnconnectedState
-            || timeout == 0)
+        if (socket->state() == QAbstractSocket::UnconnectedState)
             return false;
-        if (!socket->waitForReadyRead(timeout))
+        if (!socket->waitForReadyRead(t))
+            return false;
+        t = qt_subtract_from_timeout(timeout, timer.elapsed());
+        if (t == 0)
             return false;
     }
 }
@@ -199,6 +196,7 @@ static bool doSocketFlush(QTcpSocket *socket, int timeout = 4000)
 #endif
     QTime timer;
     timer.start();
+    int t = timeout;
     forever {
         if (socket->bytesToWrite() == 0
 #ifndef QT_NO_SSL
@@ -206,11 +204,12 @@ static bool doSocketFlush(QTcpSocket *socket, int timeout = 4000)
 #endif
             )
             return true;
-        timeout = qt_subtract_from_timeout(timeout, timer.elapsed());
-        if (socket->state() == QAbstractSocket::UnconnectedState
-            || timeout == 0)
+        if (socket->state() == QAbstractSocket::UnconnectedState)
             return false;
-        if (!socket->waitForBytesWritten(timeout))
+        if (!socket->waitForBytesWritten(t))
+            return false;
+        t = qt_subtract_from_timeout(timeout, timer.elapsed());
+        if (t == 0)
             return false;
     }
 }
@@ -986,8 +985,8 @@ void tst_NetworkSelfTest::smbServer()
     static const char contents[] = "This is 34 bytes. Do not change...";
 #ifdef Q_OS_WIN
     // use Windows's native UNC support to try and open a file on the server
-    QString filepath = QString("\\\\%1\\testshare\\test.pri").arg(QtNetworkSettings::winServerName());
-    FILE *f = fopen(filepath.toLatin1(), "rb");
+    QByteArray filepath = "\\\\" + QtNetworkSettings::winServerName().toLatin1() + "\\testshare\\test.pri";
+    FILE *f = fopen(filepath.constData(), "rb");
     QVERIFY2(f, qt_error_string().toLocal8Bit());
 
     char buf[128];

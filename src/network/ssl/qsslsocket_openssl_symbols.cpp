@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2014 BlackBerry Limited. All rights reserved.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtNetwork module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -294,6 +300,8 @@ DEFINEFUNC2(void *, SSL_get_ex_data, const SSL *ssl, ssl, int idx, idx, return N
 #endif
 #if OPENSSL_VERSION_NUMBER >= 0x10001000L && !defined(OPENSSL_NO_PSK)
 DEFINEFUNC2(void, SSL_set_psk_client_callback, SSL* ssl, ssl, q_psk_client_callback_t callback, callback, return, DUMMYARG)
+DEFINEFUNC2(void, SSL_set_psk_server_callback, SSL* ssl, ssl, q_psk_server_callback_t callback, callback, return, DUMMYARG)
+DEFINEFUNC2(int, SSL_CTX_use_psk_identity_hint, SSL_CTX* ctx, ctx, const char *hint, hint, return 0, return)
 #endif
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
 #ifndef OPENSSL_NO_SSL2
@@ -412,6 +420,18 @@ DEFINEFUNC3(void, SSL_CTX_set_next_proto_select_cb, SSL_CTX *s, s,
             void *arg, arg, return, DUMMYARG)
 DEFINEFUNC3(void, SSL_get0_next_proto_negotiated, const SSL *s, s,
             const unsigned char **data, data, unsigned *len, len, return, DUMMYARG)
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+DEFINEFUNC3(int, SSL_set_alpn_protos, SSL *s, s, const unsigned char *protos, protos,
+            unsigned protos_len, protos_len, return -1, return)
+DEFINEFUNC3(void, SSL_CTX_set_alpn_select_cb, SSL_CTX *s, s,
+            int (*cb) (SSL *ssl, const unsigned char **out,
+                       unsigned char *outlen,
+                       const unsigned char *in,
+                       unsigned int inlen, void *arg), cb,
+            void *arg, arg, return, DUMMYARG)
+DEFINEFUNC3(void, SSL_get0_alpn_selected, const SSL *s, s, const unsigned char **data, data,
+            unsigned *len, len, return, DUMMYARG)
+#endif // OPENSSL_VERSION_NUMBER >= 0x10002000L ...
 #endif // OPENSSL_VERSION_NUMBER >= 0x1000100fL ...
 DEFINEFUNC(DH *, DH_new, DUMMYARG, DUMMYARG, return 0, return)
 DEFINEFUNC(void, DH_free, DH *dh, dh, return, DUMMYARG)
@@ -543,16 +563,16 @@ static QStringList libraryPathList()
 Q_NEVER_INLINE
 static QStringList findAllLibs(QLatin1String filter)
 {
-    QStringList paths = libraryPathList();
+    const QStringList paths = libraryPathList();
     QStringList found;
     const QStringList filters((QString(filter)));
 
-    foreach (const QString &path, paths) {
+    for (const QString &path : paths) {
         QDir dir(path);
         QStringList entryList = dir.entryList(filters, QDir::Files);
 
         std::sort(entryList.begin(), entryList.end(), LibGreaterThan());
-        foreach (const QString &entry, entryList)
+        for (const QString &entry : qAsConst(entryList))
             found << path + QLatin1Char('/') + entry;
     }
 
@@ -682,16 +702,16 @@ static QPair<QLibrary*, QLibrary*> loadOpenSsl()
 #endif
 
     // third attempt: loop on the most common library paths and find libssl
-    QStringList sslList = findAllLibSsl();
-    QStringList cryptoList = findAllLibCrypto();
+    const QStringList sslList = findAllLibSsl();
+    const QStringList cryptoList = findAllLibCrypto();
 
-    foreach (const QString &crypto, cryptoList) {
+    for (const QString &crypto : cryptoList) {
         libcrypto->setFileNameAndVersion(crypto, -1);
         if (libcrypto->load()) {
             QFileInfo fi(crypto);
             QString version = fi.completeSuffix();
 
-            foreach (const QString &ssl, sslList) {
+            for (const QString &ssl : sslList) {
                 if (!ssl.endsWith(version))
                     continue;
 
@@ -883,6 +903,8 @@ bool q_resolveOpenSslSymbols()
 #endif
 #if OPENSSL_VERSION_NUMBER >= 0x10001000L && !defined(OPENSSL_NO_PSK)
     RESOLVEFUNC(SSL_set_psk_client_callback)
+    RESOLVEFUNC(SSL_set_psk_server_callback)
+    RESOLVEFUNC(SSL_CTX_use_psk_identity_hint)
 #endif
     RESOLVEFUNC(SSL_write)
 #ifndef OPENSSL_NO_SSL2

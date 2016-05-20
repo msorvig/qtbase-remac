@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -156,11 +162,29 @@ QObject *QWidgetWindow::focusObject() const
     return widget;
 }
 
+static inline bool shouldBePropagatedToWidget(QEvent *event)
+{
+    switch (event->type()) {
+    // Handing show events to widgets would cause them to be triggered twice
+    case QEvent::Show:
+    case QEvent::Hide:
+    case QEvent::Timer:
+    case QEvent::DynamicPropertyChange:
+    case QEvent::ChildAdded:
+    case QEvent::ChildRemoved:
+        return false;
+    default:
+        return true;
+    }
+}
+
 bool QWidgetWindow::event(QEvent *event)
 {
     if (m_widget->testAttribute(Qt::WA_DontShowOnScreen)) {
         // \a event is uninteresting for QWidgetWindow, the event was probably
         // generated before WA_DontShowOnScreen was set
+        if (!shouldBePropagatedToWidget(event))
+            return true;
         return QCoreApplication::sendEvent(m_widget, event);
     }
 
@@ -285,10 +309,6 @@ bool QWidgetWindow::event(QEvent *event)
         return true;
 #endif // QT_NO_CONTEXTMENU
 
-    // Handing show events to widgets (see below) here would cause them to be triggered twice
-    case QEvent::Show:
-    case QEvent::Hide:
-        return QWindow::event(event);
     case QEvent::WindowBlocked:
         qt_button_down = 0;
         break;
@@ -305,7 +325,7 @@ bool QWidgetWindow::event(QEvent *event)
         break;
     }
 
-    if (QCoreApplication::sendEvent(m_widget, event) && event->type() != QEvent::Timer)
+    if (shouldBePropagatedToWidget(event) && QCoreApplication::sendEvent(m_widget, event))
         return true;
 
     return QWindow::event(event);
@@ -315,6 +335,14 @@ QPointer<QWidget> qt_last_mouse_receiver = 0;
 
 void QWidgetWindow::handleEnterLeaveEvent(QEvent *event)
 {
+#if !defined(Q_OS_OSX) && !defined(Q_OS_IOS) // Cocoa tracks popups
+    // Ignore all enter/leave events from QPA if we are not on the first-level context menu.
+    // This prevents duplicated events on most platforms. Fake events will be delivered in
+    // QWidgetWindow::handleMouseEvent(QMouseEvent *). Make an exception whether the widget
+    // is already under mouse - let the mouse leave.
+    if (QApplicationPrivate::inPopupMode() && m_widget != QApplication::activePopupWidget() && !m_widget->underMouse())
+        return;
+#endif
     if (event->type() == QEvent::Leave) {
         QWidget *enter = 0;
         // Check from window system event queue if the next queued enter targets a window
@@ -409,14 +437,13 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
         QEvent::MouseButtonRelease : QEvent::MouseButtonPress;
     if (qApp->d_func()->inPopupMode()) {
         QWidget *activePopupWidget = qApp->activePopupWidget();
-        QWidget *popup = activePopupWidget;
         QPoint mapped = event->pos();
-        if (popup != m_widget)
-            mapped = popup->mapFromGlobal(event->globalPos());
+        if (activePopupWidget != m_widget)
+            mapped = activePopupWidget->mapFromGlobal(event->globalPos());
         bool releaseAfter = false;
-        QWidget *popupChild  = popup->childAt(mapped);
+        QWidget *popupChild  = activePopupWidget->childAt(mapped);
 
-        if (popup != qt_popup_down) {
+        if (activePopupWidget != qt_popup_down) {
             qt_button_down = 0;
             qt_popup_down = 0;
         }
@@ -425,7 +452,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
         case QEvent::MouseButtonPress:
         case QEvent::MouseButtonDblClick:
             qt_button_down = popupChild;
-            qt_popup_down = popup;
+            qt_popup_down = activePopupWidget;
             break;
         case QEvent::MouseButtonRelease:
             releaseAfter = true;
@@ -436,18 +463,41 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
 
         int oldOpenPopupCount = openPopupCount;
 
-        if (popup->isEnabled()) {
+        if (activePopupWidget->isEnabled()) {
             // deliver event
             qt_replay_popup_mouse_event = false;
-            QWidget *receiver = popup;
+            QWidget *receiver = activePopupWidget;
             QPoint widgetPos = mapped;
             if (qt_button_down)
                 receiver = qt_button_down;
             else if (popupChild)
                 receiver = popupChild;
-            if (receiver != popup)
+            if (receiver != activePopupWidget)
                 widgetPos = receiver->mapFromGlobal(event->globalPos());
-            QWidget *alien = receiver->childAt(receiver->mapFromGlobal(event->globalPos()));
+            QWidget *alien = receiver;
+
+#if !defined(Q_OS_OSX) && !defined(Q_OS_IOS) // Cocoa tracks popups
+            const bool reallyUnderMouse = activePopupWidget->rect().contains(mapped);
+            const bool underMouse = activePopupWidget->underMouse();
+            if (activePopupWidget != m_widget || (!underMouse && qt_button_down)) {
+                // If active popup menu is not the first-level popup menu then we must emulate enter/leave events,
+                // because first-level popup menu grabs the mouse and enter/leave events are delivered only to it
+                // by QPA. Make an exception for first-level popup menu when the mouse button is pressed on widget.
+                if (underMouse != reallyUnderMouse) {
+                    if (reallyUnderMouse) {
+                        QApplicationPrivate::dispatchEnterLeave(receiver, Q_NULLPTR, event->screenPos());
+                        qt_last_mouse_receiver = receiver;
+                    } else {
+                        QApplicationPrivate::dispatchEnterLeave(Q_NULLPTR, qt_last_mouse_receiver, event->screenPos());
+                        qt_last_mouse_receiver = receiver;
+                        receiver = activePopupWidget;
+                    }
+                }
+            } else if (!reallyUnderMouse) {
+                alien = Q_NULLPTR;
+            }
+#endif
+
             QMouseEvent e(event->type(), widgetPos, event->windowPos(), event->screenPos(),
                           event->button(), event->buttons(), event->modifiers(), event->source());
             e.setTimestamp(event->timestamp());
@@ -459,7 +509,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
             case QEvent::MouseButtonPress:
             case QEvent::MouseButtonDblClick:
             case QEvent::MouseButtonRelease:
-                popup->close();
+                activePopupWidget->close();
                 break;
             default:
                 break;
@@ -505,7 +555,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
         } else if (event->type() == contextMenuTrigger
                    && event->button() == Qt::RightButton
                    && (openPopupCount == oldOpenPopupCount)) {
-            QWidget *popupEvent = popup;
+            QWidget *popupEvent = activePopupWidget;
             if (qt_button_down)
                 popupEvent = qt_button_down;
             else if(popupChild)
@@ -714,7 +764,6 @@ void QWidgetWindow::handleCloseEvent(QCloseEvent *event)
 {
     bool is_closing = m_widget->d_func()->close_helper(QWidgetPrivate::CloseWithSpontaneousEvent);
     event->setAccepted(is_closing);
-    QWindow::event(event); // Call QWindow QCloseEvent handler.
 }
 
 #ifndef QT_NO_WHEELEVENT
@@ -724,15 +773,26 @@ void QWidgetWindow::handleWheelEvent(QWheelEvent *event)
     if (QApplicationPrivate::instance()->modalState() && !qt_try_modal(m_widget, event->type()))
         return;
 
+    QWidget *rootWidget = m_widget;
+    QPoint pos = event->pos();
+
+    // Use proper popup window for wheel event. Some QPA sends the wheel
+    // event to the root menu, so redirect it to the proper popup window.
+    QWidget *activePopupWidget = QApplication::activePopupWidget();
+    if (activePopupWidget && activePopupWidget != m_widget) {
+        rootWidget = activePopupWidget;
+        pos = rootWidget->mapFromGlobal(event->globalPos());
+    }
+
     // which child should have it?
-    QWidget *widget = m_widget->childAt(event->pos());
+    QWidget *widget = rootWidget->childAt(pos);
 
     if (!widget)
-        widget = m_widget;
+        widget = rootWidget;
 
-    QPoint mapped = widget->mapFrom(m_widget, event->pos());
+    QPoint mapped = widget->mapFrom(rootWidget, pos);
 
-    QWheelEvent translated(mapped, event->globalPos(), event->pixelDelta(), event->angleDelta(), event->delta(), event->orientation(), event->buttons(), event->modifiers(), event->phase(), event->source());
+    QWheelEvent translated(mapped, event->globalPos(), event->pixelDelta(), event->angleDelta(), event->delta(), event->orientation(), event->buttons(), event->modifiers(), event->phase(), event->source(), event->inverted());
     QGuiApplication::sendSpontaneousEvent(widget, &translated);
 }
 
@@ -800,8 +860,8 @@ void QWidgetWindow::handleDragLeaveEvent(QDragLeaveEvent *event)
 
 void QWidgetWindow::handleDropEvent(QDropEvent *event)
 {
-    if (m_dragTarget.isNull()) {
-        qWarning() << Q_FUNC_INFO << m_widget << ": No drag target set.";
+    if (Q_UNLIKELY(m_dragTarget.isNull())) {
+        qWarning() << m_widget << ": No drag target set.";
         event->ignore();
         return;
     }
@@ -898,6 +958,7 @@ void QWidgetWindow::handleTabletEvent(QTabletEvent *event)
                         event->rotation(), event->z(), event->modifiers(), event->uniqueId(), event->button(), event->buttons());
         ev.setTimestamp(event->timestamp());
         QGuiApplication::sendSpontaneousEvent(qt_tablet_target, &ev);
+        event->setAccepted(ev.isAccepted());
     }
 
     if (event->type() == QEvent::TabletRelease && event->buttons() == Qt::NoButton)
@@ -957,8 +1018,8 @@ void QWidgetWindow::updateObjectName()
 {
     QString name = m_widget->objectName();
     if (name.isEmpty())
-        name = QString::fromUtf8(m_widget->metaObject()->className()) + QStringLiteral("Class");
-    name += QStringLiteral("Window");
+        name = QString::fromUtf8(m_widget->metaObject()->className()) + QLatin1String("Class");
+    name += QLatin1String("Window");
     setObjectName(name);
 }
 
@@ -969,3 +1030,5 @@ void QWidgetWindow::requestNativeUpdate(QWidget *target)
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qwidgetwindow_p.cpp"

@@ -37,7 +37,8 @@ HEADERS += \
     access/qnetworkdiskcache.h \
     access/qhttpthreaddelegate_p.h \
     access/qhttpmultipart.h \
-    access/qhttpmultipart_p.h
+    access/qhttpmultipart_p.h \
+    access/qnetworkfile_p.h
 
 SOURCES += \
     access/qftp.cpp \
@@ -68,11 +69,12 @@ SOURCES += \
     access/qabstractnetworkcache.cpp \
     access/qnetworkdiskcache.cpp \
     access/qhttpthreaddelegate.cpp \
-    access/qhttpmultipart.cpp
+    access/qhttpmultipart.cpp \
+    access/qnetworkfile.cpp
 
 mac: LIBS_PRIVATE += -framework Security
 
-ios {
+uikit {
     HEADERS += \
         access/qnetworkreplynsurlconnectionimpl_p.h
 

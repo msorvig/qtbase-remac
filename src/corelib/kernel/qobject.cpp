@@ -1,32 +1,39 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Intel Corporation.
 ** Copyright (C) 2013 Olivier Goffart <ogoffart@woboq.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -203,7 +210,7 @@ QObjectPrivate::QObjectPrivate(int version)
     // This allows incompatible versions to be loaded, possibly for testing.
     Q_UNUSED(version);
 #else
-    if (version != QObjectPrivateVersion)
+    if (Q_UNLIKELY(version != QObjectPrivateVersion))
         qFatal("Cannot mix incompatible Qt library (version 0x%x) with this library (version 0x%x)",
                 version, QObjectPrivateVersion);
 #endif
@@ -1123,7 +1130,7 @@ QObjectPrivate::Connection::~Connection()
     RTTI support and it works across dynamic library boundaries.
 
     qobject_cast() can also be used in conjunction with interfaces;
-    see the \l{tools/plugandpaint}{Plug & Paint} example for details.
+    see the \l{tools/plugandpaint/app}{Plug & Paint} example for details.
 
     \warning If T isn't declared with the Q_OBJECT macro, this
     function's return value is undefined.
@@ -1485,7 +1492,7 @@ void QObject::moveToThread(QThread *targetThread)
     } else if (d->threadData != currentData) {
         qWarning("QObject::moveToThread: Current thread (%p) is not the object's thread (%p).\n"
                  "Cannot move to target thread (%p)\n",
-                 currentData->thread, d->threadData->thread, targetData ? targetData->thread : Q_NULLPTR);
+                 currentData->thread.load(), d->threadData->thread.load(), targetData ? targetData->thread.load() : Q_NULLPTR);
 
 #ifdef Q_OS_MAC
         qWarning("You might be loading two sets of Qt binaries into the same process. "
@@ -2144,8 +2151,8 @@ void QObject::deleteLater()
 
     Returns a translated version of \a sourceText, optionally based on a
     \a disambiguation string and value of \a n for strings containing plurals;
-    otherwise returns \a sourceText itself if no appropriate translated string
-    is available.
+    otherwise returns QString::fromUtf8(\a sourceText) if no appropriate
+    translated string is available.
 
     Example:
     \snippet ../widgets/mainwindows/sdi/mainwindow.cpp implicit tr context
@@ -2171,7 +2178,7 @@ void QObject::deleteLater()
     translators while performing translations is not supported. Doing
     so will probably result in crashes or other undesirable behavior.
 
-    \sa trUtf8(), QCoreApplication::translate(), {Internationalization with Qt}
+    \sa QCoreApplication::translate(), {Internationalization with Qt}
 */
 
 /*!
@@ -3536,7 +3543,7 @@ static void queued_activate(QObject *sender, int signal, QObjectPrivate::Connect
                             QMutexLocker &locker)
 {
     const int *argumentTypes = c->argumentTypes.load();
-    if (!argumentTypes && argumentTypes != &DIRECT_CONNECTION_ONLY) {
+    if (!argumentTypes) {
         QMetaMethod m = QMetaObjectPrivate::signal(sender->metaObject(), signal);
         argumentTypes = queuedConnectionTypes(m.parameterTypes());
         if (!argumentTypes) // cannot queue arguments
@@ -3602,26 +3609,27 @@ void QMetaObject::activate(QObject *sender, int signalOffset, int local_signal_i
 {
     int signal_index = signalOffset + local_signal_index;
 
-    if (!sender->d_func()->isSignalConnected(signal_index)
-        && !qt_signal_spy_callback_set.signal_begin_callback
-        && !qt_signal_spy_callback_set.signal_end_callback) {
-        return; // nothing connected to these signals, and no spy
-    }
-
     if (sender->d_func()->blockSig)
         return;
 
-    if (sender->d_func()->declarativeData && QAbstractDeclarativeData::signalEmitted)
+    if (sender->d_func()->isDeclarativeSignalConnected(signal_index)
+            && QAbstractDeclarativeData::signalEmitted) {
         QAbstractDeclarativeData::signalEmitted(sender->d_func()->declarativeData, sender,
                                                 signal_index, argv);
+    }
+
+    if (!sender->d_func()->isSignalConnected(signal_index, /*checkDeclarative =*/ false)
+        && !qt_signal_spy_callback_set.signal_begin_callback
+        && !qt_signal_spy_callback_set.signal_end_callback) {
+        // The possible declarative connection is done, and nothing else is connected, so:
+        return;
+    }
 
     void *empty_argv[] = { 0 };
     if (qt_signal_spy_callback_set.signal_begin_callback != 0) {
         qt_signal_spy_callback_set.signal_begin_callback(sender, signal_index,
                                                          argv ? argv : empty_argv);
     }
-
-    Qt::HANDLE currentThreadId = QThread::currentThreadId();
 
     {
     QMutexLocker locker(signalSlotLock(sender));
@@ -3660,6 +3668,8 @@ void QMetaObject::activate(QObject *sender, int signalOffset, int local_signal_i
         list = &connectionLists->at(signal_index);
     else
         list = &connectionLists->allsignals;
+
+    Qt::HANDLE currentThreadId = QThread::currentThreadId();
 
     do {
         QObjectPrivate::Connection *c = list->first;
@@ -3706,8 +3716,6 @@ void QMetaObject::activate(QObject *sender, int signalOffset, int local_signal_i
             if (receiverInSameThread) {
                 sw.switchSender(receiver, sender, signal_index);
             }
-            const QObjectPrivate::StaticMetaCallFunction callFunction = c->callFunction;
-            const int method_relative = c->method_relative;
             if (c->isSlotObject) {
                 c->slotObj->ref();
                 QScopedPointer<QtPrivate::QSlotObjectBase, QSlotObjectBaseDeleter> obj(c->slotObj);
@@ -3720,10 +3728,12 @@ void QMetaObject::activate(QObject *sender, int signalOffset, int local_signal_i
                 obj.reset();
 
                 locker.relock();
-            } else if (callFunction && c->method_offset <= receiver->metaObject()->methodOffset()) {
+            } else if (c->callFunction && c->method_offset <= receiver->metaObject()->methodOffset()) {
                 //we compare the vtable to make sure we are not in the destructor of the object.
-                locker.unlock();
                 const int methodIndex = c->method();
+                const int method_relative = c->method_relative;
+                const auto callFunction = c->callFunction;
+                locker.unlock();
                 if (qt_signal_spy_callback_set.slot_begin_callback != 0)
                     qt_signal_spy_callback_set.slot_begin_callback(receiver, methodIndex, argv ? argv : empty_argv);
 
@@ -3733,7 +3743,7 @@ void QMetaObject::activate(QObject *sender, int signalOffset, int local_signal_i
                     qt_signal_spy_callback_set.slot_end_callback(receiver, methodIndex);
                 locker.relock();
             } else {
-                const int method = method_relative + c->method_offset;
+                const int method = c->method_relative + c->method_offset;
                 locker.unlock();
 
                 if (qt_signal_spy_callback_set.slot_begin_callback != 0) {
@@ -3831,7 +3841,7 @@ int QObjectPrivate::signalIndex(const char *signalName,
   \b{Note:} Dynamic properties starting with "_q_" are reserved for internal
   purposes.
 
-  \sa property(), metaObject(), dynamicPropertyNames()
+  \sa property(), metaObject(), dynamicPropertyNames(), QMetaProperty::write()
 */
 bool QObject::setProperty(const char *name, const QVariant &value)
 {
@@ -4150,11 +4160,11 @@ QDebug operator<<(QDebug dbg, const QObject *o)
 
     Example:
 
-    \snippet ../widgets/tools/plugandpaintplugins/basictools/basictoolsplugin.h 1
+    \snippet ../widgets/tools/plugandpaint/plugins/basictools/basictoolsplugin.h 1
     \dots
-    \snippet ../widgets/tools/plugandpaintplugins/basictools/basictoolsplugin.h 3
+    \snippet ../widgets/tools/plugandpaint/plugins/basictools/basictoolsplugin.h 3
 
-    See the \l{tools/plugandpaintplugins/basictools}{Plug & Paint
+    See the \l{tools/plugandpaint/plugins/basictools}{Plug & Paint
     Basic Tools} example for details.
 
     \sa Q_DECLARE_INTERFACE(), Q_PLUGIN_METADATA(), {How to Create Qt Plugins}
@@ -4531,6 +4541,8 @@ void qDeleteInEventHandler(QObject *o)
 
     make sure to declare the argument type with Q_DECLARE_METATYPE
 
+    Overloaded functions can be resolved with help of \l qOverload.
+
     \note The number of arguments in the signal or slot are limited to 6 if
     the compiler does not support C++11 variadic templates.
  */
@@ -4565,6 +4577,8 @@ void qDeleteInEventHandler(QObject *o)
     The connection will automatically disconnect if the sender is destroyed.
     However, you should take care that any objects used within the functor
     are still alive when the signal is emitted.
+
+    Overloaded functions can be resolved with help of \l qOverload.
 
     \note If the compiler does not support C++11 variadic templates, the number
     of arguments in the signal or slot are limited to 6, and the functor object
@@ -4604,6 +4618,8 @@ void qDeleteInEventHandler(QObject *o)
     is destroyed.
     However, you should take care that any objects used within the functor
     are still alive when the signal is emitted.
+
+    Overloaded functions can be resolved with help of \l qOverload.
 
     \note If the compiler does not support C++11 variadic templates, the number
     of arguments in the signal or slot are limited to 6, and the functor object
@@ -4822,7 +4838,7 @@ bool QObject::disconnect(const QMetaObject::Connection &connection)
 
     \note It is not possible to use this overload to diconnect signals
     connected to functors or lambda expressions. That is because it is not
-    possible to compare them. Instead, use the olverload that take a
+    possible to compare them. Instead, use the overload that takes a
     QMetaObject::Connection
 
     \sa connect()

@@ -1,12 +1,13 @@
 SOURCES += \
-    $$PWD/qwindowsmsaaaccessible.cpp \
     $$PWD/qwindowsaccessibility.cpp \
     $$PWD/comutils.cpp
 
 HEADERS += \
-    $$PWD/qwindowsmsaaaccessible.h \
     $$PWD/qwindowsaccessibility.h \
     $$PWD/comutils.h
+
+SOURCES += $$PWD/qwindowsmsaaaccessible.cpp
+HEADERS += $$PWD/qwindowsmsaaaccessible.h
 
 !mingw: {
     SOURCES += $$PWD/iaccessible2.cpp

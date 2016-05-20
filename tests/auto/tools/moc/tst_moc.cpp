@@ -1,32 +1,27 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Copyright (C) 2013 Olivier Goffart <ogoffart@woboq.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -130,6 +125,33 @@ namespace Int
 typedef struct {
     int doNotConfuseMoc;
 } OldStyleCStruct;
+
+namespace {
+
+    class GadgetInUnnamedNS
+    {
+        Q_GADGET
+        Q_PROPERTY(int x READ x WRITE setX)
+        Q_PROPERTY(int y READ y WRITE setY)
+    public:
+        explicit GadgetInUnnamedNS(int x, int y) : m_x(x), m_y(y) {}
+        int x() const { return m_x; }
+        int y() const { return m_y; }
+        void setX(int x) { m_x = x; }
+        void setY(int y) { m_y = y; }
+
+    private:
+        int m_x, m_y;
+    };
+
+    class ObjectInUnnamedNS : public QObject
+    {
+        Q_OBJECT
+    public:
+        explicit ObjectInUnnamedNS(QObject *parent = Q_NULLPTR) : QObject(parent) {}
+    };
+
+}
 
 class Sender : public QObject
 {
@@ -467,13 +489,6 @@ public:
     Q_ENUMS(EnumSourceClass::TestEnum)
 };
 
-#if defined(Q_MOC_RUN)
-// Task #119503
-#define _TASK_119503
-#if !_TASK_119503
-#endif
-#endif
-
 class CtorTestClass : public QObject
 {
     Q_OBJECT
@@ -513,6 +528,8 @@ class tst_Moc : public QObject
     Q_PROPERTY(QString member4 MEMBER sMember NOTIFY member4Changed)
     Q_PROPERTY(QString member5 MEMBER sMember NOTIFY member5Changed)
     Q_PROPERTY(QString member6 MEMBER sConst CONSTANT)
+    Q_PROPERTY(QString sub1 MEMBER (sub.m_string))
+    Q_PROPERTY(QString sub2 READ (sub.string) WRITE (sub.setString))
 
 public:
     inline tst_Moc() : sConst("const") {}
@@ -595,8 +612,11 @@ private slots:
     void relatedMetaObjectsNameConflict_data();
     void relatedMetaObjectsNameConflict();
     void strignLiteralsInMacroExtension();
+    void unnamedNamespaceObjectsAndGadgets();
     void veryLongStringData();
     void gadgetHierarchy();
+    void optionsFileError_data();
+    void optionsFileError();
 
 signals:
     void sigWithUnsignedArg(unsigned foo);
@@ -626,6 +646,13 @@ private:
     QString sMember;
     const QString sConst;
     PrivatePropertyTest *pPPTest;
+
+    struct {
+        QString m_string;
+        void setString(const QString &s) { m_string = s; }
+        QString string() { return m_string; }
+    } sub;
+
 };
 
 void tst_Moc::initTestCase()
@@ -692,15 +719,15 @@ void tst_Moc::oldStyleCasts()
 
     QStringList args;
     args << "-c" << "-x" << "c++" << "-Wold-style-cast" << "-I" << "."
-         << "-I" << qtIncludePath << "-o" << "/dev/null" << "-fPIC" << "-";
+         << "-I" << qtIncludePath << "-o" << "/dev/null" << "-fPIC" << "-std=c++11" << "-";
     proc.start("gcc", args);
     QVERIFY(proc.waitForStarted());
     proc.write(mocOut);
     proc.closeWriteChannel();
 
     QVERIFY(proc.waitForFinished());
-    QCOMPARE(proc.exitCode(), 0);
     QCOMPARE(QString::fromLocal8Bit(proc.readAllStandardError()), QString());
+    QCOMPARE(proc.exitCode(), 0);
 #else
     QSKIP("Only tested on linux/gcc");
 #endif
@@ -721,8 +748,8 @@ void tst_Moc::warnOnExtraSignalSlotQualifiaction()
     QVERIFY(!mocOut.isEmpty());
     QString mocWarning = QString::fromLocal8Bit(proc.readAllStandardError());
     QCOMPARE(mocWarning, header +
-                QString(":48: Warning: Function declaration Test::badFunctionDeclaration contains extra qualification. Ignoring as signal or slot.\n") +
-                header + QString(":51: Warning: parsemaybe: Function declaration Test::anotherOne contains extra qualification. Ignoring as signal or slot.\n"));
+                QString(":43: Warning: Function declaration Test::badFunctionDeclaration contains extra qualification. Ignoring as signal or slot.\n") +
+                header + QString(":46: Warning: parsemaybe: Function declaration Test::anotherOne contains extra qualification. Ignoring as signal or slot.\n"));
 #else
     QSKIP("Only tested on linux/gcc");
 #endif
@@ -762,7 +789,7 @@ void tst_Moc::inputFileNameWithDotsButNoExtension()
 
     QStringList args;
     args << "-c" << "-x" << "c++" << "-I" << ".."
-         << "-I" << qtIncludePath << "-o" << "/dev/null" << "-fPIC" <<  "-";
+         << "-I" << qtIncludePath << "-o" << "/dev/null" << "-fPIC" << "-std=c++11" << "-";
     proc.start("gcc", args);
     QVERIFY(proc.waitForStarted());
     proc.write(mocOut);
@@ -1008,7 +1035,7 @@ void tst_Moc::warnOnMultipleInheritance()
     QVERIFY(!mocOut.isEmpty());
     QString mocWarning = QString::fromLocal8Bit(proc.readAllStandardError());
     QCOMPARE(mocWarning, header +
-                QString(":48: Warning: Class Bar inherits from two QObject subclasses QWindow and Foo. This is not supported!\n"));
+                QString(":43: Warning: Class Bar inherits from two QObject subclasses QWindow and Foo. This is not supported!\n"));
 #else
     QSKIP("Only tested on linux/gcc");
 #endif
@@ -1041,7 +1068,8 @@ void tst_Moc::ignoreOptionClashes()
     // If -pthread wasn't ignored, it was parsed as a prefix of "thread/", which breaks compilation.
     QStringList gccArgs;
     gccArgs << "-c" << "-x" << "c++" << "-I" << ".."
-         << "-I" << qtIncludePath << "-I" << includeDir << "-o" << "/dev/null" << "-fPIC" <<  "-";
+         << "-I" << qtIncludePath << "-I" << includeDir << "-o" << "/dev/null"
+         << "-fPIC" << "-std=c++11" <<  "-";
     proc.start("gcc", gccArgs);
     QVERIFY(proc.waitForStarted());
     proc.write(mocOut);
@@ -1071,7 +1099,7 @@ void tst_Moc::forgottenQInterface()
     QVERIFY(!mocOut.isEmpty());
     QString mocWarning = QString::fromLocal8Bit(proc.readAllStandardError());
     QCOMPARE(mocWarning, header +
-                QString(":50: Warning: Class Test implements the interface MyInterface but does not list it in Q_INTERFACES. qobject_cast to MyInterface will not work!\n"));
+                QString(":45: Warning: Class Test implements the interface MyInterface but does not list it in Q_INTERFACES. qobject_cast to MyInterface will not work!\n"));
 #else
     QSKIP("Only tested on linux/gcc");
 #endif
@@ -1393,7 +1421,7 @@ void tst_Moc::warnOnPropertyWithoutREAD()
     QVERIFY(!mocOut.isEmpty());
     QString mocWarning = QString::fromLocal8Bit(proc.readAllStandardError());
     QCOMPARE(mocWarning, header +
-                QString(":41: Warning: Property declaration foo has no READ accessor function or associated MEMBER variable. The property will be invalid.\n"));
+                QString(":36: Warning: Property declaration foo has no READ accessor function or associated MEMBER variable. The property will be invalid.\n"));
 #else
     QSKIP("Only tested on linux/gcc");
 #endif
@@ -1503,8 +1531,8 @@ void tst_Moc::warnOnVirtualSignal()
     QByteArray mocOut = proc.readAllStandardOutput();
     QVERIFY(!mocOut.isEmpty());
     QString mocWarning = QString::fromLocal8Bit(proc.readAllStandardError());
-    QCOMPARE(mocWarning, header + QString(":43: Warning: Signals cannot be declared virtual\n") +
-                         header + QString(":45: Warning: Signals cannot be declared virtual\n"));
+    QCOMPARE(mocWarning, header + QString(":38: Warning: Signals cannot be declared virtual\n") +
+                         header + QString(":40: Warning: Signals cannot be declared virtual\n"));
 #else
     QSKIP("Only tested on linux/gcc");
 #endif
@@ -1637,7 +1665,7 @@ void tst_Moc::notifyError()
     QVERIFY(mocOut.isEmpty());
     QString mocError = QString::fromLocal8Bit(proc.readAllStandardError());
     QCOMPARE(mocError, header +
-        QString(":47: Error: NOTIFY signal 'fooChanged' of property 'foo' does not exist in class ClassWithWrongNOTIFY.\n"));
+        QString(":42: Error: NOTIFY signal 'fooChanged' of property 'foo' does not exist in class ClassWithWrongNOTIFY.\n"));
 #else
     QSKIP("Only tested on linux/gcc");
 #endif
@@ -1883,12 +1911,19 @@ void tst_Moc::warnings_data()
         << QString()
         << QString("standard input:5: Error: Class declaration lacks Q_OBJECT macro.");
 
-    QTest::newRow("QTBUG-46210: crash on invalid macro")
-        << QByteArray("#define Foo(a, b, c) a b c #a #b #c a##b##c #d\n Foo(45);")
+    QTest::newRow("Invalid macro definition")
+        << QByteArray("#define Foo(a, b, c) a b c #a #b #c a##b##c #d\n Foo(45, 42, 39);")
         << QStringList()
         << 1
         << QString("IGNORE_ALL_STDOUT")
         << QString(":2: Error: '#' is not followed by a macro parameter");
+
+    QTest::newRow("QTBUG-46210: crash on invalid macro invocation")
+        << QByteArray("#define Foo(a, b, c) a b c #a #b #c a##b##c\n Foo(45);")
+        << QStringList()
+        << 1
+        << QString("IGNORE_ALL_STDOUT")
+        << QString(":2: Error: Macro invoked with too few parameters for a use of '#'");
 }
 
 void tst_Moc::warnings()
@@ -2037,6 +2072,10 @@ void tst_Moc::memberProperties_data()
             << 1 << "blub5" << "blub5Changed(const QString&)" << "mno" << true << "mno";
     QTest::newRow("private MEMBER property with CONSTANT")
             << 1 << "blub6" << "" << "test" << false << "const";
+    QTest::newRow("sub1")
+            << 0 << "sub1" << "" << "helloSub1" << true << "helloSub1";
+    QTest::newRow("sub2")
+            << 0 << "sub2" << "" << "helloSub2" << true << "helloSub2";
 }
 
 void tst_Moc::memberProperties()
@@ -3401,6 +3440,28 @@ class VeryLongStringData : public QObject
     #undef repeat65534
 };
 
+void tst_Moc::unnamedNamespaceObjectsAndGadgets()
+{
+    // these just test very basic functionality of gadgets and objects
+    // defined in unnamed namespaces.
+    {
+        GadgetInUnnamedNS gadget(21, 42);
+        QCOMPARE(gadget.x(), 21);
+        QCOMPARE(gadget.y(), 42);
+        gadget.staticMetaObject.property(0).writeOnGadget(&gadget, 12);
+        gadget.staticMetaObject.property(1).writeOnGadget(&gadget, 24);
+        QCOMPARE(gadget.x(), 12);
+        QCOMPARE(gadget.y(), 24);
+    }
+
+    {
+        ObjectInUnnamedNS object;
+        QObject *qObject = &object;
+        QCOMPARE(static_cast<ObjectInUnnamedNS *>(qObject),
+                 qobject_cast<ObjectInUnnamedNS *>(qObject));
+    }
+}
+
 void tst_Moc::veryLongStringData()
 {
     const QMetaObject *mobj = &VeryLongStringData::staticMetaObject;
@@ -3429,6 +3490,31 @@ void tst_Moc::gadgetHierarchy()
 {
     QCOMPARE(NonGadgetParent::Derived::staticMetaObject.superClass(), static_cast<const QMetaObject*>(Q_NULLPTR));
     QCOMPARE(GrandParentGadget::DerivedGadget::staticMetaObject.superClass(), &GrandParentGadget::BaseGadget::staticMetaObject);
+}
+
+void tst_Moc::optionsFileError_data()
+{
+    QTest::addColumn<QString>("optionsArgument");
+    QTest::newRow("no filename") << QStringLiteral("@");
+    QTest::newRow("nonexistent file") << QStringLiteral("@letshuntasnark");
+}
+
+void tst_Moc::optionsFileError()
+{
+#ifdef MOC_CROSS_COMPILED
+    QSKIP("Not tested when cross-compiled");
+#endif
+#if !defined(QT_NO_PROCESS)
+    QFETCH(QString, optionsArgument);
+    QProcess p;
+    p.start(m_moc, QStringList(optionsArgument));
+    QVERIFY(p.waitForFinished());
+    QCOMPARE(p.exitCode(), 1);
+    QVERIFY(p.readAllStandardOutput().isEmpty());
+    const QByteArray err = p.readAllStandardError();
+    QVERIFY(err.contains("moc: "));
+    QVERIFY(!err.contains("QCommandLineParser"));
+#endif
 }
 
 QTEST_MAIN(tst_Moc)

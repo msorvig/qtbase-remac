@@ -1,32 +1,38 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Copyright (C) 2014 Olivier Goffart <ogoffart@woboq.com>
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2015 Olivier Goffart <ogoffart@woboq.com>
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -320,6 +326,24 @@ const char *QMetaObject::className() const
 */
 
 /*!
+    Returns \c true if the class described by this QMetaObject inherits
+    the type described by \a metaObject; otherwise returns false.
+
+    A type is considered to inherit itself.
+
+    \since 5.7
+*/
+bool QMetaObject::inherits(const QMetaObject *metaObject) const Q_DECL_NOEXCEPT
+{
+    const QMetaObject *m = this;
+    do {
+        if (metaObject == m)
+            return true;
+    } while ((m = m->d.superdata));
+    return false;
+}
+
+/*!
     \internal
 
     Returns \a obj if object \a obj inherits from this
@@ -327,14 +351,8 @@ const char *QMetaObject::className() const
 */
 QObject *QMetaObject::cast(QObject *obj) const
 {
-    if (obj) {
-        const QMetaObject *m = obj->metaObject();
-        do {
-            if (m == this)
-                return obj;
-        } while ((m = m->d.superdata));
-    }
-    return 0;
+    // ### Qt 6: inline
+    return const_cast<QObject*>(cast(const_cast<const QObject*>(obj)));
 }
 
 /*!
@@ -345,14 +363,7 @@ QObject *QMetaObject::cast(QObject *obj) const
 */
 const QObject *QMetaObject::cast(const QObject *obj) const
 {
-    if (obj) {
-        const QMetaObject *m = obj->metaObject();
-        do {
-            if (m == this)
-                return obj;
-        } while ((m = m->d.superdata));
-    }
-    return 0;
+    return (obj && obj->metaObject()->inherits(this)) ? obj : nullptr;
 }
 
 #ifndef QT_NO_TRANSLATION
@@ -1547,12 +1558,13 @@ bool QMetaObject::invokeMethod(QObject *obj,
 /*!
     \fn QMetaObject::Connection &QMetaObject::Connection::operator=(Connection &&other)
 
-    Move-assigns \a other to this object.
+    Move-assigns \a other to this object, and returns a reference.
 */
 /*!
     \fn QMetaObject::Connection::Connection(Connection &&o)
 
-    Move-constructs a Connection instance, making it point to the same object that \a o was pointing to.
+    Move-constructs a Connection instance, making it point to the same object
+    that \a o was pointing to.
 */
 
 /*!
@@ -3027,6 +3039,11 @@ QVariant QMetaProperty::read(const QObject *object) const
     Writes \a value as the property's value to the given \a object. Returns
     true if the write succeeded; otherwise returns \c false.
 
+    If \a value is not of the same type type as the property, a conversion
+    is attempted. An empty QVariant() is equivalent to a call to reset()
+    if this property is resetable, or setting a default-constructed object
+    otherwise.
+
     \sa read(), reset(), isWritable()
 */
 bool QMetaProperty::write(QObject *object, const QVariant &value) const
@@ -3067,8 +3084,15 @@ bool QMetaProperty::write(QObject *object, const QVariant &value) const
             if (t == QMetaType::UnknownType)
                 return false;
         }
-        if (t != QMetaType::QVariant && t != (uint)value.userType() && (t < QMetaType::User && !v.convert((QVariant::Type)t)))
-            return false;
+        if (t != QMetaType::QVariant && int(t) != value.userType()) {
+            if (!value.isValid()) {
+                if (isResettable())
+                    return reset(object);
+                v = QVariant(t, 0);
+            } else if (!v.convert(t)) {
+                return false;
+            }
+        }
     }
 
     // the status variable is changed by qt_metacall to indicate what it did

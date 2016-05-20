@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -89,12 +84,11 @@ class tst_QSettings : public QObject
     Q_OBJECT
 
 public:
-    tst_QSettings() : m_canWriteNativeSystemSettings(canWriteNativeSystemSettings()) {}
+    tst_QSettings();
 
 public slots:
     void initTestCase();
-    void init();
-    void cleanup();
+    void cleanup() { cleanupTestFiles(); }
 private slots:
     void getSetCheck();
     void ctor_data();
@@ -166,6 +160,8 @@ private slots:
     void bom();
 
 private:
+    void cleanupTestFiles();
+
     const bool m_canWriteNativeSystemSettings;
 };
 
@@ -181,39 +177,16 @@ void tst_QSettings::getSetCheck()
     QCOMPARE(true, obj1.fallbacksEnabled());
 }
 
-#if defined(Q_OS_WINCE) || defined(Q_OS_WINRT)
-static void removePath(const QString& _path)
-{
-    QString path = _path;
-    QDir dir(path);
-    if (!dir.exists())
-        return;
-    QStringList entries = dir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
-    foreach(QString name, entries) {
-        QString absolute = path + name;
-        if (QFileInfo(absolute).isDir())
-            removePath(absolute+"\\");
-        else
-            QFile::remove(absolute);
-    }
-    dir.cdUp();
-    if (path[path.size()-1] == '\\')
-        path = path.left(path.size()-1);
-    dir.rmdir(path.mid(path.lastIndexOf('\\')+1));
-}
-#endif
-
-static QString settingsPath(const char *path = "")
+static QString settingsPath(const char *path = Q_NULLPTR)
 {
     // Temporary path for files that are specified explicitly in the constructor.
 #ifndef Q_OS_WINRT
-    QString tempPath = QDir::tempPath();
+    static const QString tempPath = QDir::tempPath() + QLatin1String("/tst_QSettings");
 #else
-    QString tempPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    static const QString tempPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        + QLatin1String("/tst_QSettings");
 #endif
-    if (tempPath.endsWith("/"))
-        tempPath.truncate(tempPath.size() - 1);
-    return QDir::toNativeSeparators(tempPath + "/tst_QSettings/" + QLatin1String(path));
+    return path && *path ? tempPath + QLatin1Char('/') + QLatin1String(path) : tempPath;
 }
 
 static bool readCustom1File(QIODevice &device, QSettings::SettingsMap &map)
@@ -283,6 +256,12 @@ static void populateWithFormats()
     QTest::newRow("custom2") << QSettings::CustomFormat2;
 }
 
+tst_QSettings::tst_QSettings()
+    : m_canWriteNativeSystemSettings(canWriteNativeSystemSettings())
+{
+    QStandardPaths::setTestModeEnabled(true);
+}
+
 void tst_QSettings::initTestCase()
 {
     if (!m_canWriteNativeSystemSettings)
@@ -295,12 +274,18 @@ void tst_QSettings::initTestCase()
                                                           );
     QCOMPARE(custom1, QSettings::CustomFormat1);
     QCOMPARE(custom2, QSettings::CustomFormat2);
+
+    cleanupTestFiles();
 }
 
-void tst_QSettings::init()
+void tst_QSettings::cleanupTestFiles()
 {
     QSettings::setSystemIniPath(settingsPath("__system__"));
     QSettings::setUserIniPath(settingsPath("__user__"));
+
+    QDir settingsDir(settingsPath());
+    if (settingsDir.exists())
+        QVERIFY(settingsDir.removeRecursively());
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
     QSettings("HKEY_CURRENT_USER\\Software\\software.org", QSettings::NativeFormat).clear();
@@ -317,17 +302,7 @@ void tst_QSettings::init()
         QSettings("HKEY_LOCAL_MACHINE\\Software\\bat", QSettings::NativeFormat).clear();
         QSettings("HKEY_LOCAL_MACHINE\\Software\\baz", QSettings::NativeFormat).clear();
     }
-    if (QDir(settingsPath()).exists()) {
-#if defined(Q_OS_WINCE)
-        removePath(settingsPath());
-#else
-        if (QSysInfo::windowsVersion() & QSysInfo::WV_NT_based)
-            system(QString("rmdir /Q /S %1").arg(settingsPath()).toLatin1());
-        else
-            system(QString("deltree /Y %1").arg(settingsPath()).toLatin1());
-#endif
-    }
-#elif defined(Q_OS_DARWIN)
+#elif defined(Q_OS_DARWIN) || defined(Q_OS_WINRT)
     QSettings(QSettings::UserScope, "software.org", "KillerAPP").clear();
     QSettings(QSettings::SystemScope, "software.org", "KillerAPP").clear();
     QSettings(QSettings::UserScope, "other.software.org", "KillerAPP").clear();
@@ -338,31 +313,16 @@ void tst_QSettings::init()
     QSettings(QSettings::SystemScope, "other.software.org").clear();
 #endif
 
-#if !defined(Q_OS_WIN)
-    system(QString("chmod -R u+rw %1 2> /dev/null").arg(settingsPath()).toLatin1());
-    system(QString("rm -fr %1 2> /dev/null").arg(settingsPath()).toLatin1());
-#endif
+    const QString foo(QLatin1String("foo"));
 
 #if defined(Q_OS_WINRT)
-    QSettings(QSettings::UserScope, "software.org", "KillerAPP").clear();
-    QSettings(QSettings::SystemScope, "software.org", "KillerAPP").clear();
-    QSettings(QSettings::UserScope, "other.software.org", "KillerAPP").clear();
-    QSettings(QSettings::SystemScope, "other.software.org", "KillerAPP").clear();
-    QSettings(QSettings::UserScope, "software.org").clear();
-    QSettings(QSettings::SystemScope, "software.org").clear();
-    QSettings(QSettings::UserScope, "other.software.org").clear();
-    QSettings(QSettings::SystemScope, "other.software.org").clear();
-    QSettings("foo", QSettings::NativeFormat).clear();
-    removePath(settingsPath());
-    QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/foo");
+    QSettings(foo, QSettings::NativeFormat).clear();
+    QFile fooFile(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QLatin1Char('/') + foo);
 #else
-    QFile::remove("foo");
+    QFile fooFile(foo);
 #endif
-}
-
-void tst_QSettings::cleanup()
-{
-    init();
+    if (fooFile.exists())
+        QVERIFY2(fooFile.remove(), qPrintable(fooFile.errorString()));
 }
 
 /*
@@ -416,7 +376,6 @@ void tst_QSettings::ctor()
         QCOMPARE(settings3.applicationName(), QLatin1String("KillerAPP"));
         QVERIFY(settings4.applicationName().isEmpty());
 
-#if !defined(Q_OS_BLACKBERRY)
         /*
             Go forwards.
         */
@@ -473,22 +432,6 @@ void tst_QSettings::ctor()
         QCOMPARE(settings2.value("key 1").toString(), QString("bilboh"));
         QCOMPARE(settings3.value("key 1").toString(), QString("catha"));
         QCOMPARE(settings4.value("key 1").toString(), QString("quirko"));
-#else
-        /*
-            No fallback mechanism and a single scope on Blackberry OS
-        */
-        settings2.setValue("key 1", QString("whoa"));
-        QCOMPARE(settings2.value("key 1").toString(), QString("whoa"));
-        QCOMPARE(settings4.value("key 1").toString(), QString("whoa"));
-        QVERIFY(!settings1.contains("key 1"));
-        QVERIFY(!settings3.contains("key 1"));
-
-        settings1.setValue("key 1", QString("blah"));
-        QCOMPARE(settings1.value("key 1").toString(), QString("blah"));
-        QCOMPARE(settings2.value("key 1").toString(), QString("whoa"));
-        QCOMPARE(settings3.value("key 1").toString(), QString("blah"));
-        QCOMPARE(settings4.value("key 1").toString(), QString("whoa"));
-#endif
 
         /*
             Test the copies again.
@@ -525,17 +468,10 @@ void tst_QSettings::ctor()
         QSettings settings3(format, QSettings::SystemScope, "software.org", "KillerAPP");
         QSettings settings4(format, QSettings::SystemScope, "software.org");
 
-#if !defined(Q_OS_BLACKBERRY)
         QCOMPARE(settings1.value("key 1").toString(), QString("gurgle"));
         QCOMPARE(settings2.value("key 1").toString(), QString("bilboh"));
         QCOMPARE(settings3.value("key 1").toString(), QString("catha"));
         QCOMPARE(settings4.value("key 1").toString(), QString("quirko"));
-#else
-        QCOMPARE(settings1.value("key 1").toString(), QString("blah"));
-        QCOMPARE(settings2.value("key 1").toString(), QString("whoa"));
-        QCOMPARE(settings3.value("key 1").toString(), QString("blah"));
-        QCOMPARE(settings4.value("key 1").toString(), QString("whoa"));
-#endif
 
         /*
             Test problem keys.
@@ -1223,16 +1159,16 @@ void tst_QSettings::remove()
 {
     QSettings settings0(QSettings::UserScope, "software.org", "KillerAPP");
     int initialNumKeys = settings0.allKeys().size();
-    QCOMPARE(settings0.value("key 1", "123").toString(), QString("123"));
+    QCOMPARE(settings0.value("key 1", "123").toString(), QLatin1String("123"));
     settings0.remove("key 1");
-    QCOMPARE(settings0.value("key 1", "456").toString(), QString("456"));
+    QCOMPARE(settings0.value("key 1", "456").toString(), QLatin1String("456"));
 
     settings0.setValue("key 1", "bubloo");
-    QCOMPARE(settings0.value("key 1").toString(), QString("bubloo"));
+    QCOMPARE(settings0.value("key 1").toString(), QLatin1String("bubloo"));
     settings0.remove("key 2");
-    QCOMPARE(settings0.value("key 1").toString(), QString("bubloo"));
+    QCOMPARE(settings0.value("key 1").toString(), QLatin1String("bubloo"));
     settings0.remove("key 1");
-    QCOMPARE(settings0.value("key 1", "789").toString(), QString("789"));
+    QCOMPARE(settings0.value("key 1", "789").toString(), QLatin1String("789"));
 
     /*
       Make sure that removing a key removes all the subkeys.
@@ -1360,7 +1296,6 @@ void tst_QSettings::remove()
     QCOMPARE(settings1.value("key 1").toString(), QString("gurgle"));
     QCOMPARE(settings2.value("key 1").toString(), QString("whoa"));
 
-#if !defined(Q_OS_BLACKBERRY)
     if (m_canWriteNativeSystemSettings) {
         QCOMPARE(settings3->value("key 1").toString(), QString("blah"));
         QCOMPARE(settings4->value("key 1").toString(), QString("doodah"));
@@ -1393,14 +1328,6 @@ void tst_QSettings::remove()
         QVERIFY(!settings3->contains("key 1"));
         QVERIFY(!settings4->contains("key 1"));
     }
-#else
-    settings1.remove("key 1");
-    QCOMPARE(settings2.value("key 1").toString(), QString("whoa"));
-
-    settings2.remove("key 1");
-    QVERIFY(!settings1.contains("key 1"));
-    QVERIFY(!settings2.contains("key 1"));
-#endif
 
     /*
       Get ready for the next part of the test.
@@ -1594,7 +1521,7 @@ void tst_QSettings::sync()
 
     // Now "some other app" will change other.software.org.ini
     QString userConfDir = settingsPath("__user__") + QDir::separator();
-#if !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
+#if !defined(Q_OS_WINRT)
     unlink((userConfDir + "other.software.org.ini").toLatin1());
     rename((userConfDir + "software.org.ini").toLatin1(),
            (userConfDir + "other.software.org.ini").toLatin1());
@@ -1703,7 +1630,6 @@ void tst_QSettings::setFallbacksEnabled()
         main associated file when fallbacks are turned off.
     */
 
-#if !defined(Q_OS_BLACKBERRY)
     QCOMPARE(settings1.value("key 1").toString(), QString("alpha"));
     QCOMPARE(settings2.value("key 1").toString(), QString("beta"));
     QCOMPARE(settings3.value("key 1").toString(), QString("gamma"));
@@ -1733,22 +1659,6 @@ void tst_QSettings::setFallbacksEnabled()
     QCOMPARE(settings1.value("key 5").toString(), QString(""));
     QVERIFY(settings1.contains("key 1"));
     QVERIFY(!settings1.contains("key 5"));
-#else
-    QCOMPARE(settings1.value("key 1").toString(), QString("gamma"));
-    QCOMPARE(settings2.value("key 1").toString(), QString("delta"));
-    QCOMPARE(settings3.value("key 1").toString(), QString("gamma"));
-    QCOMPARE(settings4.value("key 1").toString(), QString("delta"));
-
-    QCOMPARE(settings1.value("key 2").toString(), QString("gamma"));
-    QCOMPARE(settings2.value("key 2").toString(), QString("beta"));
-    QCOMPARE(settings3.value("key 2").toString(), QString("gamma"));
-    QCOMPARE(settings4.value("key 2").toString(), QString("beta"));
-
-    QCOMPARE(settings1.value("key 3").toString(), QString("gamma"));
-    QCOMPARE(settings2.value("key 3").toString(), QString("delta"));
-    QCOMPARE(settings3.value("key 3").toString(), QString("gamma"));
-    QCOMPARE(settings4.value("key 3").toString(), QString("delta"));
-#endif
 }
 
 void tst_QSettings::testChildKeysAndGroups_data()
@@ -2551,7 +2461,6 @@ void tst_QSettings::testArrays()
     }
     settings2.endArray();
 
-#if !defined (Q_OS_BLACKBERRY)
     size1 = settings1.beginReadArray("strings");
     QCOMPARE(size1, 3);
 
@@ -2562,7 +2471,6 @@ void tst_QSettings::testArrays()
         QCOMPARE(str, fiveStrings.at(i));
     }
     settings1.endArray();
-#endif
 }
 
 #ifdef QT_BUILD_INTERNAL
@@ -2621,7 +2529,7 @@ QString escapeWeirdChars(const QString &s)
         QChar c = s.at(i);
         if (c.unicode() < ' ' || c.unicode() > '~'
             || (escapeNextDigit && c.unicode() >= '0' && c.unicode() <= 'f')) {
-            result += QString("\\x%1").arg(c.unicode(), 0, 16);
+            result += QLatin1String("\\x") + QString::number(c.unicode(), 16);
             escapeNextDigit = true;
         } else {
             result += c;
@@ -3285,7 +3193,6 @@ void tst_QSettings::setPath()
         path checks that it has no bad side effects.
     */
     for (int i = 0; i < 2; ++i) {
-#if !defined(Q_OS_BLACKBERRY)
 #if !defined(Q_OS_WIN) && !defined(Q_OS_MAC)
         TEST_PATH(i == 0, "conf", NativeFormat, UserScope, "alpha")
         TEST_PATH(i == 0, "conf", NativeFormat, SystemScope, "beta")
@@ -3296,12 +3203,6 @@ void tst_QSettings::setPath()
         TEST_PATH(i == 0, "custom1", CustomFormat1, SystemScope, "zeta")
         TEST_PATH(i == 0, "custom2", CustomFormat2, UserScope, "eta")
         TEST_PATH(i == 0, "custom2", CustomFormat2, SystemScope, "iota")
-#else // Q_OS_BLACKBERRY: no system scope
-        TEST_PATH(i == 0, "conf", NativeFormat, UserScope, "alpha")
-        TEST_PATH(i == 0, "ini", IniFormat, UserScope, "gamma")
-        TEST_PATH(i == 0, "custom1", CustomFormat1, UserScope, "epsilon")
-        TEST_PATH(i == 0, "custom2", CustomFormat2, UserScope, "eta")
-#endif
     }
 }
 
@@ -3378,7 +3279,7 @@ void tst_QSettings::dontReorderIniKeysNeedlessly()
     QString outFileName2;
 
     QTemporaryFile outFile;
-    outFile.open();
+    QVERIFY2(outFile.open(), qPrintable(outFile.errorString()));
     outFile.write(contentsBefore);
     outFileName = outFile.fileName();
     outFile.close();

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -197,11 +203,54 @@ QJsonObject &QJsonObject::operator =(const QJsonObject &other)
  */
 QJsonObject QJsonObject::fromVariantMap(const QVariantMap &map)
 {
-    // ### this is implemented the trivial way, not the most efficient way
-
     QJsonObject object;
-    for (QVariantMap::const_iterator it = map.constBegin(); it != map.constEnd(); ++it)
-        object.insert(it.key(), QJsonValue::fromVariant(it.value()));
+    if (map.isEmpty())
+        return object;
+
+    object.detach2(1024);
+
+    QVector<QJsonPrivate::offset> offsets;
+    QJsonPrivate::offset currentOffset;
+    currentOffset = sizeof(QJsonPrivate::Base);
+
+    // the map is already sorted, so we can simply append one entry after the other and
+    // write the offset table at the end
+    for (QVariantMap::const_iterator it = map.constBegin(); it != map.constEnd(); ++it) {
+        QString key = it.key();
+        QJsonValue val = QJsonValue::fromVariant(it.value());
+
+        bool latinOrIntValue;
+        int valueSize = QJsonPrivate::Value::requiredStorage(val, &latinOrIntValue);
+
+        bool latinKey = QJsonPrivate::useCompressed(key);
+        int valueOffset = sizeof(QJsonPrivate::Entry) + QJsonPrivate::qStringSize(key, latinKey);
+        int requiredSize = valueOffset + valueSize;
+
+        if (!object.detach2(requiredSize + sizeof(QJsonPrivate::offset))) // offset for the new index entry
+            return QJsonObject();
+
+        QJsonPrivate::Entry *e = reinterpret_cast<QJsonPrivate::Entry *>(reinterpret_cast<char *>(object.o) + currentOffset);
+        e->value.type = val.t;
+        e->value.latinKey = latinKey;
+        e->value.latinOrIntValue = latinOrIntValue;
+        e->value.value = QJsonPrivate::Value::valueToStore(val, (char *)e - (char *)object.o + valueOffset);
+        QJsonPrivate::copyString((char *)(e + 1), key, latinKey);
+        if (valueSize)
+            QJsonPrivate::Value::copyData(val, (char *)e + valueOffset, latinOrIntValue);
+
+        offsets << currentOffset;
+        currentOffset += requiredSize;
+        object.o->size = currentOffset;
+    }
+
+    // write table
+    object.o->tableOffset = currentOffset;
+    if (!object.detach2(sizeof(QJsonPrivate::offset)*offsets.size()))
+        return QJsonObject();
+    memcpy(object.o->table(), offsets.constData(), offsets.size()*sizeof(uint));
+    object.o->length = offsets.size();
+    object.o->size = currentOffset + sizeof(QJsonPrivate::offset)*offsets.size();
+
     return object;
 }
 
@@ -255,6 +304,7 @@ QVariantHash QJsonObject::toVariantHash() const
 {
     QVariantHash hash;
     if (o) {
+        hash.reserve(o->length);
         for (uint i = 0; i < o->length; ++i) {
             QJsonPrivate::Entry *e = o->entryAt(i);
             hash.insert(e->key(), QJsonValue(d, o, e->value).toVariant());
@@ -270,16 +320,14 @@ QVariantHash QJsonObject::toVariantHash() const
  */
 QStringList QJsonObject::keys() const
 {
-    if (!d)
-        return QStringList();
-
     QStringList keys;
-    keys.reserve(o->length);
-    for (uint i = 0; i < o->length; ++i) {
-        QJsonPrivate::Entry *e = o->entryAt(i);
-        keys.append(e->key());
+    if (o) {
+        keys.reserve(o->length);
+        for (uint i = 0; i < o->length; ++i) {
+            QJsonPrivate::Entry *e = o->entryAt(i);
+            keys.append(e->key());
+        }
     }
-
     return keys;
 }
 
@@ -327,6 +375,22 @@ QJsonValue QJsonObject::value(const QString &key) const
 }
 
 /*!
+    \overload
+    \since 5.7
+*/
+QJsonValue QJsonObject::value(QLatin1String key) const
+{
+    if (!d)
+        return QJsonValue(QJsonValue::Undefined);
+
+    bool keyExists;
+    int i = o->indexOf(key, &keyExists);
+    if (!keyExists)
+        return QJsonValue(QJsonValue::Undefined);
+    return QJsonValue(d, o, o->entryAt(i)->value);
+}
+
+/*!
     Returns a QJsonValue representing the value for the key \a key.
 
     This does the same as value().
@@ -339,6 +403,13 @@ QJsonValue QJsonObject::operator [](const QString &key) const
 {
     return value(key);
 }
+
+/*!
+    \fn QJsonValue QJsonObject::operator [](QLatin1String key) const
+
+    \overload
+    \since 5.7
+*/
 
 /*!
     Returns a reference to the value for \a key.
@@ -361,6 +432,16 @@ QJsonValueRef QJsonObject::operator [](const QString &key)
         index = i.i;
     }
     return QJsonValueRef(this, index);
+}
+
+/*!
+    \overload
+    \since 5.7
+*/
+QJsonValueRef QJsonObject::operator [](QLatin1String key)
+{
+    // ### optimize me
+    return operator[](QString(key));
 }
 
 /*!
@@ -391,7 +472,8 @@ QJsonObject::iterator QJsonObject::insert(const QString &key, const QJsonValue &
     int valueOffset = sizeof(QJsonPrivate::Entry) + QJsonPrivate::qStringSize(key, latinKey);
     int requiredSize = valueOffset + valueSize;
 
-    detach(requiredSize + sizeof(QJsonPrivate::offset)); // offset for the new index entry
+    if (!detach2(requiredSize + sizeof(QJsonPrivate::offset))) // offset for the new index entry
+        return iterator();
 
     if (!o->length)
         o->tableOffset = sizeof(QJsonPrivate::Object);
@@ -435,7 +517,7 @@ void QJsonObject::remove(const QString &key)
     if (!keyExists)
         return;
 
-    detach();
+    detach2();
     o->removeItems(index, 1);
     ++d->compactionCounter;
     if (d->compactionCounter > 32u && d->compactionCounter >= unsigned(o->length) / 2u)
@@ -462,7 +544,7 @@ QJsonValue QJsonObject::take(const QString &key)
         return QJsonValue(QJsonValue::Undefined);
 
     QJsonValue v(d, o, o->entryAt(index)->value);
-    detach();
+    detach2();
     o->removeItems(index, 1);
     ++d->compactionCounter;
     if (d->compactionCounter > 32u && d->compactionCounter >= unsigned(o->length) / 2u)
@@ -477,6 +559,20 @@ QJsonValue QJsonObject::take(const QString &key)
     \sa insert(), remove(), take()
  */
 bool QJsonObject::contains(const QString &key) const
+{
+    if (!o)
+        return false;
+
+    bool keyExists;
+    o->indexOf(key, &keyExists);
+    return keyExists;
+}
+
+/*!
+    \overload
+    \since 5.7
+*/
+bool QJsonObject::contains(QLatin1String key) const
 {
     if (!o)
         return false;
@@ -556,13 +652,33 @@ QJsonObject::iterator QJsonObject::find(const QString &key)
     int index = o ? o->indexOf(key, &keyExists) : 0;
     if (!keyExists)
         return end();
-    detach();
+    detach2();
+    return iterator(this, index);
+}
+
+/*!
+    \overload
+    \since 5.7
+*/
+QJsonObject::iterator QJsonObject::find(QLatin1String key)
+{
+    bool keyExists = false;
+    int index = o ? o->indexOf(key, &keyExists) : 0;
+    if (!keyExists)
+        return end();
+    detach2();
     return iterator(this, index);
 }
 
 /*! \fn QJsonObject::const_iterator QJsonObject::find(const QString &key) const
 
     \overload
+*/
+
+/*! \fn QJsonObject::const_iterator QJsonObject::find(QLatin1String key) const
+
+    \overload
+    \since 5.7
 */
 
 /*!
@@ -573,6 +689,19 @@ QJsonObject::iterator QJsonObject::find(const QString &key)
     returns constEnd().
  */
 QJsonObject::const_iterator QJsonObject::constFind(const QString &key) const
+{
+    bool keyExists = false;
+    int index = o ? o->indexOf(key, &keyExists) : 0;
+    if (!keyExists)
+        return end();
+    return const_iterator(this, index);
+}
+
+/*!
+    \overload
+    \since 5.7
+*/
+QJsonObject::const_iterator QJsonObject::constFind(QLatin1String key) const
 {
     bool keyExists = false;
     int index = o ? o->indexOf(key, &keyExists) : 0;
@@ -679,8 +808,11 @@ QJsonObject::const_iterator QJsonObject::constFind(const QString &key) const
 
 /*! \typedef QJsonObject::iterator::iterator_category
 
-    A synonym for \e {std::bidirectional_iterator_tag} indicating
-    this iterator is a bidirectional iterator.
+    A synonym for \e {std::random_access_iterator_tag} indicating
+    this iterator is a random-access iterator.
+
+    \note In Qt versions before 5.6, this was set by mistake to
+    \e {std::bidirectional_iterator_tag}.
 */
 
 /*! \typedef QJsonObject::iterator::reference
@@ -689,6 +821,11 @@ QJsonObject::const_iterator QJsonObject::constFind(const QString &key) const
 */
 
 /*! \typedef QJsonObject::iterator::value_type
+
+    \internal
+*/
+
+/*! \typedef QJsonObject::iterator::pointer
 
     \internal
 */
@@ -881,8 +1018,11 @@ QJsonObject::const_iterator QJsonObject::constFind(const QString &key) const
 
 /*! \typedef QJsonObject::const_iterator::iterator_category
 
-    A synonym for \e {std::bidirectional_iterator_tag} indicating
-    this iterator is a bidirectional iterator.
+    A synonym for \e {std::random_access_iterator_tag} indicating
+    this iterator is a random-access iterator.
+
+    \note In Qt versions before 5.6, this was set by mistake to
+    \e {std::bidirectional_iterator_tag}.
 */
 
 /*! \typedef QJsonObject::const_iterator::reference
@@ -891,6 +1031,11 @@ QJsonObject::const_iterator QJsonObject::constFind(const QString &key) const
 */
 
 /*! \typedef QJsonObject::const_iterator::value_type
+
+    \internal
+*/
+
+/*! \typedef QJsonObject::const_iterator::pointer
 
     \internal
 */
@@ -1047,21 +1192,35 @@ QJsonObject::const_iterator QJsonObject::constFind(const QString &key) const
  */
 void QJsonObject::detach(uint reserve)
 {
+    Q_UNUSED(reserve)
+    Q_ASSERT(!reserve);
+    detach2(reserve);
+}
+
+bool QJsonObject::detach2(uint reserve)
+{
     if (!d) {
+        if (reserve >= QJsonPrivate::Value::MaxSize) {
+            qWarning("QJson: Document too large to store in data structure");
+            return false;
+        }
         d = new QJsonPrivate::Data(reserve, QJsonValue::Object);
         o = static_cast<QJsonPrivate::Object *>(d->header->root());
         d->ref.ref();
-        return;
+        return true;
     }
     if (reserve == 0 && d->ref.load() == 1)
-        return;
+        return true;
 
     QJsonPrivate::Data *x = d->clone(o, reserve);
+    if (!x)
+        return false;
     x->ref.ref();
     if (!d->ref.deref())
         delete d;
     d = x;
     o = static_cast<QJsonPrivate::Object *>(d->header->root());
+    return true;
 }
 
 /*!
@@ -1072,7 +1231,7 @@ void QJsonObject::compact()
     if (!d || !d->compactionCounter)
         return;
 
-    detach();
+    detach2();
     d->compact();
     o = static_cast<QJsonPrivate::Object *>(d->header->root());
 }

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtGui module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -377,8 +383,8 @@ QByteArray QPdf::generateDashes(const QPen &pen)
         s << dw;
     }
     s << ']';
-    //qDebug() << "dasharray: pen has" << dasharray;
-    //qDebug() << "  => " << result;
+    s << pen.dashOffset() * w;
+    s << " d\n";
     return result;
 }
 
@@ -1003,7 +1009,8 @@ void QPdfEngine::drawHyperlink(const QRectF &r, const QUrl &url)
     const uint annot = d->addXrefEntry(-1);
     const QByteArray urlascii = url.toEncoded();
     int len = urlascii.size();
-    QVarLengthArray<char> url_esc(0);
+    QVarLengthArray<char> url_esc;
+    url_esc.reserve(len + 1);
     for (int j = 0; j < len; j++) {
         if (urlascii[j] == '(' || urlascii[j] == ')' || urlascii[j] == '\\')
             url_esc.append('\\');
@@ -1071,9 +1078,8 @@ void QPdfEngine::updateState(const QPaintEngineState &state)
     } else if (flags & DirtyClipRegion) {
         d->clipEnabled = true;
         QPainterPath path;
-        QVector<QRect> rects = state.clipRegion().rects();
-        for (int i = 0; i < rects.size(); ++i)
-            path.addRect(rects.at(i));
+        for (const QRect &rect : state.clipRegion())
+            path.addRect(rect);
         updateClipPath(path, state.clipOperation());
         flags |= DirtyClipPath;
     } else if (flags & DirtyClipEnabled) {
@@ -1195,7 +1201,7 @@ void QPdfEngine::setPen()
     switch(d->pen.joinStyle()) {
     case Qt::MiterJoin:
     case Qt::SvgMiterJoin:
-        *d->currentPage << d->pen.miterLimit() << "M ";
+        *d->currentPage << qMax(qreal(1.0), d->pen.miterLimit()) << "M ";
         pdfJoinStyle = 0;
         break;
     case Qt::BevelJoin:
@@ -1209,7 +1215,7 @@ void QPdfEngine::setPen()
     }
     *d->currentPage << pdfJoinStyle << "j ";
 
-    *d->currentPage << QPdf::generateDashes(d->pen) << " 0 d\n";
+    *d->currentPage << QPdf::generateDashes(d->pen);
 }
 
 
@@ -1498,7 +1504,7 @@ void QPdfEnginePrivate::writeInfo()
     printString(creator);
     xprintf("\n/Producer ");
     printString(QString::fromLatin1("Qt " QT_VERSION_STR));
-    QDateTime now = QDateTime::currentDateTime().toUTC();
+    QDateTime now = QDateTime::currentDateTimeUtc();
     QTime t = now.time();
     QDate d = now.date();
     xprintf("\n/CreationDate (D:%d%02d%02d%02d%02d%02d)\n",
@@ -1555,6 +1561,7 @@ void QPdfEnginePrivate::embedFont(QFontSubset *font)
     int toUnicode = requestObject();
 
     QFontEngine::Properties properties = font->fontEngine->properties();
+    QByteArray postscriptName = properties.postscriptName.replace(' ', '_');
 
     {
         qreal scale = 1000/properties.emSquare.toReal();
@@ -1568,7 +1575,7 @@ void QPdfEnginePrivate::embedFont(QFontSubset *font)
             s << (char)('A' + (tag % 26));
             tag /= 26;
         }
-        s <<  '+' << properties.postscriptName << "\n"
+        s <<  '+' << postscriptName << "\n"
             "/Flags " << 4 << "\n"
             "/FontBBox ["
           << properties.boundingBox.x()*scale
@@ -1611,7 +1618,7 @@ void QPdfEnginePrivate::embedFont(QFontSubset *font)
         QPdf::ByteStream s(&cid);
         s << "<< /Type /Font\n"
             "/Subtype /CIDFontType2\n"
-            "/BaseFont /" << properties.postscriptName << "\n"
+            "/BaseFont /" << postscriptName << "\n"
             "/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >>\n"
             "/FontDescriptor " << fontDescriptor << "0 R\n"
             "/CIDToGIDMap /Identity\n"
@@ -1635,7 +1642,7 @@ void QPdfEnginePrivate::embedFont(QFontSubset *font)
         QPdf::ByteStream s(&font);
         s << "<< /Type /Font\n"
             "/Subtype /Type0\n"
-            "/BaseFont /" << properties.postscriptName << "\n"
+            "/BaseFont /" << postscriptName << "\n"
             "/Encoding /Identity-H\n"
             "/DescendantFonts [" << cidfont << "0 R]\n"
             "/ToUnicode " << toUnicode << "0 R"
@@ -1793,7 +1800,7 @@ void QPdfEnginePrivate::printString(const QString &string) {
             array.append(part[j]);
         }
     }
-    array.append(")");
+    array.append(')');
     write(array);
 }
 
@@ -1944,7 +1951,7 @@ int QPdfEnginePrivate::writeImage(const QByteArray &data, int width, int height,
         xprintf("/Interpolate true\n");
     int len = 0;
     if (dct) {
-        //qDebug() << "DCT";
+        //qDebug("DCT");
         xprintf("/Filter /DCTDecode\n>>\nstream\n");
         write(data);
         len = data.length();
@@ -1969,6 +1976,7 @@ struct QGradientBound {
     int function;
     bool reverse;
 };
+Q_DECLARE_TYPEINFO(QGradientBound, Q_PRIMITIVE_TYPE);
 
 int QPdfEnginePrivate::createShadingFunction(const QGradient *gradient, int from, int to, bool reflect, bool alpha)
 {
@@ -2007,10 +2015,11 @@ int QPdfEnginePrivate::createShadingFunction(const QGradient *gradient, int from
     }
 
     QVector<QGradientBound> gradientBounds;
+    gradientBounds.reserve((to - from) * (numStops - 1));
 
     for (int step = from; step < to; ++step) {
         if (reflect && step % 2) {
-            for (int i = stops.size() - 1; i > 0; --i) {
+            for (int i = numStops - 1; i > 0; --i) {
                 QGradientBound b;
                 b.start = step + 1 - qBound(qreal(0.), stops.at(i).first, qreal(1.));
                 b.stop = step + 1 - qBound(qreal(0.), stops.at(i - 1).first, qreal(1.));
@@ -2019,7 +2028,7 @@ int QPdfEnginePrivate::createShadingFunction(const QGradient *gradient, int from
                 gradientBounds << b;
             }
         } else {
-            for (int i = 0; i < stops.size() - 1; ++i) {
+            for (int i = 0; i < numStops - 1; ++i) {
                 QGradientBound b;
                 b.start = step + qBound(qreal(0.), stops.at(i).first, qreal(1.));
                 b.stop = step + qBound(qreal(0.), stops.at(i + 1).first, qreal(1.));
@@ -2205,8 +2214,10 @@ int QPdfEnginePrivate::generateGradientShader(const QGradient *gradient, const Q
     case QGradient::RadialGradient:
         return generateRadialGradientShader(static_cast<const QRadialGradient *>(gradient), matrix, alpha);
     case QGradient::ConicalGradient:
-    default:
-        qWarning() << "Implement me!";
+        Q_UNIMPLEMENTED(); // ### Implement me!
+        break;
+    case QGradient::NoGradient:
+        break;
     }
     return 0;
 }

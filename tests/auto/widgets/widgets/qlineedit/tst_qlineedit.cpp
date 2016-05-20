@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -64,6 +59,7 @@
 #include <qsortfilterproxymodel.h>
 #include <qdebug.h>
 #include <qscreen.h>
+#include <qshortcut.h>
 
 #include "qcommonstyle.h"
 #include "qstyleoption.h"
@@ -73,8 +69,6 @@
 #include "../../../shared/platformclipboard.h"
 #include "../../../shared/platforminputcontext.h"
 #include <private/qinputmethod_p.h>
-
-#include "../../../qtest-config.h"
 
 QT_BEGIN_NAMESPACE
 class QPainter;
@@ -131,14 +125,13 @@ public:
     enum EventStates { Press, Release, Click };
 
     tst_QLineEdit();
-    virtual ~tst_QLineEdit();
 
-public slots:
+private slots:
     void initTestCase();
     void cleanupTestCase();
     void init();
     void cleanup();
-private slots:
+
     void getSetCheck();
     void experimental();
 
@@ -229,6 +222,7 @@ private slots:
 
     void isModified();
     void edited();
+    void fixupDoesNotModify_QTBUG_49295();
 
     void insert();
     void setSelection_data();
@@ -256,7 +250,7 @@ private slots:
 
     void noTextEditedOnClear();
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
     void cursor();
 #endif
 
@@ -311,6 +305,9 @@ private slots:
     void shouldShowPlaceholderText_data();
     void shouldShowPlaceholderText();
     void QTBUG1266_setInputMaskEmittingTextEdited();
+
+    void shortcutOverrideOnReadonlyLineEdit_data();
+    void shortcutOverrideOnReadonlyLineEdit();
 
 protected slots:
     void editingFinished();
@@ -374,10 +371,6 @@ tst_QLineEdit::tst_QLineEdit() : validInput(false), m_testWidget(0), m_keyboardS
             || m_keyboardScheme == QPlatformTheme::CdeKeyboardScheme) {
         m_keyboardScheme = QPlatformTheme::X11KeyboardScheme;
     }
-}
-
-tst_QLineEdit::~tst_QLineEdit()
-{
 }
 
 QLineEdit *tst_QLineEdit::ensureTestWidget()
@@ -2846,6 +2839,29 @@ void tst_QLineEdit::edited()
     QVERIFY(testWidget->isModified());
 }
 
+void tst_QLineEdit::fixupDoesNotModify_QTBUG_49295()
+{
+    QLineEdit *testWidget = ensureTestWidget();
+
+    ValidatorWithFixup val;
+    testWidget->setValidator(&val);
+    testWidget->setText("foo");
+    QVERIFY(!testWidget->isModified());
+    QVERIFY(!testWidget->hasAcceptableInput());
+
+    QTest::keyClicks(testWidget, QStringLiteral("bar"));
+    QVERIFY(testWidget->isModified());
+    QVERIFY(!testWidget->hasAcceptableInput());
+
+    // trigger a fixup, which should not reset the modified flag
+    QFocusEvent lostFocus(QEvent::FocusOut);
+    qApp->sendEvent(testWidget, &lostFocus);
+
+    QVERIFY(testWidget->hasAcceptableInput());
+    QEXPECT_FAIL("", "QTBUG-49295: a fixup of a line edit should keep it modified", Continue);
+    QVERIFY(testWidget->isModified());
+}
+
 void tst_QLineEdit::insert()
 {
     QLineEdit *testWidget = ensureTestWidget();
@@ -2866,6 +2882,11 @@ void tst_QLineEdit::insert()
     QCOMPARE(testWidget->text(), QString("No Crash! This is a nice test"));
 }
 
+static inline QByteArray selectionTestName(int start, int length)
+{
+    return "selection start: " + QByteArray::number(start) + " length: " + QByteArray::number(length);
+}
+
 void tst_QLineEdit::setSelection_data()
 {
     QTest::addColumn<QString>("text");
@@ -2879,39 +2900,39 @@ void tst_QLineEdit::setSelection_data()
     int start, length, pos;
 
     start = 0; length = 1; pos = 1;
-    QTest::newRow(QString("selection start: %1 length: %2").arg(start).arg(length).toLatin1())
+    QTest::newRow(selectionTestName(start, length).constData())
         << text << start << length << pos << QString("A") << true;
 
     start = 0; length = 2; pos = 2;
-    QTest::newRow(QString("selection start: %1 length: %2").arg(start).arg(length).toLatin1())
+    QTest::newRow(selectionTestName(start, length).constData())
         << text << start << length << pos << QString("Ab") << true;
 
     start = 0; length = 4; pos = 4;
-    QTest::newRow(QString("selection start: %1 length: %2").arg(start).arg(length).toLatin1())
+    QTest::newRow(selectionTestName(start, length).constData())
         << text << start << length << pos << QString("Abc ") << true;
 
     start = -1; length = 0; pos = text.length();
-    QTest::newRow(QString("selection start: %1 length: %2").arg(start).arg(length).toLatin1())
+    QTest::newRow(selectionTestName(start, length).constData())
         << text << start << length << pos << QString() << false;
 
     start = 34; length = 1; pos = 35;
-    QTest::newRow(QString("selection start: %1 length: %2").arg(start).arg(length).toLatin1())
+    QTest::newRow(selectionTestName(start, length).constData())
         << text << start << length << pos << QString("z") << true;
 
     start = 34; length = 2; pos = 35;
-    QTest::newRow(QString("selection start: %1 length: %2").arg(start).arg(length).toLatin1())
+    QTest::newRow(selectionTestName(start, length).constData())
         << text << start << length << pos << QString("z") << true;
 
     start = 34; length = -1; pos = 33;
-    QTest::newRow(QString("selection start: %1 length: %2").arg(start).arg(length).toLatin1())
+    QTest::newRow(selectionTestName(start, length).constData())
         << text << start << length << pos << QString("y") << true;
 
     start = 1; length = -2; pos = 0;
-    QTest::newRow(QString("selection start: %1 length: %2").arg(start).arg(length).toLatin1())
+    QTest::newRow(selectionTestName(start, length).constData())
         << text << start << length << pos << QString("A") << true;
 
     start = -1; length = -1; pos = text.length();
-    QTest::newRow(QString("selection start: %1 length: %2").arg(start).arg(length).toLatin1())
+    QTest::newRow(selectionTestName(start, length).constData())
         << text << start << length << pos << QString() << false;
 }
 
@@ -3292,7 +3313,7 @@ void tst_QLineEdit::inlineCompletion()
     QStandardItem *root = model->invisibleRootItem();
     QStandardItem *items[5];
     for (int i = 0; i < 5; i++) {
-        items[i] = new QStandardItem(QString("item%1").arg(i));
+        items[i] = new QStandardItem(QLatin1String("item") + QString::number(i));
         if ((i+2)%2 == 0) { // disable 0,2,4
             items[i]->setFlags(items[i]->flags() & ~Qt::ItemIsEnabled);
         }
@@ -3461,7 +3482,7 @@ void tst_QLineEdit::textMargin()
     QTRY_COMPARE(testWidget.cursorPosition(), cursorPosition);
 }
 
-#ifndef QTEST_NO_CURSOR
+#ifndef QT_NO_CURSOR
 void tst_QLineEdit::cursor()
 {
     QLineEdit *testWidget = ensureTestWidget();
@@ -4321,10 +4342,10 @@ void tst_QLineEdit::clearButtonVisibleAfterSettingText_QTBUG_45518()
 #endif // QT_BUILD_INTERNAL
 }
 
-static inline QIcon sideWidgetTestIcon()
+static inline QIcon sideWidgetTestIcon(Qt::GlobalColor color = Qt::yellow)
 {
     QImage image(QSize(20, 20), QImage::Format_ARGB32);
-    image.fill(Qt::yellow);
+    image.fill(color);
     return QIcon(QPixmap::fromImage(image));
 }
 
@@ -4362,6 +4383,15 @@ void tst_QLineEdit::sideWidgets()
     lineEdit->addAction(iconAction);
 }
 
+template <class T> T *findAssociatedWidget(const QAction *a)
+{
+    foreach (QWidget *w, a->associatedWidgets()) {
+        if (T *result = qobject_cast<T *>(w))
+            return result;
+    }
+    return Q_NULLPTR;
+}
+
 void tst_QLineEdit::sideWidgetsActionEvents()
 {
     // QTBUG-39660, verify whether action events are handled by the widget.
@@ -4370,28 +4400,43 @@ void tst_QLineEdit::sideWidgetsActionEvents()
     QLineEdit *lineEdit = new QLineEdit(&testWidget);
     l->addWidget(lineEdit);
     l->addSpacerItem(new QSpacerItem(0, 50, QSizePolicy::Ignored, QSizePolicy::Fixed));
-    QAction *iconAction = lineEdit->addAction(sideWidgetTestIcon(), QLineEdit::LeadingPosition);
+    QAction *iconAction1 = lineEdit->addAction(sideWidgetTestIcon(Qt::red), QLineEdit::LeadingPosition);
+    QAction *iconAction2 = lineEdit->addAction(sideWidgetTestIcon(Qt::blue), QLineEdit::LeadingPosition);
+    QAction *iconAction3 = lineEdit->addAction(sideWidgetTestIcon(Qt::yellow), QLineEdit::LeadingPosition);
+    iconAction3->setVisible(false);
+
     testWidget.move(300, 300);
     testWidget.show();
     QVERIFY(QTest::qWaitForWindowExposed(&testWidget));
 
-    QWidget *toolButton = Q_NULLPTR;
-    foreach (QWidget *w, iconAction->associatedWidgets()) {
-        if (qobject_cast<QToolButton *>(w)) {
-            toolButton = w;
-            break;
-        }
-    }
-    QVERIFY(toolButton);
+    QWidget *toolButton1 = findAssociatedWidget<QToolButton>(iconAction1);
+    QWidget *toolButton2 = findAssociatedWidget<QToolButton>(iconAction2);
+    QWidget *toolButton3 = findAssociatedWidget<QToolButton>(iconAction3);
 
-    QVERIFY(toolButton->isVisible());
-    QVERIFY(toolButton->isEnabled());
+    QVERIFY(toolButton1);
+    QVERIFY(toolButton2);
+    QVERIFY(toolButton3);
 
-    iconAction->setEnabled(false);
-    QVERIFY(!toolButton->isEnabled());
+    QVERIFY(!toolButton3->isVisible()); // QTBUG-48899 , action hidden before show().
 
-    iconAction->setVisible(false);
-    QVERIFY(!toolButton->isVisible());
+    QVERIFY(toolButton1->isVisible());
+    QVERIFY(toolButton1->isEnabled());
+
+    QVERIFY(toolButton2->isVisible());
+    QVERIFY(toolButton2->isEnabled());
+
+    const int toolButton1X = toolButton1->x();
+    const int toolButton2X = toolButton2->x();
+    QVERIFY(toolButton1X < toolButton2X); // QTBUG-48806, positioned beside each other.
+
+    iconAction1->setEnabled(false);
+    QVERIFY(!toolButton1->isEnabled());
+
+    iconAction1->setVisible(false);
+    QVERIFY(!toolButton1->isVisible());
+
+    // QTBUG-39660, button 2 takes position of invisible button 1.
+    QCOMPARE(toolButton2->x(), toolButton1X);
 }
 
 Q_DECLARE_METATYPE(Qt::AlignmentFlag)
@@ -4456,6 +4501,62 @@ void tst_QLineEdit::QTBUG1266_setInputMaskEmittingTextEdited()
     lineEdit.setInputMask("AAAA");
     lineEdit.setInputMask(QString());
     QCOMPARE(spy.count(), 0);
+}
+
+void tst_QLineEdit::shortcutOverrideOnReadonlyLineEdit_data()
+{
+    QTest::addColumn<QKeySequence>("keySequence");
+    QTest::addColumn<bool>("shouldBeHandledByQLineEdit");
+
+    QTest::newRow("Copy") << QKeySequence(QKeySequence::Copy) << true;
+    QTest::newRow("MoveToNextChar") << QKeySequence(QKeySequence::MoveToNextChar) << true;
+    QTest::newRow("SelectAll") << QKeySequence(QKeySequence::SelectAll) << true;
+    QTest::newRow("Right press") << QKeySequence(Qt::Key_Right) << true;
+    QTest::newRow("Left press") << QKeySequence(Qt::Key_Left) << true;
+
+    QTest::newRow("Paste") << QKeySequence(QKeySequence::Paste) << false;
+    QTest::newRow("Paste") << QKeySequence(QKeySequence::Cut) << false;
+    QTest::newRow("Undo") << QKeySequence(QKeySequence::Undo) << false;
+    QTest::newRow("Redo") << QKeySequence(QKeySequence::Redo) << false;
+
+    QTest::newRow("a") << QKeySequence(Qt::Key_A) << false;
+    QTest::newRow("b") << QKeySequence(Qt::Key_B) << false;
+    QTest::newRow("c") << QKeySequence(Qt::Key_C) << false;
+    QTest::newRow("x") << QKeySequence(Qt::Key_X) << false;
+    QTest::newRow("X") << QKeySequence(Qt::ShiftModifier + Qt::Key_X) << false;
+
+    QTest::newRow("Alt+Home") << QKeySequence(Qt::AltModifier + Qt::Key_Home) << false;
+}
+
+void tst_QLineEdit::shortcutOverrideOnReadonlyLineEdit()
+{
+    QFETCH(QKeySequence, keySequence);
+    QFETCH(bool, shouldBeHandledByQLineEdit);
+
+    QWidget widget;
+
+    QShortcut *shortcut = new QShortcut(keySequence, &widget);
+    QSignalSpy spy(shortcut, &QShortcut::activated);
+    QVERIFY(spy.isValid());
+
+    QLineEdit *lineEdit = new QLineEdit(QStringLiteral("Test"), &widget);
+    lineEdit->setReadOnly(true);
+    lineEdit->setFocus();
+
+    widget.show();
+
+    QVERIFY(QTest::qWaitForWindowActive(&widget));
+
+    const int keySequenceCount = keySequence.count();
+    for (int i = 0; i < keySequenceCount; ++i) {
+        const uint key = keySequence[i];
+        QTest::keyClick(lineEdit,
+                        Qt::Key(key & ~Qt::KeyboardModifierMask),
+                        Qt::KeyboardModifier(key & Qt::KeyboardModifierMask));
+    }
+
+    const int activationCount = shouldBeHandledByQLineEdit ? 0 : 1;
+    QCOMPARE(spy.count(), activationCount);
 }
 
 QTEST_MAIN(tst_QLineEdit)

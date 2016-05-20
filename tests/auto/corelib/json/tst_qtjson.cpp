@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -46,14 +41,9 @@
 class tst_QtJson: public QObject
 {
     Q_OBJECT
-public:
-    tst_QtJson(QObject *parent = 0);
 
 private Q_SLOTS:
     void initTestCase();
-    void cleanupTestCase();
-    void init();
-    void cleanup();
 
     void testValueSimple();
     void testNumbers();
@@ -151,27 +141,11 @@ private:
     QString testDataDir;
 };
 
-tst_QtJson::tst_QtJson(QObject *parent) : QObject(parent)
-{
-}
-
 void tst_QtJson::initTestCase()
 {
     testDataDir = QFileInfo(QFINDTESTDATA("test.json")).absolutePath();
     if (testDataDir.isEmpty())
         testDataDir = QCoreApplication::applicationDirPath();
-}
-
-void tst_QtJson::cleanupTestCase()
-{
-}
-
-void tst_QtJson::init()
-{
-}
-
-void tst_QtJson::cleanup()
-{
 }
 
 void tst_QtJson::testValueSimple()
@@ -400,12 +374,13 @@ void tst_QtJson::testObjectSimple()
     QJsonObject object;
     object.insert("number", 999.);
     QCOMPARE(object.value("number").type(), QJsonValue::Double);
-    QCOMPARE(object.value("number").toDouble(), 999.);
+    QCOMPARE(object.value(QLatin1String("number")).toDouble(), 999.);
     object.insert("string", QString::fromLatin1("test"));
     QCOMPARE(object.value("string").type(), QJsonValue::String);
-    QCOMPARE(object.value("string").toString(), QString("test"));
+    QCOMPARE(object.value(QLatin1String("string")).toString(), QString("test"));
     object.insert("boolean", true);
     QCOMPARE(object.value("boolean").toBool(), true);
+    QCOMPARE(object.value(QLatin1String("boolean")).toBool(), true);
 
     QStringList keys = object.keys();
     QVERIFY2(keys.contains("number"), "key number not found");
@@ -429,7 +404,7 @@ void tst_QtJson::testObjectSimple()
 
     QString before = object.value("string").toString();
     object.insert("string", QString::fromLatin1("foo"));
-    QVERIFY2(object.value("string").toString() != before, "value should have been updated");
+    QVERIFY2(object.value(QLatin1String("string")).toString() != before, "value should have been updated");
 
     size = object.size();
     QJsonObject subobject;
@@ -704,7 +679,7 @@ void tst_QtJson::testValueRef()
     QCOMPARE(object.value(QLatin1String("null")), QJsonValue());
     object[QLatin1String("null")] = 100.;
     QCOMPARE(object.value(QLatin1String("null")).type(), QJsonValue::Double);
-    QJsonValue val = object[QLatin1String("null")];
+    QJsonValue val = qAsConst(object)[QLatin1String("null")];
     QCOMPARE(val.toDouble(), 100.);
     QCOMPARE(object.size(), 2);
 
@@ -869,13 +844,13 @@ void tst_QtJson::testObjectFind()
 
     QJsonObject::iterator it = object.find(QLatin1String("1"));
     QCOMPARE((*it).toDouble(), 1.);
-    it = object.find(QLatin1String("11"));
+    it = object.find(QString("11"));
     QCOMPARE((*it).type(), QJsonValue::Undefined);
     QCOMPARE(it, object.end());
 
     QJsonObject::const_iterator cit = object.constFind(QLatin1String("1"));
     QCOMPARE((*cit).toDouble(), 1.);
-    cit = object.constFind(QLatin1String("11"));
+    cit = object.constFind(QString("11"));
     QCOMPARE((*it).type(), QJsonValue::Undefined);
     QCOMPARE(it, object.end());
 }
@@ -937,7 +912,7 @@ void tst_QtJson::testDocument()
     doc3.setObject(outer.value(QLatin1String("innter")).toObject());
     QCOMPARE(doc3.isArray(), false);
     QCOMPARE(doc3.isObject(), true);
-    QVERIFY(doc3.object().contains(QLatin1String("innerKey")));
+    QVERIFY(doc3.object().contains(QString("innerKey")));
     QCOMPARE(doc3.object().value(QLatin1String("innerKey")), QJsonValue(42));
 
     QJsonDocument doc4(outer.value(QLatin1String("innterArray")).toArray());
@@ -964,9 +939,9 @@ void tst_QtJson::nullValues()
 
     QJsonObject object;
     object.insert(QString("key"), QJsonValue());
-    QCOMPARE(object.contains("key"), true);
+    QCOMPARE(object.contains(QLatin1String("key")), true);
     QCOMPARE(object.size(), 1);
-    QCOMPARE(object.value("key"), QJsonValue());
+    QCOMPARE(object.value(QString("key")), QJsonValue());
 }
 
 void tst_QtJson::nullArrays()
@@ -1137,6 +1112,12 @@ void tst_QtJson::fromVariant()
     QCOMPARE(QJsonValue::fromVariant(QVariant(stringList)), QJsonValue(jsonArray_string));
     QCOMPARE(QJsonValue::fromVariant(QVariant(variantList)), QJsonValue(jsonArray_variant));
     QCOMPARE(QJsonValue::fromVariant(QVariant(variantMap)), QJsonValue(jsonObject));
+
+    QVERIFY(QJsonValue::fromVariant(QVariant(QJsonValue(true))).isBool());
+    QVERIFY(QJsonValue::fromVariant(QVariant(jsonArray_string)).isArray());
+    QVERIFY(QJsonValue::fromVariant(QVariant(QJsonDocument(jsonArray_string))).isArray());
+    QVERIFY(QJsonValue::fromVariant(QVariant(jsonObject)).isObject());
+    QVERIFY(QJsonValue::fromVariant(QVariant(QJsonDocument(jsonObject))).isObject());
 }
 
 void tst_QtJson::fromVariantMap()
@@ -1408,9 +1389,7 @@ void tst_QtJson::toJsonLargeNumericValues()
             "    \"Array\": [\n"
             "        1.234567,\n"
             "        1.7976931348623157e+308,\n"
-            //     ((4.9406564584124654e-324 == 5e-324) == true)
-            // I can only think JavaScript has a special formatter to
-            //  emit this value for this IEEE754 bit pattern.
+#ifdef QT_NO_DOUBLECONVERSION // "shortest" double conversion is not very short then
             "        4.9406564584124654e-324,\n"
             "        2.2250738585072014e-308,\n"
             "        1.7976931348623157e+308,\n"
@@ -1421,6 +1400,18 @@ void tst_QtJson::toJsonLargeNumericValues()
             "        -1.7976931348623157e+308,\n"
             "        -2.2204460492503131e-16,\n"
             "        -4.9406564584124654e-324,\n"
+#else
+            "        5e-324,\n"
+            "        2.2250738585072014e-308,\n"
+            "        1.7976931348623157e+308,\n"
+            "        2.220446049250313e-16,\n"
+            "        5e-324,\n"
+            "        0,\n"
+            "        -2.2250738585072014e-308,\n"
+            "        -1.7976931348623157e+308,\n"
+            "        -2.220446049250313e-16,\n"
+            "        -5e-324,\n"
+#endif
             "        0,\n"
             "        9007199254740992,\n"
             "        -9007199254740992\n"
@@ -2555,8 +2546,8 @@ void tst_QtJson::nesting()
     QVERIFY(!doc.isNull());
     QCOMPARE(error.error, QJsonParseError::NoError);
 
-    json.prepend("[");
-    json.append("]");
+    json.prepend('[');
+    json.append(']');
     doc = QJsonDocument::fromJson(json, &error);
 
     QVERIFY(doc.isNull());
@@ -2574,8 +2565,8 @@ void tst_QtJson::nesting()
     QVERIFY(!doc.isNull());
     QCOMPARE(error.error, QJsonParseError::NoError);
 
-    json.prepend("[");
-    json.append("]");
+    json.prepend('[');
+    json.append(']');
     doc = QJsonDocument::fromJson(json, &error);
 
     QVERIFY(doc.isNull());
@@ -2589,7 +2580,7 @@ void tst_QtJson::longStrings()
     // in the data structures (for Latin1String in qjson_p.h)
     QString s(0x7ff0, 'a');
     for (int i = 0x7ff0; i < 0x8010; i++) {
-        s.append("c");
+        s.append(QLatin1Char('c'));
 
         QMap <QString, QVariant> map;
         map["key"] = s;
@@ -2608,7 +2599,7 @@ void tst_QtJson::longStrings()
 
     s = QString(0xfff0, 'a');
     for (int i = 0xfff0; i < 0x10010; i++) {
-        s.append("c");
+        s.append(QLatin1Char('c'));
 
         QMap <QString, QVariant> map;
         map["key"] = s;

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 BogDan Vatra <bogdan@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -84,7 +90,7 @@ QAndroidStyle::QAndroidStyle()
          ++objectIterator) {
         QString key = objectIterator.key();
         QJsonValue value = objectIterator.value();
-        if (!value.isObject()) {
+        if (Q_UNLIKELY(!value.isObject())) {
             qWarning("Style.json structure is unrecognized.");
             continue;
         }
@@ -298,8 +304,7 @@ void QAndroidStyle::drawPrimitive(PrimitiveElement pe,
         }
     } else if (pe == PE_FrameGroupBox) {
         if (const QStyleOptionFrame *frame = qstyleoption_cast<const QStyleOptionFrame *>(opt)) {
-            const QStyleOptionFrameV2 *frame2 = qstyleoption_cast<const QStyleOptionFrameV2 *>(opt);
-            if (frame2 && (frame2->features & QStyleOptionFrameV2::Flat)) {
+            if (frame->features & QStyleOptionFrame::Flat) {
                 QRect fr = frame->rect;
                 QPoint p1(fr.x(), fr.y() + 1);
                 QPoint p2(fr.x() + fr.width(), p1.y());
@@ -403,7 +408,7 @@ void QAndroidStyle::drawComplexControl(ComplexControl cc,
             if (groupBox->subControls & SC_GroupBoxCheckBox)
                 checkBoxRect = subControlRect(CC_GroupBox, opt, SC_GroupBoxCheckBox, widget);
             if (groupBox->subControls & QStyle::SC_GroupBoxFrame) {
-                QStyleOptionFrameV2 frame;
+                QStyleOptionFrame frame;
                 frame.QStyleOption::operator=(*groupBox);
                 frame.features = groupBox->features;
                 frame.lineWidth = groupBox->lineWidth;
@@ -833,7 +838,7 @@ int QAndroidStyle::Android9PatchDrawable::calculateStretch(int boundsLimit,
 void QAndroidStyle::Android9PatchDrawable::extractIntArray(const QVariantList &values,
                                                            QVector<int> & array)
 {
-    foreach (QVariant value, values)
+    for (const QVariant &value : values)
         array << value.toInt();
 }
 
@@ -1135,8 +1140,8 @@ QAndroidStyle::AndroidStateDrawable::AndroidStateDrawable(const QVariantMap &dra
                                                           QAndroidStyle::ItemType itemType)
     : AndroidDrawable(drawable, itemType)
 {
-    QVariantList states = drawable.value(QLatin1String("stateslist")).toList();
-    foreach (QVariant stateVariant, states) {
+    const QVariantList states = drawable.value(QLatin1String("stateslist")).toList();
+    for (const QVariant &stateVariant : states) {
         QVariantMap state = stateVariant.toMap();
         const int s = extractState(state.value(QLatin1String("states")).toMap());
         if (-1 == s)
@@ -1153,7 +1158,7 @@ QAndroidStyle::AndroidStateDrawable::AndroidStateDrawable(const QVariantMap &dra
 
 QAndroidStyle::AndroidStateDrawable::~AndroidStateDrawable()
 {
-    foreach (const StateType type, m_states)
+    for (const StateType &type : qAsConst(m_states))
         delete type.second;
 }
 
@@ -1187,7 +1192,7 @@ const QAndroidStyle::AndroidDrawable * QAndroidStyle::AndroidStateDrawable::best
     }
 
     uint bestCost = 0xffff;
-    foreach (const StateType & state, m_states) {
+    for (const StateType & state : m_states) {
         if (int(opt->state) == state.first)
             return state.second;
         uint cost = 1;
@@ -1228,30 +1233,22 @@ const QAndroidStyle::AndroidDrawable * QAndroidStyle::AndroidStateDrawable::best
 
 int QAndroidStyle::AndroidStateDrawable::extractState(const QVariantMap &value)
 {
-    int state = QStyle::State_Enabled | QStyle::State_Active;;
-    foreach (const QString &key, value.keys()) {
-        bool val = value.value(key).toString() == QLatin1String("true");
+    QStyle::State state = QStyle::State_Enabled | QStyle::State_Active;;
+    for (auto it = value.cbegin(), end = value.cend(); it != end; ++it) {
+        const QString &key = it.key();
+        bool val = it.value().toString() == QLatin1String("true");
         if (key == QLatin1String("enabled")) {
-            if (val)
-                state |= QStyle::State_Enabled;
-            else
-                state &= ~QStyle::State_Enabled;
+            state.setFlag(QStyle::State_Enabled, val);
             continue;
         }
 
         if (key == QLatin1String("window_focused")) {
-            if (val)
-                state |= QStyle::State_Active;
-            else
-                state &= ~QStyle::State_Active;
+            state.setFlag(QStyle::State_Active, val);
             continue;
         }
 
         if (key == QLatin1String("focused")) {
-            if (val)
-                state |= QStyle::State_HasFocus;
-            else
-                state &= ~QStyle::State_HasFocus;
+            state.setFlag(QStyle::State_HasFocus, val);
             continue;
         }
 
@@ -1266,18 +1263,12 @@ int QAndroidStyle::AndroidStateDrawable::extractState(const QVariantMap &value)
         }
 
         if (key == QLatin1String("selected")) {
-            if (val)
-                state |= QStyle::State_Selected;
-            else
-                state &= ~QStyle::State_Selected;
+            state.setFlag(QStyle::State_Selected, val);
             continue;
         }
 
         if (key == QLatin1String("active")) {
-            if (val)
-                state |= QStyle::State_Active;
-            else
-                state &= ~QStyle::State_Active;
+            state.setFlag(QStyle::State_Active, val);
             continue;
         }
 
@@ -1287,12 +1278,12 @@ int QAndroidStyle::AndroidStateDrawable::extractState(const QVariantMap &value)
         if (key == QLatin1String("background") && val)
             return -1;
     }
-    return state;
+    return static_cast<int>(state);
 }
 
 void QAndroidStyle::AndroidStateDrawable::setPaddingLeftToSizeWidth()
 {
-    foreach (const StateType type, m_states)
+    for (const StateType &type : qAsConst(m_states))
         const_cast<AndroidDrawable *>(type.second)->setPaddingLeftToSizeWidth();
 }
 
@@ -1303,8 +1294,8 @@ QAndroidStyle::AndroidLayerDrawable::AndroidLayerDrawable(const QVariantMap &dra
     m_id = 0;
     m_factor = 1;
     m_orientation = Qt::Horizontal;
-    QVariantList layers = drawable.value(QLatin1String("layers")).toList();
-    foreach (QVariant layer, layers) {
+    const QVariantList layers = drawable.value(QLatin1String("layers")).toList();
+    for (const QVariant &layer : layers) {
         QVariantMap layerMap = layer.toMap();
         AndroidDrawable *ad = fromMap(layerMap, itemType);
         if (ad) {
@@ -1318,7 +1309,7 @@ QAndroidStyle::AndroidLayerDrawable::AndroidLayerDrawable(const QVariantMap &dra
 
 QAndroidStyle::AndroidLayerDrawable::~AndroidLayerDrawable()
 {
-    foreach (const LayerType &layer, m_layers)
+    for (const LayerType &layer : qAsConst(m_layers))
         delete layer.second;
 }
 
@@ -1336,7 +1327,7 @@ void QAndroidStyle::AndroidLayerDrawable::setFactor(int id, double factor, Qt::O
 
 void QAndroidStyle::AndroidLayerDrawable::draw(QPainter *painter, const QStyleOption *opt) const
 {
-    foreach (const LayerType &layer, m_layers) {
+    for (const LayerType &layer : m_layers) {
         if (layer.first == m_id) {
             QStyleOption copy(*opt);
             if (m_orientation == Qt::Horizontal)
@@ -1352,7 +1343,7 @@ void QAndroidStyle::AndroidLayerDrawable::draw(QPainter *painter, const QStyleOp
 
 QAndroidStyle::AndroidDrawable *QAndroidStyle::AndroidLayerDrawable::layer(int id) const
 {
-    foreach (const LayerType &layer, m_layers)
+    for (const LayerType &layer : m_layers)
         if (layer.first == id)
             return layer.second;
     return 0;
@@ -1361,7 +1352,7 @@ QAndroidStyle::AndroidDrawable *QAndroidStyle::AndroidLayerDrawable::layer(int i
 QSize QAndroidStyle::AndroidLayerDrawable::size() const
 {
     QSize sz;
-    foreach (const LayerType &layer, m_layers)
+    for (const LayerType &layer : m_layers)
         sz = sz.expandedTo(layer.second->size());
     return sz;
 }
@@ -1617,15 +1608,13 @@ void QAndroidStyle::AndroidProgressBarControl::drawControl(const QStyleOption *o
 
     if (const QStyleOptionProgressBar *progressBarOption =
            qstyleoption_cast<const QStyleOptionProgressBar *>(option)) {
-        QStyleOptionProgressBarV2 progressBarV2(*progressBarOption);
         if (m_progressDrawable->type() == QAndroidStyle::Layer) {
+            const double fraction = progressBarOption->progress / double(progressBarOption->maximum - progressBarOption->minimum);
             QAndroidStyle::AndroidDrawable *clipDrawable = static_cast<QAndroidStyle::AndroidLayerDrawable *>(m_progressDrawable)->layer(m_progressId);
             if (clipDrawable->type() == QAndroidStyle::Clip)
-                static_cast<QAndroidStyle::AndroidClipDrawable *>(clipDrawable)->setFactor(double(progressBarV2.progress) / double(progressBarV2.maximum - progressBarV2.minimum),
-                                                                                           progressBarV2.orientation);
+                static_cast<AndroidClipDrawable *>(clipDrawable)->setFactor(fraction, progressBarOption->orientation);
             else
-                static_cast<QAndroidStyle::AndroidLayerDrawable *>(m_progressDrawable)->setFactor(m_progressId, double(progressBarV2.progress) / double(progressBarV2.maximum - progressBarV2.minimum),
-                                                                                                  progressBarV2.orientation);
+                static_cast<AndroidLayerDrawable *>(m_progressDrawable)->setFactor(m_progressId, fraction, progressBarOption->orientation);
         }
         m_progressDrawable->draw(p, option);
     }
@@ -1637,8 +1626,7 @@ QRect QAndroidStyle::AndroidProgressBarControl::subElementRect(QStyle::SubElemen
 {
     if (const QStyleOptionProgressBar *progressBarOption =
            qstyleoption_cast<const QStyleOptionProgressBar *>(option)) {
-        QStyleOptionProgressBarV2 progressBarV2(*progressBarOption);
-        const bool horizontal = progressBarV2.orientation == Qt::Vertical;
+        const bool horizontal = progressBarOption->orientation == Qt::Vertical;
         if (!m_background)
             return option->rect;
 
@@ -1680,8 +1668,7 @@ QSize QAndroidStyle::AndroidProgressBarControl::sizeFromContents(const QStyleOpt
 
     if (const QStyleOptionProgressBar *progressBarOption =
            qstyleoption_cast<const QStyleOptionProgressBar *>(opt)) {
-        QStyleOptionProgressBarV2 progressBarV2(*progressBarOption);
-        if (progressBarV2.orientation == Qt::Vertical) {
+        if (progressBarOption->orientation == Qt::Vertical) {
             if (sz.height() > m_maxSize.height())
                 sz.setHeight(m_maxSize.height());
         } else {

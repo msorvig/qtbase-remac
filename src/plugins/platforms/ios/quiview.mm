@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -38,7 +44,9 @@
 #include "qiosviewcontroller.h"
 #include "qiostextresponder.h"
 #include "qioswindow.h"
+#ifndef Q_OS_TVOS
 #include "qiosmenu.h"
+#endif
 
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qwindow_p.h>
@@ -72,7 +80,9 @@
         if (isQtApplication())
             self.hidden = YES;
 
+#ifndef Q_OS_TVOS
         self.multipleTouchEnabled = YES;
+#endif
 
         if (QIOSIntegration::instance()->debugWindowManagement()) {
             static CGFloat hue = 0.0;
@@ -280,6 +290,23 @@
 
 // -------------------------------------------------------------------------
 
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection
+{
+    [super traitCollectionDidChange: previousTraitCollection];
+
+    QTouchDevice *touchDevice = QIOSIntegration::instance()->touchDevice();
+    QTouchDevice::Capabilities touchCapabilities = touchDevice->capabilities();
+
+    if (QSysInfo::MacintoshVersion >= QSysInfo::MV_IOS_9_0) {
+        if (self.traitCollection.forceTouchCapability == UIForceTouchCapabilityAvailable)
+            touchCapabilities |= QTouchDevice::Pressure;
+        else
+            touchCapabilities &= ~QTouchDevice::Pressure;
+    }
+
+    touchDevice->setCapabilities(touchCapabilities);
+}
+
 -(BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event
 {
     if (m_qioswindow->window()->flags() & Qt::WindowTransparentForInput)
@@ -289,6 +316,8 @@
 
 - (void)updateTouchList:(NSSet *)touches withState:(Qt::TouchPointState)state
 {
+    bool supportsPressure = QIOSIntegration::instance()->touchDevice()->capabilities() & QTouchDevice::Pressure;
+
     foreach (UITouch *uiTouch, m_activeTouches.keys()) {
         QWindowSystemInterface::TouchPoint &touchPoint = m_activeTouches[uiTouch];
         if (![touches containsObject:uiTouch]) {
@@ -299,6 +328,7 @@
             // Touch positions are expected to be in QScreen global coordinates, and
             // as we already have the QWindow positioned at the right place, we can
             // just map from the local view position to global coordinates.
+            // tvOS: all touches start at the center of the screen and move from there.
             QPoint localViewPosition = fromCGPoint([uiTouch locationInView:self]).toPoint();
             QPoint globalScreenPosition = m_qioswindow->mapToGlobal(localViewPosition);
 
@@ -309,9 +339,17 @@
             touchPoint.normalPosition = QPointF(globalScreenPosition.x() / screenSize.width(),
                                                 globalScreenPosition.y() / screenSize.height());
 
-            // We don't claim that our touch device supports QTouchDevice::Pressure,
-            // but fill in a meaningfull value in case clients use it anyways.
-            touchPoint.pressure = (state == Qt::TouchPointReleased) ? 0.0 : 1.0;
+            if (supportsPressure) {
+                // Note: iOS  will deliver touchesBegan with a touch force of 0, which
+                // we will reflect/propagate as a 0 pressure, but there is no clear
+                // alternative, as we don't want to wait for a touchedMoved before
+                // sending a touch press event to Qt, just to have a valid pressure.
+                touchPoint.pressure = uiTouch.force / uiTouch.maximumPossibleForce;
+            } else {
+                // We don't claim that our touch device supports QTouchDevice::Pressure,
+                // but fill in a meaningfull value in case clients use it anyways.
+                touchPoint.pressure = (state == Qt::TouchPointReleased) ? 0.0 : 1.0;
+            }
         }
     }
 }
@@ -406,14 +444,24 @@
 
 - (BOOL)canPerformAction:(SEL)action withSender:(id)sender
 {
+#ifndef Q_OS_TVOS
     // Check first if QIOSMenu should handle the action before continuing up the responder chain
     return [QIOSMenu::menuActionTarget() targetForAction:action withSender:sender] != 0;
+#else
+    Q_UNUSED(action)
+    Q_UNUSED(sender)
+    return false;
+#endif
 }
 
 - (id)forwardingTargetForSelector:(SEL)selector
 {
     Q_UNUSED(selector)
+#ifndef Q_OS_TVOS
     return QIOSMenu::menuActionTarget();
+#else
+    return nil;
+#endif
 }
 
 @end

@@ -24,6 +24,7 @@ SUBDIRS=\
     qhash \
     qhash_strictiterators \
     qhashfunctions \
+    qlatin1string \
     qline \
     qlinkedlist \
     qlist \
@@ -50,6 +51,7 @@ SUBDIRS=\
     qstl \
     qstring \
     qstring_no_cast_from_bytearray \
+    qstringapisymmetry \
     qstringbuilder \
     qstringiterator \
     qstringlist \

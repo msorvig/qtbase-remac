@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -138,7 +144,7 @@ inline QChar QDirPrivate::getFilterSepChar(const QString &nameFilter)
 // static
 inline QStringList QDirPrivate::splitFilters(const QString &nameFilter, QChar sep)
 {
-    if (sep == 0)
+    if (sep.isNull())
         sep = getFilterSepChar(nameFilter);
     QStringList ret = nameFilter.split(sep);
     for (int i = 0; i < ret.count(); ++i)
@@ -152,7 +158,11 @@ inline void QDirPrivate::setPath(const QString &path)
     if (p.endsWith(QLatin1Char('/'))
             && p.length() > 1
 #if defined(Q_OS_WIN)
+#  if defined (Q_OS_WINRT)
+        && (!(p.toLower() == QDir::rootPath().toLower()))
+#  else
         && (!(p.length() == 3 && p.at(1).unicode() == ':' && p.at(0).isLetter()))
+#  endif
 #endif
     ) {
             p.truncate(p.length() - 1);
@@ -752,17 +762,13 @@ QString QDir::relativeFilePath(const QString &fileName) const
 #endif
 
     QString result;
-#if defined(Q_OS_WIN)
-    QStringList dirElts = dir.split(QLatin1Char('/'), QString::SkipEmptyParts);
-    QStringList fileElts = file.split(QLatin1Char('/'), QString::SkipEmptyParts);
-#else
     QVector<QStringRef> dirElts = dir.splitRef(QLatin1Char('/'), QString::SkipEmptyParts);
     QVector<QStringRef> fileElts = file.splitRef(QLatin1Char('/'), QString::SkipEmptyParts);
-#endif
+
     int i = 0;
     while (i < dirElts.size() && i < fileElts.size() &&
 #if defined(Q_OS_WIN)
-           dirElts.at(i).toLower() == fileElts.at(i).toLower())
+           dirElts.at(i).compare(fileElts.at(i), Qt::CaseInsensitive) == 0)
 #else
            dirElts.at(i) == fileElts.at(i))
 #endif
@@ -885,6 +891,9 @@ bool QDir::cd(const QString &dirName)
 #if defined (Q_OS_UNIX)
             //After cleanPath() if path is "/.." or starts with "/../" it means trying to cd above root.
             if (newPath.startsWith(QLatin1String("/../")) || newPath == QLatin1String("/.."))
+#elif defined (Q_OS_WINRT)
+            const QString rootPath = QDir::rootPath();
+            if (newPath.size() < rootPath.size() && rootPath.startsWith(newPath))
 #else
             /*
               cleanPath() already took care of replacing '\' with '/'.
@@ -2178,7 +2187,7 @@ QString QDir::cleanPath(const QString &path)
        name.replace(dir_separator, QLatin1Char('/'));
 
     bool allowUncPaths = false;
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT) //allow unc paths
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT) //allow unc paths
     allowUncPaths = true;
 #endif
 
@@ -2187,7 +2196,11 @@ QString QDir::cleanPath(const QString &path)
     // Strip away last slash except for root directories
     if (ret.length() > 1 && ret.endsWith(QLatin1Char('/'))) {
 #if defined (Q_OS_WIN)
+#  if defined(Q_OS_WINRT)
+        if (!((ret.length() == 3 || ret.length() == QDir::rootPath().length()) && ret.at(1) == QLatin1Char(':')))
+#  else
         if (!(ret.length() == 3 && ret.at(1) == QLatin1Char(':')))
+#  endif
 #endif
             ret.chop(1);
     }

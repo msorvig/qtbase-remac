@@ -6,19 +6,17 @@ SOURCES +=\
 HEADERS +=\
     $$PWD/qunixeventdispatcher_qpa_p.h\
     $$PWD/qgenericunixeventdispatcher_p.h\
-}
-
-ios {
-OBJECTIVE_SOURCES +=\
-    $$PWD/qeventdispatcher_cf.mm
+} else: win32 {
+SOURCES +=\
+    $$PWD/qwindowsguieventdispatcher.cpp
 
 HEADERS +=\
-    $$PWD/qeventdispatcher_cf_p.h
+    $$PWD/qwindowsguieventdispatcher_p.h
 }
 
 contains(QT_CONFIG, glib) {
     SOURCES +=$$PWD/qeventdispatcher_glib.cpp
     HEADERS +=$$PWD/qeventdispatcher_glib_p.h
-    QMAKE_CXXFLAGS += $$QT_CFLAGS_GLIB
-    LIBS_PRIVATE += $$QT_LIBS_GLIB
+    QMAKE_CXXFLAGS += $$QMAKE_CFLAGS_GLIB
+    LIBS_PRIVATE += $$QMAKE_LIBS_GLIB
 }

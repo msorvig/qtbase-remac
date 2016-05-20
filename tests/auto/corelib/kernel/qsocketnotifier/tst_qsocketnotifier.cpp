@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -40,6 +35,7 @@
 #include <QtCore/QSocketNotifier>
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
+#include <QtNetwork/QUdpSocket>
 #ifndef Q_OS_WINRT
 #include <private/qnativesocketengine_p.h>
 #else
@@ -66,7 +62,28 @@ private slots:
 #ifdef Q_OS_UNIX
     void posixSockets();
 #endif
+    void asyncMultipleDatagram();
+
+protected slots:
+    void async_readDatagramSlot();
+    void async_writeDatagramSlot();
+
+private:
+    QUdpSocket *m_asyncSender;
+    QUdpSocket *m_asyncReceiver;
 };
+
+static QHostAddress makeNonAny(const QHostAddress &address,
+                               QHostAddress::SpecialAddress preferForAny = QHostAddress::LocalHost)
+{
+    if (address == QHostAddress::Any)
+        return preferForAny;
+    if (address == QHostAddress::AnyIPv4)
+        return QHostAddress::LocalHost;
+    if (address == QHostAddress::AnyIPv6)
+        return QHostAddress::LocalHostIPv6;
+    return address;
+}
 
 class UnexpectedDisconnectTester : public QObject
 {
@@ -109,6 +126,10 @@ signals:
 
 void tst_QSocketNotifier::unexpectedDisconnection()
 {
+#ifdef Q_OS_WINRT
+    // WinRT does not allow a connection to the localhost
+    QSKIP("Local connection not allowed", SkipAll);
+#else
     /*
       Given two sockets and two QSocketNotifiers registered on each
       their socket. If both sockets receive data, and the first slot
@@ -174,6 +195,7 @@ void tst_QSocketNotifier::unexpectedDisconnection()
     writeEnd1->close();
     writeEnd2->close();
     server.close();
+#endif // !Q_OS_WINRT
 }
 
 class MixingWithTimersHelper : public QObject
@@ -212,6 +234,9 @@ void MixingWithTimersHelper::socketFired()
 
 void tst_QSocketNotifier::mixingWithTimers()
 {
+#ifdef Q_OS_WINRT
+    QSKIP("WinRT does not allow connection to localhost", SkipAll);
+#else
     QTimer timer;
     timer.setInterval(0);
     timer.start();
@@ -236,6 +261,7 @@ void tst_QSocketNotifier::mixingWithTimers()
 
     QCOMPARE(helper.timerActivated, true);
     QTRY_COMPARE(helper.socketActivated, true);
+#endif // !Q_OS_WINRT
 }
 
 #ifdef Q_OS_UNIX
@@ -298,6 +324,57 @@ void tst_QSocketNotifier::posixSockets()
     qt_safe_close(posixSocket);
 }
 #endif
+
+void tst_QSocketNotifier::async_readDatagramSlot()
+{
+    char buf[1];
+    QVERIFY(m_asyncReceiver->hasPendingDatagrams());
+    do {
+        QCOMPARE(m_asyncReceiver->pendingDatagramSize(), qint64(1));
+        QCOMPARE(m_asyncReceiver->readDatagram(buf, sizeof(buf)), qint64(1));
+        if (buf[0] == '1') {
+            // wait for the second datagram message.
+            QTest::qSleep(100);
+        }
+    } while (m_asyncReceiver->hasPendingDatagrams());
+
+    if (buf[0] == '3')
+        QTestEventLoop::instance().exitLoop();
+}
+
+void tst_QSocketNotifier::async_writeDatagramSlot()
+{
+    m_asyncSender->writeDatagram("3", makeNonAny(m_asyncReceiver->localAddress()),
+                                                 m_asyncReceiver->localPort());
+}
+
+void tst_QSocketNotifier::asyncMultipleDatagram()
+{
+    m_asyncSender = new QUdpSocket;
+    m_asyncReceiver = new QUdpSocket;
+
+    QVERIFY(m_asyncReceiver->bind(QHostAddress(QHostAddress::AnyIPv4), 0));
+    quint16 port = m_asyncReceiver->localPort();
+    QVERIFY(port != 0);
+
+    QSignalSpy spy(m_asyncReceiver, &QIODevice::readyRead);
+    connect(m_asyncReceiver, &QIODevice::readyRead, this,
+            &tst_QSocketNotifier::async_readDatagramSlot);
+    m_asyncSender->writeDatagram("1", makeNonAny(m_asyncReceiver->localAddress()), port);
+    m_asyncSender->writeDatagram("2", makeNonAny(m_asyncReceiver->localAddress()), port);
+    // wait a little to ensure that the datagrams we've just sent
+    // will be delivered on receiver side.
+    QTest::qSleep(100);
+
+    QTimer::singleShot(500, this, &tst_QSocketNotifier::async_writeDatagramSlot);
+
+    QTestEventLoop::instance().enterLoop(1);
+    QVERIFY(!QTestEventLoop::instance().timeout());
+    QCOMPARE(spy.count(), 2);
+
+    delete m_asyncSender;
+    delete m_asyncReceiver;
+}
 
 QTEST_MAIN(tst_QSocketNotifier)
 #include <tst_qsocketnotifier.moc>

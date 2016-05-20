@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -39,13 +45,13 @@
 #include "qapplication.h"
 #include "qevent.h"
 #include "qlist.h"
-#include "qdebug.h"
 #include <private/qshortcutmap_p.h>
 #include <private/qapplication_p.h>
 #include <private/qmenu_p.h>
+#include <private/qdebug_p.h>
 
 #define QAPP_CHECK(functionName) \
-    if (!qApp) { \
+    if (Q_UNLIKELY(!qApp)) { \
         qWarning("QAction: Initialize QApplication before calling '" functionName "'."); \
         return; \
     }
@@ -255,7 +261,7 @@ void QActionPrivate::setShortcutEnabled(bool enable, QShortcutMap &map)
     \value TextHeuristicRole This action should be put in the application menu based on the action's text
            as described in the QMenuBar documentation.
     \value ApplicationSpecificRole This action should be put in the application menu with an application specific role
-    \value AboutQtRole This action matches handles the "About Qt" menu item.
+    \value AboutQtRole This action handles the "About Qt" menu item.
     \value AboutRole This action should be placed where the "About" menu item is in the application menu. The text of
            the menu item will be set to "About <application name>". The application name is fetched from the
            \c{Info.plist} file in the application's bundle (See \l{Qt for OS X - Deployment}).
@@ -273,12 +279,8 @@ void QActionPrivate::setShortcutEnabled(bool enable, QShortcutMap &map)
     group the action will be automatically inserted into the group.
 */
 QAction::QAction(QObject* parent)
-    : QObject(*(new QActionPrivate), parent)
+    : QAction(*new QActionPrivate, parent)
 {
-    Q_D(QAction);
-    d->group = qobject_cast<QActionGroup *>(parent);
-    if (d->group)
-        d->group->addAction(this);
 }
 
 
@@ -296,13 +298,10 @@ QAction::QAction(QObject* parent)
 
 */
 QAction::QAction(const QString &text, QObject* parent)
-    : QObject(*(new QActionPrivate), parent)
+    : QAction(parent)
 {
     Q_D(QAction);
     d->text = text;
-    d->group = qobject_cast<QActionGroup *>(parent);
-    if (d->group)
-        d->group->addAction(this);
 }
 
 /*!
@@ -318,14 +317,10 @@ QAction::QAction(const QString &text, QObject* parent)
     setToolTip().
 */
 QAction::QAction(const QIcon &icon, const QString &text, QObject* parent)
-    : QObject(*(new QActionPrivate), parent)
+    : QAction(text, parent)
 {
     Q_D(QAction);
     d->icon = icon;
-    d->text = text;
-    d->group = qobject_cast<QActionGroup *>(parent);
-    if (d->group)
-        d->group->addAction(this);
 }
 
 /*!
@@ -606,6 +601,7 @@ void QAction::setActionGroup(QActionGroup *group)
     d->group = group;
     if(group)
         group->addAction(this);
+    d->sendDataChanged();
 }
 
 /*!
@@ -1231,7 +1227,7 @@ void QAction::activate(ActionEvent event)
     \since 4.2
 
     This indicates what role the action serves in the application menu on Mac
-    OS X. By default all action have the TextHeuristicRole, which means that
+    OS X. By default all actions have the TextHeuristicRole, which means that
     the action is added based on its text (see QMenuBar for more information).
 
     The menu role can only be changed before the actions are put into the menu
@@ -1295,6 +1291,31 @@ bool QAction::isIconVisibleInMenu() const
     }
     return d->iconVisibleInMenu;
 }
+
+#ifndef QT_NO_DEBUG_STREAM
+Q_WIDGETS_EXPORT QDebug operator<<(QDebug d, const QAction *action)
+{
+    QDebugStateSaver saver(d);
+    d.nospace();
+    d << "QAction(" << static_cast<const void *>(action);
+    if (action) {
+        d << " text=" << action->text();
+        if (!action->toolTip().isEmpty())
+            d << " toolTip=" << action->toolTip();
+        if (action->isCheckable())
+            d << " checked=" << action->isChecked();
+        if (!action->shortcut().isEmpty())
+            d << " shortcut=" << action->shortcut();
+        d << " menuRole=";
+        QtDebugUtils::formatQEnum(d, action->menuRole());
+        d << " visible=" << action->isVisible();
+    } else {
+        d << '0';
+    }
+    d << ')';
+    return d;
+}
+#endif // QT_NO_DEBUG_STREAM
 
 QT_END_NAMESPACE
 

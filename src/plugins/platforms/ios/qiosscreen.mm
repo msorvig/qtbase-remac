@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -114,21 +120,25 @@ static QIOSScreen* qtPlatformScreenFor(UIScreen *uiScreen)
     self = [super init];
     if (self) {
         m_screen = screen;
+#ifndef Q_OS_TVOS
         [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
         [[NSNotificationCenter defaultCenter]
             addObserver:self
             selector:@selector(orientationChanged:)
             name:@"UIDeviceOrientationDidChangeNotification" object:nil];
+#endif
     }
     return self;
 }
 
 - (void)dealloc
 {
+#ifndef Q_OS_TVOS
     [[UIDevice currentDevice] endGeneratingDeviceOrientationNotifications];
     [[NSNotificationCenter defaultCenter]
         removeObserver:self
         name:@"UIDeviceOrientationDidChangeNotification" object:nil];
+#endif
     [super dealloc];
 }
 
@@ -170,23 +180,28 @@ QIOSScreen::QIOSScreen(UIScreen *screen)
     if (screen == [UIScreen mainScreen]) {
         QString deviceIdentifier = deviceModelIdentifier();
 
-        if (deviceIdentifier == QLatin1String("iPhone2,1") /* iPhone 3GS */
-            || deviceIdentifier == QLatin1String("iPod3,1") /* iPod touch 3G */) {
-            m_depth = 18;
-        } else {
-            m_depth = 24;
-        }
+        // Based on https://en.wikipedia.org/wiki/List_of_iOS_devices#Display
 
-        if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad
-            && !deviceIdentifier.contains(QRegularExpression("^iPad2,[567]$")) /* excluding iPad Mini */) {
-            m_unscaledDpi = 132;
+        // iPhone (1st gen), 3G, 3GS, and iPod Touch (1st–3rd gen) are 18-bit devices
+        if (deviceIdentifier.contains(QRegularExpression("^(iPhone1,[12]|iPhone2,1|iPod[1-3],1)$")))
+            m_depth = 18;
+        else
+            m_depth = 24;
+
+        if (deviceIdentifier.contains(QRegularExpression("^iPhone(7,1|8,2)$"))) {
+            // iPhone 6 Plus or iPhone 6S Plus
+            m_physicalDpi = 401;
+        } else if (deviceIdentifier.contains(QRegularExpression("^iPad(1,1|2,[1-4]|3,[1-6]|4,[1-3]|5,[3-4]|6,[7-8])$"))) {
+            // All iPads except the iPad Mini series
+            m_physicalDpi = 132 * devicePixelRatio();
         } else {
-            m_unscaledDpi = 163; // Regular iPhone DPI
+            // All non-Plus iPhones, and iPad Minis
+            m_physicalDpi = 163 * devicePixelRatio();
         }
     } else {
         // External display, hard to say
         m_depth = 24;
-        m_unscaledDpi = 96;
+        m_physicalDpi = 96;
     }
 
     for (UIWindow *existingWindow in [[UIApplication sharedApplication] windows]) {
@@ -217,8 +232,13 @@ void QIOSScreen::updateProperties()
     QRect previousAvailableGeometry = m_availableGeometry;
 
     m_geometry = fromCGRect(m_uiScreen.bounds).toRect();
+#ifndef Q_OS_TVOS
     m_availableGeometry = fromCGRect(m_uiScreen.applicationFrame).toRect();
+#else
+    m_availableGeometry = fromCGRect(m_uiScreen.bounds).toRect();
+#endif
 
+#ifndef Q_OS_TVOS
     if (m_uiScreen == [UIScreen mainScreen]) {
         Qt::ScreenOrientation statusBarOrientation = toQtScreenOrientation(UIDeviceOrientation([UIApplication sharedApplication].statusBarOrientation));
 
@@ -246,10 +266,26 @@ void QIOSScreen::updateProperties()
             m_availableGeometry = transform.mapRect(m_availableGeometry);
         }
     }
+#endif
 
     if (m_geometry != previousGeometry) {
-        const qreal millimetersPerInch = 25.4;
-        m_physicalSize = QSizeF(m_geometry.size()) / m_unscaledDpi * millimetersPerInch;
+        QRectF physicalGeometry;
+        if (QSysInfo::MacintoshVersion >= QSysInfo::MV_IOS_8_0) {
+             // We can't use the primaryOrientation of screen(), as we haven't reported the new geometry yet
+            Qt::ScreenOrientation primaryOrientation = m_geometry.width() >= m_geometry.height() ?
+                Qt::LandscapeOrientation : Qt::PortraitOrientation;
+
+            // On iPhone 6+ devices, or when display zoom is enabled, the render buffer is scaled
+            // before being output on the physical display. We have to take this into account when
+            // computing the physical size. Note that unlike the native bounds, the physical size
+            // follows the primary orientation of the screen.
+            physicalGeometry = mapBetween(nativeOrientation(), primaryOrientation, fromCGRect(m_uiScreen.nativeBounds).toRect());
+        } else {
+            physicalGeometry = QRectF(0, 0, m_geometry.width() * devicePixelRatio(), m_geometry.height() * devicePixelRatio());
+        }
+
+        static const qreal millimetersPerInch = 25.4;
+        m_physicalSize = physicalGeometry.size() / m_physicalDpi * millimetersPerInch;
     }
 
     // At construction time, we don't yet have an associated QScreen, but we still want
@@ -309,7 +345,7 @@ qreal QIOSScreen::devicePixelRatio() const
 Qt::ScreenOrientation QIOSScreen::nativeOrientation() const
 {
     CGRect nativeBounds =
-#if QT_IOS_PLATFORM_SDK_EQUAL_OR_ABOVE(__IPHONE_8_0)
+#if !defined(Q_OS_TVOS) && QT_IOS_PLATFORM_SDK_EQUAL_OR_ABOVE(__IPHONE_8_0)
         QSysInfo::MacintoshVersion >= QSysInfo::MV_IOS_8_0 ? m_uiScreen.nativeBounds :
 #endif
         m_uiScreen.bounds;
@@ -322,6 +358,9 @@ Qt::ScreenOrientation QIOSScreen::nativeOrientation() const
 
 Qt::ScreenOrientation QIOSScreen::orientation() const
 {
+#ifdef Q_OS_TVOS
+    return Qt::PrimaryOrientation;
+#else
     // Auxiliary screens are always the same orientation as their primary orientation
     if (m_uiScreen != [UIScreen mainScreen])
         return Qt::PrimaryOrientation;
@@ -346,6 +385,7 @@ Qt::ScreenOrientation QIOSScreen::orientation() const
     }
 
     return toQtScreenOrientation(deviceOrientation);
+#endif
 }
 
 void QIOSScreen::setOrientationUpdateMask(Qt::ScreenOrientations mask)

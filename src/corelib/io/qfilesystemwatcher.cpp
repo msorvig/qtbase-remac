@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtCore module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -52,7 +58,7 @@
 #  include "qfilesystemwatcher_win_p.h"
 #elif defined(USE_INOTIFY)
 #  include "qfilesystemwatcher_inotify_p.h"
-#elif defined(Q_OS_FREEBSD) || defined(Q_OS_NETBSD) || defined(Q_OS_IOS)
+#elif defined(Q_OS_FREEBSD) || defined(Q_OS_NETBSD) || defined(QT_PLATFORM_UIKIT)
 #  include "qfilesystemwatcher_kqueue_p.h"
 #elif defined(Q_OS_OSX)
 #  include "qfilesystemwatcher_fsevents_p.h"
@@ -68,7 +74,7 @@ QFileSystemWatcherEngine *QFileSystemWatcherPrivate::createNativeEngine(QObject 
     // there is a chance that inotify may fail on Linux pre-2.6.13 (August
     // 2005), so we can't just new inotify directly.
     return QInotifyFileSystemWatcherEngine::create(parent);
-#elif defined(Q_OS_FREEBSD) || defined(Q_OS_NETBSD) || defined(Q_OS_IOS)
+#elif defined(Q_OS_FREEBSD) || defined(Q_OS_NETBSD) || defined(QT_PLATFORM_UIKIT)
     return QKqueueFileSystemWatcherEngine::create(parent);
 #elif defined(Q_OS_OSX)
     return QFseventsFileSystemWatcherEngine::create(parent);
@@ -177,7 +183,7 @@ void QFileSystemWatcherPrivate::_q_directoryChanged(const QString &path, bool re
     \note The act of monitoring files and directories for
     modifications consumes system resources. This implies there is a
     limit to the number of files and directories your process can
-    monitor simultaneously. On Mac OS X 10.4 and all BSD variants, for
+    monitor simultaneously. On all BSD variants, for
     example, an open file descriptor is required for each monitored
     file. Some system limits the number of open file descriptors to 256
     by default. This means that addPath() and addPaths() will fail if
@@ -185,7 +191,7 @@ void QFileSystemWatcherPrivate::_q_directoryChanged(const QString &path, bool re
     the file system monitor. Also note that your process may have
     other file descriptors open in addition to the ones for files
     being monitored, and these other open descriptors also count in
-    the total. Mac OS X 10.5 and up use a different backend and do not
+    the total. OS X uses a different backend and does not
     suffer from this issue.
 
 
@@ -296,7 +302,9 @@ QStringList QFileSystemWatcher::addPaths(const QStringList &paths)
 
     QFileSystemWatcherEngine *engine = 0;
 
-    if(!objectName().startsWith(QLatin1String("_qt_autotest_force_engine_"))) {
+    const QString on = objectName();
+
+    if (!on.startsWith(QLatin1String("_qt_autotest_force_engine_"))) {
         // Normal runtime case - search intelligently for best engine
         if(d->native) {
             engine = d->native;
@@ -307,13 +315,13 @@ QStringList QFileSystemWatcher::addPaths(const QStringList &paths)
 
     } else {
         // Autotest override case - use the explicitly selected engine only
-        QString forceName = objectName().mid(26);
+        const QStringRef forceName = on.midRef(26);
         if(forceName == QLatin1String("poller")) {
-            qDebug() << "QFileSystemWatcher: skipping native engine, using only polling engine";
+            qDebug("QFileSystemWatcher: skipping native engine, using only polling engine");
             d_func()->initPollerEngine();
             engine = d->poller;
         } else if(forceName == QLatin1String("native")) {
-            qDebug() << "QFileSystemWatcher: skipping polling engine, using only native engine";
+            qDebug("QFileSystemWatcher: skipping polling engine, using only native engine");
             engine = d->native;
         }
     }

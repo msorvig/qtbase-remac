@@ -4,7 +4,7 @@
 
 load(qt_parts)
 
-SUBDIRS += qmake/qmake-docs.pro
+SUBDIRS += qmake/qmake-aux.pro
 
 cross_compile: CONFIG += nostrip
 
@@ -28,6 +28,7 @@ QMAKE_DISTCLEAN += \
     config.tests/.qmake.cache \
     mkspecs/qconfig.pri \
     mkspecs/qdevice.pri \
+    mkspecs/qhost.pri \
     mkspecs/qmodule.pri \
     src/corelib/global/qconfig.h \
     src/corelib/global/qconfig.cpp \
@@ -37,19 +38,15 @@ CONFIG -= qt
 
 ### installations ####
 
-#qmake
-qmake.path = $$[QT_HOST_BINS]
-equals(QMAKE_HOST.os, Windows) {
-   qmake.files = $$OUT_PWD/bin/qmake.exe
-} else {
-   qmake.files = $$OUT_PWD/bin/qmake
-}
-INSTALLS += qmake
-
 #licheck
 licheck.path = $$[QT_HOST_BINS]
 licheck.files = $$PWD/bin/$$QT_LICHECK
 !isEmpty(QT_LICHECK): INSTALLS += licheck
+
+#fixqt4headers.pl
+fixqt4headers.path = $$[QT_HOST_BINS]
+fixqt4headers.files = $$PWD/bin/fixqt4headers.pl
+INSTALLS += fixqt4headers
 
 #syncqt
 syncqt.path = $$[QT_HOST_BINS]
@@ -124,14 +121,14 @@ FWD_FEATURES_H = \
 write_file($$OUT_PWD/include/QtCore/qfeatures.h, FWD_FEATURES_H)|error("Aborting.")
 
 no_features =
-lines = $$cat($$absolute_path($$QT_QCONFIG_PATH, $$PWD/src/corelib/global), lines)
+lines = $$cat($$OUT_PWD/src/corelib/global/qconfig.h, lines)
 for (line, lines) {
     # We ignore all defines that don't follow the #ifndef + indent pattern.
     # This makes it possible to have unchecked defines which are no features.
     t = $$replace(line, "^$${LITERAL_HASH}  define QT_NO_(\\S+)\\s*$", "\\1")
     !isEqual(t, $$line) {
         isEmpty(features.$${t}.name): \
-            error("$$QT_QCONFIG_PATH disables unknown feature $$t")
+            error("qconfig.h disables unknown feature $$t")
         no_features += $$t
     }
 }
@@ -170,7 +167,8 @@ QMAKE_DISTCLEAN += \
 #mkspecs
 mkspecs.path = $$[QT_HOST_DATA]/mkspecs
 mkspecs.files = \
-    $$OUT_PWD/mkspecs/qconfig.pri $$OUT_PWD/mkspecs/qmodule.pri $$OUT_PWD/mkspecs/qdevice.pri $$OUT_PWD/mkspecs/qfeatures.pri \
+    $$OUT_PWD/mkspecs/qconfig.pri $$OUT_PWD/mkspecs/qmodule.pri $$OUT_PWD/mkspecs/qfeatures.pri \
+    $$OUT_PWD/mkspecs/qdevice.pri $$OUT_PWD/mkspecs/qhost.pri \
     $$files($$PWD/mkspecs/*)
 mkspecs.files -= $$PWD/mkspecs/modules $$PWD/mkspecs/modules-inst
 INSTALLS += mkspecs

@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the plugins of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -261,6 +267,7 @@ namespace QXcbAtom {
         AbsMTPositionY,
         AbsMTTouchMajor,
         AbsMTTouchMinor,
+        AbsMTOrientation,
         AbsMTPressure,
         AbsMTTrackingID,
         MaxContacts,
@@ -287,6 +294,7 @@ namespace QXcbAtom {
         _COMPIZ_DECOR_REQUEST,
         _COMPIZ_DECOR_DELETE_PIXMAP,
         _COMPIZ_TOOLKIT_ACTION,
+        _GTK_LOAD_ICONTHEMES,
 
         NPredefinedAtoms,
 
@@ -347,8 +355,10 @@ public:
     virtual void handleFocusInEvent(const xcb_focus_in_event_t *) {}
     virtual void handleFocusOutEvent(const xcb_focus_out_event_t *) {}
     virtual void handlePropertyNotifyEvent(const xcb_property_notify_event_t *) {}
-    virtual void handleXIMouseEvent(xcb_ge_event_t *) {}
-
+#ifdef XCB_USE_XINPUT22
+    virtual void handleXIMouseEvent(xcb_ge_event_t *, Qt::MouseEventSource = Qt::MouseEventNotSynthesized) {}
+    virtual void handleXIEnterLeave(xcb_ge_event_t *) {}
+#endif
     virtual QXcbWindow *toWindow() { return 0; }
 };
 
@@ -376,8 +386,10 @@ public:
 
     QXcbConnection *connection() const { return const_cast<QXcbConnection *>(this); }
 
+    const QList<QXcbVirtualDesktop *> &virtualDesktops() const { return m_virtualDesktops; }
     const QList<QXcbScreen *> &screens() const { return m_screens; }
     int primaryScreenNumber() const { return m_primaryScreenNumber; }
+    QXcbVirtualDesktop *primaryVirtualDesktop() const { return m_virtualDesktops.value(m_primaryScreenNumber); }
     QXcbScreen *primaryScreen() const;
 
     inline xcb_atom_t atom(QXcbAtom::Atom atom) const { return m_allAtoms[atom]; }
@@ -458,13 +470,19 @@ public:
     bool threadedEventHandling() const { return m_reader->isRunning(); }
 
     xcb_timestamp_t getTimestamp();
+    xcb_window_t getSelectionOwner(xcb_atom_t atom) const;
+    xcb_window_t getQtSelectionOwner();
 
-    void setButton(Qt::MouseButton button, bool down) { if (down) m_buttons |= button; else m_buttons &= ~button; }
+    void setButton(Qt::MouseButton button, bool down) { m_buttons.setFlag(button, down); }
     Qt::MouseButtons buttons() const { return m_buttons; }
     Qt::MouseButton translateMouseButton(xcb_button_t s);
 
     QXcbWindow *focusWindow() const { return m_focusWindow; }
     void setFocusWindow(QXcbWindow *);
+    QXcbWindow *mouseGrabber() const { return m_mouseGrabber; }
+    void setMouseGrabber(QXcbWindow *);
+    QXcbWindow *mousePressWindow() const { return m_mousePressWindow; }
+    void setMousePressWindow(QXcbWindow *);
 
     QByteArray startupId() const { return m_startupId; }
     void setStartupId(const QByteArray &nextId) { m_startupId = nextId; }
@@ -479,8 +497,8 @@ public:
     static bool xEmbedSystemTrayAvailable();
     static bool xEmbedSystemTrayVisualHasAlphaChannel();
 
-#ifdef XCB_USE_XINPUT2
-    void handleEnterEvent(const xcb_enter_notify_event_t *);
+#ifdef XCB_USE_XINPUT21
+    void handleEnterEvent();
 #endif
 
 #ifdef XCB_USE_XINPUT22
@@ -494,7 +512,9 @@ public:
 
     QXcbGlIntegration *glIntegration() const { return m_glIntegration; }
 
+#ifdef XCB_USE_XINPUT22
     bool xi2MouseEvents() const;
+#endif
 
 protected:
     bool event(QEvent *e) Q_DECL_OVERRIDE;
@@ -511,23 +531,26 @@ private:
     void initializeXFixes();
     void initializeXRender();
     void initializeXRandr();
+    void initializeXinerama();
     void initializeXShape();
     void initializeXKB();
     void handleClientMessageEvent(const xcb_client_message_event_t *event);
-    QXcbScreen* createScreen(QXcbVirtualDesktop *virtualDesktop,
-                             xcb_randr_output_t outputId = XCB_NONE,
-                             xcb_randr_get_output_info_reply_t *output = 0);
-    QXcbScreen* findScreenForCrtc(xcb_window_t rootWindow, xcb_randr_crtc_t crtc);
-    QXcbScreen* findScreenForOutput(xcb_window_t rootWindow, xcb_randr_output_t output);
-    QXcbVirtualDesktop* virtualDesktopForRootWindow(xcb_window_t rootWindow);
-    bool checkOutputIsPrimary(xcb_window_t rootWindow, xcb_randr_output_t output);
-    void initializeScreens();
+    QXcbScreen* findScreenForCrtc(xcb_window_t rootWindow, xcb_randr_crtc_t crtc) const;
+    QXcbScreen* findScreenForOutput(xcb_window_t rootWindow, xcb_randr_output_t output) const;
+    QXcbVirtualDesktop* virtualDesktopForRootWindow(xcb_window_t rootWindow) const;
     void updateScreens(const xcb_randr_notify_event_t *event);
+    bool checkOutputIsPrimary(xcb_window_t rootWindow, xcb_randr_output_t output);
+    void updateScreen(QXcbScreen *screen, const xcb_randr_output_change_t &outputChange);
+    QXcbScreen *createScreen(QXcbVirtualDesktop *virtualDesktop,
+                             const xcb_randr_output_change_t &outputChange,
+                             xcb_randr_get_output_info_reply_t *outputInfo);
+    void destroyScreen(QXcbScreen *screen);
+    void initializeScreens();
     bool compressEvent(xcb_generic_event_t *event, int currentIndex, QXcbEventArray *eventqueue) const;
 
+#ifdef XCB_USE_XINPUT2
     bool m_xi2Enabled;
     int m_xi2Minor;
-#ifdef XCB_USE_XINPUT2
     void initializeXInput2();
     void finalizeXInput2();
     void xi2SetupDevices();
@@ -558,9 +581,10 @@ private:
         };
         QHash<int, ValuatorClassInfo> valuatorInfo;
     };
-    bool xi2HandleTabletEvent(void *event, TabletData *tabletData, QXcbWindowEventListener *eventListener);
-    void xi2ReportTabletEvent(TabletData &tabletData, void *event);
+    bool xi2HandleTabletEvent(const void *event, TabletData *tabletData);
+    void xi2ReportTabletEvent(const void *event, TabletData *tabletData);
     QVector<TabletData> m_tabletData;
+    TabletData *tabletDataForDevice(int id);
 #endif // !QT_NO_TABLETEVENT
     struct ScrollingDevice {
         ScrollingDevice() : deviceId(0), verticalIndex(0), horizontalIndex(0), orientations(0), legacyOrientations(0) { }
@@ -575,7 +599,7 @@ private:
     void xi2HandleScrollEvent(void *event, ScrollingDevice &scrollingDevice);
     QHash<int, ScrollingDevice> m_scrollingDevices;
 
-    static bool xi2GetValuatorValueIfSet(void *event, int valuatorNum, double *value);
+    static bool xi2GetValuatorValueIfSet(const void *event, int valuatorNum, double *value);
     static void xi2PrepareXIGenericDeviceEvent(xcb_ge_event_t *event);
 #endif
 
@@ -622,7 +646,11 @@ private:
     QMutex m_callLogMutex;
     void log(const char *file, int line, int sequence);
     template <typename cookie_t>
-    friend cookie_t q_xcb_call_template(const cookie_t &cookie, QXcbConnection *connection, const char *file, int line);
+    friend cookie_t q_xcb_call_template(const cookie_t &cookie, QXcbConnection *connection,
+                                        const char *file, int line);
+    template <typename reply_t>
+    friend reply_t *q_xcb_call_template(reply_t *reply, QXcbConnection *connection,
+                                        const char *file, int line);
 #endif
 
     WindowMapper m_mapper;
@@ -633,6 +661,7 @@ private:
     uint32_t xrandr_first_event;
     uint32_t xkb_first_event;
 
+    bool has_xinerama_extension;
     bool has_shape_extension;
     bool has_randr_extension;
     bool has_input_shape;
@@ -641,12 +670,16 @@ private:
     Qt::MouseButtons m_buttons;
 
     QXcbWindow *m_focusWindow;
+    QXcbWindow *m_mouseGrabber;
+    QXcbWindow *m_mousePressWindow;
 
     xcb_window_t m_clientLeader;
     QByteArray m_startupId;
     QXcbSystemTrayTracker *m_systemTrayTracker;
     QXcbGlIntegration *m_glIntegration;
     bool m_xiGrab;
+
+    xcb_window_t m_qtSelectionOwner;
 
     friend class QXcbEventReader;
 };
@@ -683,10 +716,18 @@ private:
 
 #ifdef Q_XCB_DEBUG
 template <typename cookie_t>
-cookie_t q_xcb_call_template(const cookie_t &cookie, QXcbConnection *connection, const char *file, int line)
+cookie_t q_xcb_call_template(const cookie_t &cookie, QXcbConnection *connection, const char *file,
+                             int line)
 {
     connection->log(file, line, cookie.sequence);
     return cookie;
+}
+
+template <typename reply_t>
+reply_t *q_xcb_call_template(reply_t *reply, QXcbConnection *connection, const char *file, int line)
+{
+    connection->log(file, line, reply->sequence);
+    return reply;
 }
 #define Q_XCB_CALL(x) q_xcb_call_template(x, connection(), __FILE__, __LINE__)
 #define Q_XCB_CALL2(x, connection) q_xcb_call_template(x, connection, __FILE__, __LINE__)

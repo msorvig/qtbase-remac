@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the qmake application of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -922,6 +917,8 @@ bool VCCLCompilerTool::parseOption(const char* option)
                     TreatWChar_tAsBuiltInType = ((*c) == '-' ? _False : _True);
                 else if (config->CompilerVersion >= NET2013 && strncmp(option + 4, "strictStrings", 13) == 0)
                     AdditionalOptions += option;
+                else if (config->CompilerVersion >= NET2015 && strncmp(option + 4, "throwingNew", 11) == 0)
+                    AdditionalOptions += option;
                 else
                     found = false;
             } else {
@@ -1761,10 +1758,6 @@ VCManifestTool::VCManifestTool()
 {
 }
 
-VCManifestTool::~VCManifestTool()
-{
-}
-
 bool VCManifestTool::parseOption(const char *option)
 {
     Q_UNUSED(option);
@@ -2194,7 +2187,7 @@ void VCFilter::modifyPCHstage(QString str)
             break;
         }
     }
-    bool isHFile = Option::hasFileExtension(str, Option::h_ext) && (str == Project->precompH);
+    const bool isHFile = (str == Project->precompH);
     bool isCPPFile = pchThroughSourceFile && (str == Project->precompCPP);
 
     if(!isCFile && !isHFile && !isCPPFile)
@@ -2227,7 +2220,7 @@ void VCFilter::modifyPCHstage(QString str)
             lines << "* WARNING: All changes made in this file will be lost.";
             lines << "--------------------------------------------------------------------*/";
             lines << "#include \"" + Project->precompHFilename + "\"";
-            foreach(QString line, lines)
+            for (const QString &line : qAsConst(lines))
                 CustomBuildTool.CommandLine += "echo " + line + ">>" + toFile;
         }
         return;
@@ -2397,11 +2390,7 @@ bool VCFilter::addExtraCompiler(const VCFilterFile &info)
         if (!CustomBuildTool.Description.isEmpty())
             CustomBuildTool.Description += ", ";
         CustomBuildTool.Description += cmd_name;
-        // Execute custom build steps in an environment variable scope to prevent unwanted
-        // side effects for downstream build steps
-        CustomBuildTool.CommandLine += QLatin1String("setlocal");
         CustomBuildTool.CommandLine += VCToolBase::fixCommandLine(cmd.trimmed());
-        CustomBuildTool.CommandLine += QLatin1String("endlocal");
         int space = cmd.indexOf(' ');
         QFileInfo finf(cmd.left(space));
         if (CustomBuildTool.ToolPath.isEmpty())
@@ -2412,7 +2401,7 @@ bool VCFilter::addExtraCompiler(const VCFilterFile &info)
         // Make sure that all deps are only once
         QStringList uniqDeps;
         for (int c = 0; c < deps.count(); ++c) {
-            QString aDep = deps.at(c).trimmed();
+            QString aDep = deps.at(c);
             if (!aDep.isEmpty())
                 uniqDeps << aDep;
         }
@@ -2422,9 +2411,8 @@ bool VCFilter::addExtraCompiler(const VCFilterFile &info)
 
     // Ensure that none of the output files are also dependencies. Or else, the custom buildstep
     // will be rebuild every time, even if nothing has changed.
-    foreach(QString output, CustomBuildTool.Outputs) {
+    for (const QString &output : qAsConst(CustomBuildTool.Outputs))
         CustomBuildTool.AdditionalDependencies.removeAll(output);
-    }
 
     useCustomBuildTool = !CustomBuildTool.CommandLine.isEmpty();
     return useCustomBuildTool;

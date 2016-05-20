@@ -1,31 +1,26 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the test suite of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -238,6 +233,9 @@ private slots:
 
     void multiTargetTransitionInsideParallelStateGroup();
     void signalTransitionNormalizeSignature();
+#ifdef Q_COMPILER_DELEGATING_CONSTRUCTORS
+    void createPointerToMemberSignalTransition();
+#endif
     void createSignalTransitionWhenRunning();
     void createEventTransitionWhenRunning();
     void signalTransitionSenderInDifferentThread();
@@ -249,8 +247,10 @@ private slots:
     void qtbug_44783();
     void internalTransition();
     void conflictingTransition();
+    void conflictingTransition2();
     void qtbug_46059();
     void qtbug_46703();
+    void postEventFromBeginSelectTransitions();
 };
 
 class TestState : public QState
@@ -5875,6 +5875,31 @@ void tst_QStateMachine::signalTransitionNormalizeSignature()
     TEST_ACTIVE_CHANGED(s1, 1);
 }
 
+#ifdef Q_COMPILER_DELEGATING_CONSTRUCTORS
+void tst_QStateMachine::createPointerToMemberSignalTransition()
+{
+    QStateMachine machine;
+    QState *s1 = new QState(&machine);
+    DEFINE_ACTIVE_SPY(s1);
+    machine.setInitialState(s1);
+    machine.start();
+    TEST_ACTIVE_CHANGED(s1, 1);
+    QTRY_VERIFY(machine.configuration().contains(s1));
+
+    QState *s2 = new QState(&machine);
+    DEFINE_ACTIVE_SPY(s2);
+    SignalEmitter emitter;
+    QSignalTransition *t1 = new QSignalTransition(&emitter, &SignalEmitter::signalWithNoArg, s1);
+    QCOMPARE(t1->sourceState(), s1);
+    t1->setTargetState(s2);
+    s1->addTransition(t1);
+    emitter.emitSignalWithNoArg();
+    TEST_ACTIVE_CHANGED(s1, 2);
+    TEST_ACTIVE_CHANGED(s2, 1);
+    QTRY_VERIFY(machine.configuration().contains(s2));
+}
+#endif
+
 void tst_QStateMachine::createSignalTransitionWhenRunning()
 {
     QStateMachine machine;
@@ -6448,6 +6473,71 @@ void tst_QStateMachine::conflictingTransition()
     QVERIFY(machine.isRunning());
 }
 
+void tst_QStateMachine::conflictingTransition2()
+{
+    SignalEmitter emitter;
+
+    QStateMachine machine;
+    QState s0(&machine);
+        QState p0(QState::ParallelStates, &s0);
+            QState p0s1(&p0);
+            QState p0s2(&p0);
+            QState p0s3(&p0);
+    QState s1(&machine);
+
+    machine.setInitialState(&s0);
+    s0.setInitialState(&p0);
+
+    QSignalTransition *t1 = new QSignalTransition(&emitter, SIGNAL(signalWithNoArg()));
+    p0s1.addTransition(t1);
+    QSignalTransition *t2 = p0s2.addTransition(&emitter, SIGNAL(signalWithNoArg()), &p0s1);
+    QSignalTransition *t3 = p0s3.addTransition(&emitter, SIGNAL(signalWithNoArg()), &s1);
+    QSignalSpy t1Spy(t1, &QAbstractTransition::triggered);
+    QSignalSpy t2Spy(t2, &QAbstractTransition::triggered);
+    QSignalSpy t3Spy(t3, &QAbstractTransition::triggered);
+    QVERIFY(t1Spy.isValid());
+    QVERIFY(t2Spy.isValid());
+    QVERIFY(t3Spy.isValid());
+
+    s0.setObjectName("s0");
+    p0.setObjectName("p0");
+    p0s1.setObjectName("p0s1");
+    p0s2.setObjectName("p0s2");
+    p0s3.setObjectName("p0s3");
+    s1.setObjectName("s1");
+    t1->setObjectName("p0s1->p0s1");
+    t2->setObjectName("p0s2->p0s1");
+    t3->setObjectName("p0s3->s1");
+
+    machine.start();
+
+    QTRY_COMPARE(machine.configuration().contains(&s0), true);
+    QTRY_COMPARE(machine.configuration().contains(&p0), true);
+    QTRY_COMPARE(machine.configuration().contains(&p0s1), true);
+    QTRY_COMPARE(machine.configuration().contains(&p0s2), true);
+    QTRY_COMPARE(machine.configuration().contains(&p0s3), true);
+    QTRY_COMPARE(machine.configuration().contains(&s1), false);
+
+    QCOMPARE(t1Spy.count(), 0);
+    QCOMPARE(t2Spy.count(), 0);
+    QCOMPARE(t3Spy.count(), 0);
+
+    emitter.emitSignalWithNoArg();
+
+    QTRY_COMPARE(machine.configuration().contains(&s0), true);
+    QTRY_COMPARE(machine.configuration().contains(&p0), true);
+    QTRY_COMPARE(machine.configuration().contains(&p0s1), true);
+    QTRY_COMPARE(machine.configuration().contains(&p0s2), true);
+    QTRY_COMPARE(machine.configuration().contains(&p0s3), true);
+    QTRY_COMPARE(machine.configuration().contains(&s1), false);
+
+    QCOMPARE(t1Spy.count(), 1);
+    QCOMPARE(t2Spy.count(), 1);
+    QCOMPARE(t3Spy.count(), 0); // t3 got preempted by t2
+
+    QVERIFY(machine.isRunning());
+}
+
 void tst_QStateMachine::qtbug_46059()
 {
     QStateMachine machine;
@@ -6536,6 +6626,34 @@ void tst_QStateMachine::qtbug_46703()
     QTRY_COMPARE(machine.configuration().contains(&b), true);
     QTRY_COMPARE(machine.configuration().contains(&b1), false);
     QTRY_COMPARE(machine.configuration().contains(&b2), true);
+
+    QVERIFY(machine.isRunning());
+}
+
+void tst_QStateMachine::postEventFromBeginSelectTransitions()
+{
+    class StateMachine : public QStateMachine {
+    protected:
+        void beginSelectTransitions(QEvent* e) Q_DECL_OVERRIDE {
+            if (e->type() == QEvent::Type(QEvent::User + 2))
+                postEvent(new QEvent(QEvent::Type(QEvent::User + 1)), QStateMachine::HighPriority);
+        }
+    } machine;
+    QState a(&machine);
+    QState success(&machine);
+
+    machine.setInitialState(&a);
+    a.addTransition(new EventTransition(QEvent::Type(QEvent::User + 1), &success));
+
+    machine.start();
+
+    QTRY_COMPARE(machine.configuration().contains(&a), true);
+    QTRY_COMPARE(machine.configuration().contains(&success), false);
+
+    machine.postEvent(new QEvent(QEvent::Type(QEvent::User + 2)), QStateMachine::NormalPriority);
+
+    QTRY_COMPARE(machine.configuration().contains(&a), false);
+    QTRY_COMPARE(machine.configuration().contains(&success), true);
 
     QVERIFY(machine.isRunning());
 }

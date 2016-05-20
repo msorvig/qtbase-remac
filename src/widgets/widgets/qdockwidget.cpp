@@ -1,31 +1,37 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWidgets module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -224,7 +230,7 @@ bool QDockWidgetLayout::nativeWindowDeco() const
  */
 bool QDockWidgetLayout::wmSupportsNativeWindowDeco()
 {
-#if defined(Q_OS_WINCE) || defined(Q_OS_ANDROID)
+#if defined(Q_OS_ANDROID)
     return false;
 #else
     static const bool xcb = !QGuiApplication::platformName().compare(QLatin1String("xcb"), Qt::CaseInsensitive);
@@ -245,7 +251,7 @@ bool QDockWidgetLayout::nativeWindowDeco(bool floating) const
 
 void QDockWidgetLayout::addItem(QLayoutItem*)
 {
-    qWarning() << "QDockWidgetLayout::addItem(): please use QDockWidgetLayout::setWidget()";
+    qWarning("QDockWidgetLayout::addItem(): please use QDockWidgetLayout::setWidget()");
     return;
 }
 
@@ -507,7 +513,7 @@ void QDockWidgetLayout::setGeometry(const QRect &geometry)
         if (QLayoutItem *item = item_list[TitleBar]) {
             item->setGeometry(_titleArea);
         } else {
-            QStyleOptionDockWidgetV2 opt;
+            QStyleOptionDockWidget opt;
             q->initStyleOption(&opt);
 
             if (QLayoutItem *item = item_list[CloseButton]) {
@@ -650,10 +656,7 @@ void QDockWidget::initStyleOption(QStyleOptionDockWidget *option) const
     option->floatable = hasFeature(this, QDockWidget::DockWidgetFloatable);
 
     QDockWidgetLayout *l = qobject_cast<QDockWidgetLayout*>(layout());
-    QStyleOptionDockWidgetV2 *v2
-        = qstyleoption_cast<QStyleOptionDockWidgetV2*>(option);
-    if (v2 != 0)
-        v2->verticalTitleBar = l->verticalTitleBar;
+    option->verticalTitleBar = l->verticalTitleBar;
 }
 
 void QDockWidgetPrivate::_q_toggleView(bool b)
@@ -1096,14 +1099,8 @@ void QDockWidgetPrivate::setWindowState(bool floating, bool unplug, const QRect 
     q->setWindowFlags(flags);
 
 
-    if (!rect.isNull()) {
-        if (floating) {
-            q->resize(rect.size());
-            q->move(rect.topLeft());
-        } else {
+    if (!rect.isNull())
             q->setGeometry(rect);
-        }
-    }
 
     updateButtons();
 
@@ -1227,10 +1224,8 @@ QDockWidget::QDockWidget(QWidget *parent, Qt::WindowFlags flags)
     \sa setWindowTitle()
 */
 QDockWidget::QDockWidget(const QString &title, QWidget *parent, Qt::WindowFlags flags)
-    : QWidget(*new QDockWidgetPrivate, parent, flags)
+    : QDockWidget(parent, flags)
 {
-    Q_D(QDockWidget);
-    d->init();
     setWindowTitle(title);
 }
 
@@ -1437,7 +1432,7 @@ void QDockWidget::paintEvent(QPaintEvent *event)
 
         // Title must be painted after the frame, since the areas overlap, and
         // the title may wish to extend out to all sides (eg. XP style)
-        QStyleOptionDockWidgetV2 titleOpt;
+        QStyleOptionDockWidget titleOpt;
         initStyleOption(&titleOpt);
         p.drawControl(QStyle::CE_DockWidgetTitle, titleOpt);
     }
@@ -1454,6 +1449,8 @@ bool QDockWidget::event(QEvent *event)
     switch (event->type()) {
 #ifndef QT_NO_ACTION
     case QEvent::Hide:
+        if (d->state && d->state->dragging)
+            d->endDrag(true);
         if (layout != 0)
             layout->keepSize(this);
         d->toggleViewAction->setChecked(false);
@@ -1683,5 +1680,6 @@ QT_END_NAMESPACE
 
 #include "qdockwidget.moc"
 #include "moc_qdockwidget.cpp"
+#include "moc_qdockwidget_p.cpp"
 
 #endif // QT_NO_DOCKWIDGET

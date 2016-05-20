@@ -1,15 +1,6 @@
 TARGET     = QtXcbQpa
 CONFIG += no_module_headers internal_module
 
-MODULE_INCLUDES = \
-    \$\$QT_MODULE_INCLUDE_BASE \
-    \$\$QT_MODULE_INCLUDE_BASE/QtQGui
-MODULE_PRIVATE_INCLUDES = \
-    \$\$QT_MODULE_INCLUDE_BASE/QtGui/$$QT.gui.VERSION \
-    \$\$QT_MODULE_INCLUDE_BASE/QtGui/$$QT.gui.VERSION/QtGui
-
-load(qt_module)
-
 QT += core-private gui-private platformsupport-private
 
 SOURCES = \
@@ -47,8 +38,6 @@ HEADERS = \
         qxcbxsettings.h \
         qxcbsystemtraytracker.h
 
-LIBS += $$QMAKE_LIBS_DYNLOAD
-
 DEFINES += QT_BUILD_XCB_PLUGIN
 # needed by Xcursor ...
 contains(QT_CONFIG, xcb-xlib) {
@@ -59,10 +48,10 @@ contains(QT_CONFIG, xcb-xlib) {
         DEFINES += XCB_USE_XINPUT2
         SOURCES += qxcbconnection_xi2.cpp
         LIBS += -lXi
-        !isEmpty(QMAKE_LIBXI_VERSION_MAJOR) {
-            DEFINES += LIBXI_MAJOR=$$QMAKE_LIBXI_VERSION_MAJOR \
-                       LIBXI_MINOR=$$QMAKE_LIBXI_VERSION_MINOR \
-                       LIBXI_PATCH=$$QMAKE_LIBXI_VERSION_PATCH
+        !isEmpty(QMAKE_XINPUT2_VERSION_MAJOR) {
+            DEFINES += LIBXI_MAJOR=$$QMAKE_XINPUT2_VERSION_MAJOR \
+                       LIBXI_MINOR=$$QMAKE_XINPUT2_VERSION_MINOR \
+                       LIBXI_PATCH=$$QMAKE_XINPUT2_VERSION_PATCH
         }
     }
 }
@@ -92,7 +81,7 @@ CONFIG += qpa/genericunixfontdatabase
 
 contains(QT_CONFIG, dbus-linked) {
     QT += dbus
-    LIBS += $$QT_LIBS_DBUS
+    LIBS += $$QMAKE_LIBS_DBUS
 }
 
 contains(QT_CONFIG, xcb-qt) {
@@ -101,7 +90,7 @@ contains(QT_CONFIG, xcb-qt) {
     INCLUDEPATH += $$XCB_DIR/include $$XCB_DIR/sysinclude
     LIBS += -lxcb -L$$OUT_PWD/xcb-static -lxcb-static
 } else {
-    LIBS += -lxcb -lxcb-image -lxcb-icccm -lxcb-sync -lxcb-xfixes -lxcb-shm -lxcb-randr -lxcb-shape -lxcb-keysyms
+    LIBS += -lxcb -lxcb-image -lxcb-icccm -lxcb-sync -lxcb-xfixes -lxcb-shm -lxcb-randr -lxcb-shape -lxcb-keysyms -lxcb-xinerama
     !contains(DEFINES, QT_NO_XKB):LIBS += -lxcb-xkb
 }
 
@@ -114,3 +103,4 @@ contains(QT_CONFIG, xkbcommon-qt) {
     QMAKE_CXXFLAGS += $$QMAKE_CFLAGS_XKBCOMMON
 }
 
+load(qt_module)
