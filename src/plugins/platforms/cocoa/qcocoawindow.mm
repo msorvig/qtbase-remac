@@ -438,7 +438,7 @@ QCocoaWindow::~QCocoaWindow()
 
     // The QNSView object may outlive the corresponding QCocoaWindow object,
     // for example during app shutdown when the QNSView is embedded in a
-    // foregin NSView hiearchy. Clear the pointers to the QWindow/QCocoaWindow
+    // foreign NSView hiearchy. Clear the pointers to the QWindow/QCocoaWindow
     // here to make sure QNSView does not dereference stale pointers.
     if (m_qtView) {
         [m_qtView clearQWindowPointers];
@@ -1267,7 +1267,7 @@ QNSView *QCocoaWindow::qtView() const
     if (!m_lazyNativeViewAndWindows || m_lazyNativeViewAndWindowsCreated)
         return m_qtView;
 
-    // Don't create a QNSView if this QWindow is managing a foregin NSView.
+    // Don't create a QNSView if this QWindow is managing a foreign NSView.
     if (m_contentView)
         return nil;
 
@@ -1978,8 +1978,8 @@ NSView *QCocoaWindow::transferViewOwnership()
     if (!m_ownsQtView)
         return m_qtView;
 
-    // Check if the view actually is a QNSView and not foregin view.
-    // Transferring ownership of the QWindow instance to a foregin view
+    // Check if the view actually is a QNSView and not foreign view.
+    // Transferring ownership of the QWindow instance to a foreign view
     // does not make sense: a generic NSView has no idea what a QWindow is.
     if (!m_qtView) {
         qWarning("QCocoaWindow::transferViewOwnership: Could not transfer ownership to a non-QNSView");
