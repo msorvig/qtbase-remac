@@ -174,7 +174,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 - (void) requestUpdate;
 - (void) requestUpdateWithRect:(QRect)rect;
 - (void) requestUpdateWithRegion:(QRegion)region;
-- (void) sendUpdateRequest:(QRect)rect;
+- (void) sendUpdateRequest;
 
 - (void) triggerUpdateRequest:(const CVTimeStamp *) now output:(const CVTimeStamp *)target;
 

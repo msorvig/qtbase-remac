@@ -657,18 +657,18 @@ void QPlatformWindow::requestUpdate()
 
 void QPlatformWindow::requestUpdate(const QRect &rect)
 {
+    Q_UNUSED(rect);
     requestUpdate();
 }
 
 void QPlatformWindow::requestUpdate(const QRegion &region)
 {
+    Q_UNUSED(region);
     requestUpdate();
 }
 
-void QPlatformWindow::deliverUpdateRequest(const QRect &rect)
+void QPlatformWindow::deliverUpdateRequest()
 {
-    Q_UNUSED(rect);
-
     QWindow *w = window();
     QWindowPrivate *wp = (QWindowPrivate *) QObjectPrivate::get(w);
     wp->deliverUpdateRequest();

@@ -630,7 +630,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     qCDebug(lcQpaCocoaWindow) << "[QNSView drawRect:]" << m_window << qt_mac_toQRect(dirtyRect);
 
     QBoolBlocker inDrawRect(m_inDrawRect);
-    QRect dirty = qt_mac_toQRect(dirtyRect);
 
 #ifndef QT_NO_OPENGL
     if (m_glContext && m_shouldSetGLContextinDrawRect) {
@@ -651,7 +650,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // flush; in that case there already is new/up to date backingstore
     // content.
     if (!m_inFlushBackingStore)
-        [self sendUpdateRequest:dirty];
+        [self sendUpdateRequest];
 
     // Now draw the backing store
     bool usesCustomOpenGLLayer = (m_platformWindow->m_inLayerMode && m_window->supportsOpenGL());
@@ -2463,7 +2462,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     m_displayLinkOutputTime = 0;
 }
 
-- (void) sendUpdateRequest:(QRect) dirty
+- (void) sendUpdateRequest
 {
     // This function may be called either from the displaylink calback or in response
     // to window visibility or geometry change events. Separate the handling of the
@@ -2477,7 +2476,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
         // Send update request to Qt. This is a synchronous call.
         m_requestUpdateCalled = false;
-        m_platformWindow->deliverUpdateRequest(dirty);
+        m_platformWindow->deliverUpdateRequest();
 
         // Wake the displaylink thread, allowing it to return from the displaylink callback.
         m_displayLinkWait.wakeAll();
@@ -2485,11 +2484,11 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         // Send other updates as expose events.
         QSize viewSize = qt_mac_toQSize(self.frame.size);
         qreal dpr = m_platformWindow->devicePixelRatio();
-        bool didSendExpose =  m_platformWindow->updateExposedState(viewSize, dpr);
+        bool didSendExpose = m_platformWindow->updateExposedState(viewSize, dpr);
 
         // But we really need to provide a frame.  (At least when using a CAopenGLLayer)
         if (!didSendExpose)
-            m_platformWindow->deliverUpdateRequest(dirty);
+            m_platformWindow->deliverUpdateRequest();
     }
 }
 

@@ -127,8 +127,7 @@
     Q_UNUSED(timeStamp);
 
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &m_drawFbo);
-    QRect dirty;
-    [m_view sendUpdateRequest:dirty];
+    [m_view sendUpdateRequest];
     m_drawFbo = 0;
 }
 

@@ -155,7 +155,7 @@ protected:
     QPlatformScreen *screenForGeometry(const QRect &newGeometry) const;
     static QSize constrainWindowSize(const QSize &size);
 public: // ### for QNSView
-    void deliverUpdateRequest(const QRect &rect);
+    void deliverUpdateRequest();
 protected:
     QScopedPointer<QPlatformWindowPrivate> d_ptr;
 private:
