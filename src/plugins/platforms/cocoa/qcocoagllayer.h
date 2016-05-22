@@ -37,7 +37,7 @@
 @class QNSView;
 class QCocoaWindow;
 
-@interface QCocoaOpenGLLayer : NSOpenGLLayer
+@interface QCocoaGLLayer : NSOpenGLLayer
 {
     QNSView *m_view;
     QCocoaWindow *m_window;
@@ -49,4 +49,4 @@ class QCocoaWindow;
 
 @end
 
-QCocoaOpenGLLayer *qcocoaopengllayer_cast(CALayer *layer);
+QCocoaGLLayer *qcocoaopengllayer_cast(CALayer *layer);

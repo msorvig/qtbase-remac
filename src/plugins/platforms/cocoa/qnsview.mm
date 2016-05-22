@@ -283,7 +283,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // non-default framebuffer, the exact one only known at
     // layer draw callback time.
     if (m_window->surfaceType() == QWindow::OpenGLSurface)
-        return [[QCocoaOpenGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
+        return [[QCocoaGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
 
     // RasterGLSurface may push either OpenGL or raster content.
     // Since which one isn't known at this point, create an OpenGL
@@ -291,7 +291,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // raster flush path then handles flusing raster content to
     // the OpenGL layer.
     if (m_window->surfaceType() == QWindow::RasterGLSurface)
-        return [[QCocoaOpenGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
+        return [[QCocoaGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
 
     // RasterSurface windows could get a raster layer, or use the
     // standard drawRect raster path. Do he latter for now.

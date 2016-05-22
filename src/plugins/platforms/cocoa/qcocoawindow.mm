@@ -1989,7 +1989,7 @@ GLuint QCocoaWindow::defaultFramebufferObject() const
         return 0;
     if (!m_inLayerMode)
         return 0;
-    if (QCocoaOpenGLLayer *layer = qcocoaopengllayer_cast([m_qtView layer]))
+    if (QCocoaGLLayer *layer = qcocoaopengllayer_cast([m_qtView layer]))
         return [layer drawFbo];
     return 0;
 }

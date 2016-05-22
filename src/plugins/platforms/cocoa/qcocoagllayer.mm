@@ -41,7 +41,7 @@
 #include <OpenGL.h>
 #include <gl.h>
 
-@implementation QCocoaOpenGLLayer
+@implementation QCocoaGLLayer
 
 - (id)initWithQNSView:(QNSView *)qtView andQCocoaWindow:(QCocoaWindow *)qtWindow
 {
@@ -81,7 +81,7 @@
     // Create a default pixel format if there was no context. This is probably not what
     // was intended by user code, so we should possibly have a qWarning() here.
     if (!pixelFormat) {
-        qWarning("QCocoaOpenGLLayer openGLPixelFormatForDisplayMask: Using default pixel format");
+        qWarning("QCocoaGLLayer openGLPixelFormatForDisplayMask: Using default pixel format");
 
         NSOpenGLPixelFormatAttribute attributes [] =
         {
@@ -139,9 +139,9 @@
 
 @end
 
-QCocoaOpenGLLayer *qcocoaopengllayer_cast(CALayer *layer)
+QCocoaGLLayer *qcocoaopengllayer_cast(CALayer *layer)
 {
-    if ([layer isKindOfClass:[QCocoaOpenGLLayer class]])
-        return static_cast<QCocoaOpenGLLayer *>(layer);
+    if ([layer isKindOfClass:[QCocoaGLLayer class]])
+        return static_cast<QCocoaGLLayer *>(layer);
     return 0;
 }
