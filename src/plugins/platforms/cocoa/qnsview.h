@@ -103,8 +103,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     bool m_exposedOnMoveToWindow;
     NSEvent *m_currentlyInterpretedKeyEvent;
     bool m_isMenuView;
-    QHash<int, bool> m_acceptedKeyDowns;
-    QSet<Qt::MouseButton> m_acceptedMouseDowns;
+    QSet<quint32> m_acceptedKeyDowns;
     bool m_inDrawRect;
     bool m_inFlushBackingStore;
     @public bool m_ownsQWindow;
@@ -129,7 +128,6 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
 - (void)notifyWindowWillZoom:(BOOL)willZoom;
 - (void)textInputContextKeyboardSelectionDidChangeNotification : (NSNotification *) textInputContextKeyboardSelectionDidChangeNotification;
 - (void)viewDidHide;
-- (void)viewDidUnhide;
 - (void)removeFromSuperview;
 
 - (BOOL)isFlipped;

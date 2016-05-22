@@ -163,9 +163,9 @@ static void updateFormatFromPixelFormat(QSurfaceFormat *format, QSurfaceFormat r
         format->setOption(QSurfaceFormat::StereoBuffers);
 }
 
-void (*QCocoaGLContext::getProcAddress(const QByteArray &procName))()
+QFunctionPointer QCocoaGLContext::getProcAddress(const char *procName)
 {
-    return qcgl_getProcAddress(procName);
+    return (QFunctionPointer)dlsym(RTLD_DEFAULT, procName);
 }
 
 QSurfaceFormat QCocoaGLContext::format() const
@@ -449,7 +449,7 @@ bool QCocoaGLContext::isValid() const
 
 bool QCocoaGLContext::isSharing() const
 {
-    return (QFunctionPointer)dlsym(RTLD_DEFAULT, procName);
+    return m_shareContext != nil;
 }
 
 void QCocoaGLContext::update()

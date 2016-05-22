@@ -374,16 +374,12 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     if (m_platformWindow->m_inConstructor)
         return;
 
-    const bool isResize = geometry.size() != m_platformWindow->geometry().size();
-
     // It can happen that self.window is nil (if we are changing
     // styleMask from/to borderless and content view is being re-parented)
     // - this results in an invalid coordinates.
     if (m_platformWindow->m_inSetStyleMask && !self.window)
         return;
 
-     qCDebug(lcQpaCocoaWindow) << "[QNSView udpateGeometry:]" << m_window
-                               << "current" << m_platformWindow->geometry() << "new" << geometry;
     // Child NSWindow windows are special-cased (see QCocoaWindow::setCocoaGeometry)
     if (m_platformWindow->m_isNSWindowChild)
         return;
@@ -411,6 +407,9 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // Stop if the geometry has not actually changed.
     if (newGeometry == m_platformWindow->QPlatformWindow::geometry())
         return;
+
+    qCDebug(lcQpaCocoaWindow) << "[QNSView udpateGeometry:]" << m_window
+                              << "current" << m_platformWindow->geometry() << "new" << newGeometry;
 
     // Store new geometry and notify Qt of the change
     m_platformWindow->QPlatformWindow::setGeometry(newGeometry);
@@ -888,76 +887,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     Q_UNUSED(qtScreenPoint);
 
     // Maintain masked state for the button for use by MouseDragged and MouseUp.
-    const bool masked = m_maskRegion.contains(qtWindowPoint.toPoint());
-    if (masked)
-        m_acceptedMouseDowns.remove(button);
-    else
-        m_acceptedMouseDowns.insert(button);
-
-    // Forward masked out events to the next responder
-    if (masked)
-        return false;
-
-    if (button == Qt::RightButton)
-        m_sendUpAsRightButton = true;
-
-    m_buttons |= button;
-
-    [self handleMouseEvent:theEvent];
-    return true;
-}
-
-- (bool)handleMouseDraggedEvent:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput))
-        return false;
-
-     Qt::MouseButton button = cocoaButton2QtButton([theEvent buttonNumber]);
-
-    // Forward the event to the next responder if Qt did not accept the
-    // corresponding mouse down for this button
-    if (!m_acceptedMouseDowns.contains(button))
-        return false;
-
-    [self handleMouseEvent:theEvent];
-    return true;
-}
-
-- (bool)handleMouseUpEvent:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput))
-        return false;
-
-    Qt::MouseButton button = cocoaButton2QtButton([theEvent buttonNumber]);
-
-    // Forward the event to the next responder if Qt did not accept the
-    // corresponding mouse down for this button
-    if (!m_acceptedMouseDowns.contains(button))
-        return false;
-
-
-    NSPoint nsViewPoint = [self convertPoint: windowPoint fromView: nil];
-    QPoint qtWindowPoint = QPoint(nsViewPoint.x, titleBarHeight + nsViewPoint.y);
-    NSPoint screenPoint = [window convertRectToScreen:NSMakeRect(windowPoint.x, windowPoint.y, 0, 0)].origin;
-    QPoint qtScreenPoint = QPoint(screenPoint.x, qt_mac_flipYCoordinate(screenPoint.y));
-
-    ulong timestamp = [theEvent timestamp] * 1000;
-    QWindowSystemInterface::handleFrameStrutMouseEvent(m_window, timestamp, qtWindowPoint, qtScreenPoint, m_frameStrutButtons);
-}
-
-- (bool)handleMouseDownEvent:(NSEvent *)theEvent
-{
-    if (m_window && (m_window->flags() & Qt::WindowTransparentForInput))
-        return false;
-
-    Qt::MouseButton button = cocoaButton2QtButton([theEvent buttonNumber]);
-
-    QPointF qtWindowPoint;
-    QPointF qtScreenPoint;
-    [self convertFromScreen:[self screenMousePoint:theEvent] toWindowPoint:&qtWindowPoint andScreenPoint:&qtScreenPoint];
-    Q_UNUSED(qtScreenPoint);
-
-    // Maintain masked state for the button for use by MouseDragged and MouseUp.
     const bool masked = [self hasMask] && !m_maskRegion.contains(qtWindowPoint.toPoint());
     if (masked)
         m_acceptedMouseDowns &= ~button;
@@ -1102,7 +1031,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         [super mouseDragged:theEvent];
 }
 
-- (void)mouseUp:(NSEvent *)theEvent {
+- (void)mouseUp:(NSEvent *)theEvent
 {
     const bool accepted = [self handleMouseUpEvent:theEvent];
     if (!accepted)
@@ -1152,6 +1081,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 }
 
 - (void)handleFrameStrutMouseEvent:(NSEvent *)theEvent
+{
     // get m_buttons in sync
     // Don't send frme strut events if we are in the middle of a mouse drag.
     if (m_buttons != Qt::NoButton)
@@ -1819,7 +1749,6 @@ static QTabletEvent::TabletDevice wacomTabletDevice(NSEvent *theEvent)
     }
     bool accepted = [self handleKeyEvent:nsevent eventType:int(QEvent::KeyPress)];
 
-
     // Track keyDown acceptance state for later acceptance of the keyUp.
     if (accepted)
         m_acceptedKeyDowns.insert([nsevent keyCode]);
@@ -1833,7 +1762,6 @@ static QTabletEvent::TabletDevice wacomTabletDevice(NSEvent *theEvent)
 {
     if (m_window && (m_window->flags() & Qt::WindowTransparentForInput) )
         return [super keyUp:nsevent];
-    bool accepted = [self handleKeyEvent:nsevent eventType:int(QEvent::KeyRelease)];
 
     const bool keyUpAccepted = [self handleKeyEvent:nsevent eventType:int(QEvent::KeyRelease)];
 

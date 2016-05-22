@@ -65,7 +65,7 @@ public:
     void doneCurrent() Q_DECL_OVERRIDE;
     bool isSharing() const Q_DECL_OVERRIDE;
     bool isValid() const Q_DECL_OVERRIDE;
-    void (*getProcAddress(const QByteArray &procName)) () Q_DECL_OVERRIDE;
+    QFunctionPointer getProcAddress(const char *procName) Q_DECL_OVERRIDE;
 
     // Helpers
     static QCocoaGLContext *contextForTargetWindow(QWindow *window);
