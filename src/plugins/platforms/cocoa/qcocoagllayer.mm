@@ -48,6 +48,7 @@
     [super init];
     m_view = qtView;
     m_window = qtWindow;
+    m_drawFbo = 0;
 
     self.asynchronous = NO;
 
@@ -115,19 +116,32 @@
                forLayerTime:(CFTimeInterval)timeInterval
                 displayTime:(const CVTimeStamp *)timeStamp
 {
+
+    // Unused: assume context does not change from the one provided in
+    // the init functions.
     Q_UNUSED(context);
     Q_UNUSED(pixelFormat);
+
+    // Unused: time stamps are provided by the outed DisplayLink driver
     Q_UNUSED(timeInterval);
     Q_UNUSED(timeStamp);
 
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &m_drawFbo);
-//    qDebug() << "";
-//    qDebug() << "drawInOpenGLContext" << "draw fbo is" << m_drawFbo;
-
-    QRect dirty(0,0, 999, 999);
+    QRect dirty;
     [m_view sendUpdateRequest:dirty];
+    m_drawFbo = 0;
+}
 
-    [m_view drawBackingStoreUsingQOpenGL];
+- (GLint)drawFbo
+{
+    return m_drawFbo;
 }
 
 @end
+
+QCocoaOpenGLLayer *qcocoaopengllayer_cast(CALayer *layer)
+{
+    if ([layer isKindOfClass:[QCocoaOpenGLLayer class]])
+        return static_cast<QCocoaOpenGLLayer *>(layer);
+    return 0;
+}

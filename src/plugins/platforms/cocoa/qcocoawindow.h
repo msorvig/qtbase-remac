@@ -149,6 +149,7 @@ class QCocoaWindow : public QPlatformWindow
 public:
     QCocoaWindow(QWindow *tlw);
     ~QCocoaWindow();
+    static QCocoaWindow *get(QWindow *window);
 
     void setGeometry(const QRect &rect) Q_DECL_OVERRIDE;
     QRect geometry() const Q_DECL_OVERRIDE;
@@ -247,6 +248,9 @@ public:
     const CVTimeStamp *displayLinkNowTime() const;
     static const CVTimeStamp *displayLinkOutputTimeStatic(QWindow *window);
     const CVTimeStamp *displayLinkOutputTime() const;
+
+    bool inLayerMode() const;
+    GLuint defaultFramebufferObject() const;
 
 protected:
     void recreateWindow(const QPlatformWindow *parentWindow);

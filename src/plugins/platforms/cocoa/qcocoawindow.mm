@@ -42,6 +42,7 @@
 #include "qcocoaeventdispatcher.h"
 #ifndef QT_NO_OPENGL
 #include "qcocoaglcontext.h"
+#include "qcocoagllayer.h"
 #endif
 #include "qcocoahelpers.h"
 #include "qcocoanativeinterface.h"
@@ -467,6 +468,13 @@ QCocoaWindow::~QCocoaWindow()
     [m_contentView release];
     [m_nsWindow release];
     [m_windowCursor release];
+}
+
+QCocoaWindow *QCocoaWindow::get(QWindow *window)
+{
+    if (!window)
+        return  0;
+    return static_cast<QCocoaWindow *>(window->handle());
 }
 
 QSurfaceFormat QCocoaWindow::format() const
@@ -1965,6 +1973,25 @@ const CVTimeStamp *QCocoaWindow::displayLinkOutputTime() const
 
     QMutexLocker lock(&m_qtView->m_displayLinkMutex);
     return m_qtView->m_displayLinkOutputTime;
+}
+
+bool QCocoaWindow::inLayerMode() const
+{
+    return m_inLayerMode;
+}
+
+// Gets the current GL_DRAW_FRAMEBUFFER_BINDING for this window, which
+// is set during the paint callback for QNSViews in OpenGL layer mode.
+// Returns 0 othervise.
+GLuint QCocoaWindow::defaultFramebufferObject() const
+{
+    if (!m_qtView)
+        return 0;
+    if (!m_inLayerMode)
+        return 0;
+    if (QCocoaOpenGLLayer *layer = qcocoaopengllayer_cast([m_qtView layer]))
+        return [layer drawFbo];
+    return 0;
 }
 
 QMargins QCocoaWindow::frameMargins() const

@@ -39,10 +39,14 @@ class QCocoaWindow;
 
 @interface QCocoaOpenGLLayer : NSOpenGLLayer
 {
-    @public GLint m_drawFbo;
     QNSView *m_view;
     QCocoaWindow *m_window;
+    @public GLint m_drawFbo;
 }
+
 - (id)initWithQNSView:(QNSView *)qtView andQCocoaWindow:(QCocoaWindow *)qtWindow;
+- (GLint) drawFbo;
 
 @end
+
+QCocoaOpenGLLayer *qcocoaopengllayer_cast(CALayer *layer);

@@ -77,20 +77,17 @@ public:
     static QSurfaceFormat updateSurfaceFormat(NSOpenGLContext *context, QSurfaceFormat requestedFormat);
 
     // Misc
-    void update();
     void windowWasHidden();
     NSOpenGLContext *nativeContext() const;
     QVariant nativeHandle() const;
     void setActiveWindow(QWindow *window);
 
 private:
-    bool m_isLayerContext;
-    bool m_isValid;
     QSurfaceFormat m_format;
+    QPointer<QWindow> m_targetWindow;
     NSOpenGLContext *m_context;
     NSOpenGLContext *m_shareContext;
     QPointer<QWindow> m_currentWindow;
-    QPointer<QWindow> m_targetWindow;
 };
 
 QT_END_NAMESPACE
