@@ -1891,7 +1891,6 @@ bool QCocoaWindow::updateExposedState(QSize windowSize, const qreal devicePixelR
 
 	qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::updateExposedState" << window() << windowSize << devicePixelRatio;
 
-
     // Update the QWindow's screen property. This property is set
     // to QGuiApplication::primaryScreen() at QWindow construciton
     // time, and we won't get a NSWindowDidChangeScreenNotification
@@ -1903,7 +1902,6 @@ bool QCocoaWindow::updateExposedState(QSize windowSize, const qreal devicePixelR
         if (cocoaScreen)
             window()->setScreen(cocoaScreen->screen());
     }
-
 
     // Something changed, store the new geometry and send Expose event.
     m_exposedSize = windowSize;
