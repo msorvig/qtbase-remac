@@ -185,20 +185,14 @@ static bool _q_dontOverrideCtrlLMB = false;
 
 - (void)dealloc
 {
+    qCDebug(lcQpaCocoaWindow) << "[QNSView dealloc]" << m_window;
+
     if (m_ownsQWindow)
         delete m_window;
     m_window = 0;
 
     // Stop any running display link and the display link stop timer.
-    {
-        QMutexLocker lock(&m_displayLinkMutex);
-        m_displayLinkDisable = true;
-        m_displayLinkWait.wakeAll();
-    }
-    CVDisplayLinkStop(m_displayLink);
-    [m_displayLinkStopTimer invalidate];
-    // [m_displayLinkStopTimer release]; ??
-    m_displayLinkStopTimer = 0;
+    [self destroyDisplayLink];
 
     CGImageRelease(m_maskImage);
     [m_trackingArea release];
@@ -228,15 +222,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     m_ownsQWindow = !m_platformWindow->m_ownsQtView;
 
     // Display link setup
-    m_displayLinkEnable = true;
-    CVDisplayLinkCreateWithActiveCGDisplays(&m_displayLink);
-    CVDisplayLinkSetOutputCallback(m_displayLink, &qNsViewDisplayLinkCallback, self);
-    m_displayLinkSerial = 0;
-    m_displayLinkSerialAtTimerSchedule = 0;
-    m_requestUpdateCalled = false;
-    m_displayLinkDisable = false;
-    m_isDisplayLinkUpdate = false;
-
+    [self createDisplayLink];
 
 #ifdef QT_COCOA_ENABLE_ACCESSIBILITY_INSPECTOR
     // prevent rift in space-time continuum, disable
@@ -2307,7 +2293,7 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     QWindowSystemInterface::handleMouseEvent(target, mapWindowCoordinates(m_window, target, qtWindowPoint), qtScreenPoint, m_buttons);
 }
 
-- (void) requestUpdate
+- (void)requestUpdate
 {
     if (m_displayLinkEnable) {
         QMutexLocker lock(&m_displayLinkMutex);
@@ -2319,7 +2305,7 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     }
 }
 
-- (void) requestUpdateWithRect:(QRect) rect
+- (void)requestUpdateWithRect:(QRect) rect
 {
     if (m_displayLinkEnable) {
         QMutexLocker lock(&m_displayLinkMutex);
@@ -2330,7 +2316,7 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     }
 }
 
-- (void) requestUpdateWithRegion:(QRegion) region
+- (void)requestUpdateWithRegion:(QRegion) region
 {
     if (m_displayLinkEnable) {
         QMutexLocker lock(&m_displayLinkMutex);
@@ -2342,16 +2328,60 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     }
 }
 
-- (void) requestCVDisplayLinkUpdate
+- (void)createDisplayLink
 {
-    m_requestUpdateCalled = true;
+    CVDisplayLinkCreateWithActiveCGDisplays(&m_displayLink);
+    CVDisplayLinkSetOutputCallback(m_displayLink, &qNsViewDisplayLinkCallback, self);
+    m_displayLinkEnable = true;
+    m_displayLinkSerial = 0;
+    m_displayLinkSerialAtTimerSchedule = 0;
+    m_requestUpdateCalled = false;
+    m_displayLinkDisable = false;
+    m_isDisplayLinkUpdate = false;
+}
 
+- (void)destroyDisplayLink
+{
+    // Do nothing if already destroyed.
+    if (!m_displayLink)
+        return;
+
+    [self stopDisplayLink];
+
+    CVDisplayLinkRelease(m_displayLink);
+    m_displayLink = 0;
+    [m_displayLinkStopTimer invalidate];
+    // [m_displayLinkStopTimer release]; ??
+    m_displayLinkStopTimer = 0;
+}
+
+- (void)startDisplayLink
+{
     // Start the display link if needed
     if (!CVDisplayLinkIsRunning(m_displayLink)) {
         m_displayLinkDisable = false;
         CVDisplayLinkStart(m_displayLink);
     }
+}
 
+- (void)stopDisplayLink
+{
+    // Calling CVDisplayLinkStop() while the display link thread is in
+    // the callback will block until the callback returns. Wake it to
+    // prevent deadlocking if the display link thread is waiting for
+    // the GUI thread.
+    {
+        QMutexLocker lock(&m_displayLinkMutex);
+        m_displayLinkDisable = true;
+        m_displayLinkWait.wakeAll();
+    }
+    CVDisplayLinkStop(m_displayLink);
+}
+
+- (void)requestCVDisplayLinkUpdate
+{
+    m_requestUpdateCalled = true;
+    [self startDisplayLink];
     ++m_displayLinkSerial;
 
     // Schedule the stop timer if not already scheduled. This timer will stop
@@ -2360,7 +2390,7 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
         [self scheduleStopDisplayLinkTimer];
 }
 
-- (void) scheduleStopDisplayLinkTimer
+- (void)scheduleStopDisplayLinkTimer
 {
     m_displayLinkSerialAtTimerSchedule = m_displayLinkSerial;
 
@@ -2377,7 +2407,7 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
                                        repeats:NO];
 }
 
-- (void) stopDisplayLinkTimerFire
+- (void)stopDisplayLinkTimerFire
 {
     [m_displayLinkStopTimer invalidate];
     m_displayLinkStopTimer = 0;
@@ -2386,19 +2416,10 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
         return;
 
     // The dislplay link can be stopped if there was no requestUpdate
-    // calls since the timer was scheduled.
+    // calls since the timer was scheduled. The application is no longer
+    // requesting updates.
     if (m_displayLinkSerial == m_displayLinkSerialAtTimerSchedule) {
-
-        // Calling CVDisplayLinkStop() while the display link thread is in
-        // the callback will block until the callback returns. Wake it to
-        // prevent deadlocking if the display link thread is waiting for
-        // the GUI thread.
-        {
-            QMutexLocker lock(&m_displayLinkMutex);
-            m_displayLinkDisable = true;
-            m_displayLinkWait.wakeAll();
-        }
-        CVDisplayLinkStop(m_displayLink);
+        [self stopDisplayLink];
     } else {
         // Othervise we assume the displaylink should keep running
         // and schedule the timer to check again.
@@ -2427,9 +2448,11 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     return kCVReturnSuccess;
 }
 
-- (void) triggerUpdateRequest:(const CVTimeStamp *) now output:(const CVTimeStamp *)output
+- (void)triggerUpdateRequest:(const CVTimeStamp *) now output:(const CVTimeStamp *)output
 {
     QMutexLocker lock(&m_displayLinkMutex);
+
+    qCDebug(lcQpaCocoaWindow) << "[QNSView triggerUpdateRequest]" << m_window << m_displayLinkDisable;
 
     if (m_displayLinkDisable)
         return;
@@ -2444,6 +2467,13 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         // Layer setNeedsDisplay seems to repaint immediately using the the
         // calling thread. Schedule call on GUI thread.
         dispatch_async(dispatch_get_main_queue(), ^{
+
+            // The QCocoaWindow may have been deleted by the time we
+            // get here (this block keeps the QNSView alive). If so the
+            // display link disable flag has been set an we return early.
+            if (m_displayLinkDisable)
+                return;
+
             m_isDisplayLinkUpdate = true;
             [[self layer] setNeedsDisplay];
             [[self layer] displayIfNeeded];
@@ -2465,8 +2495,10 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     m_displayLinkOutputTime = 0;
 }
 
-- (void) sendUpdateRequest
+- (void)sendUpdateRequest
 {
+    qCDebug(lcQpaCocoaWindow) << "[QNSView sendUpdateRequest]" << m_window;
+
     // This function may be called either from the displaylink calback or in response
     // to window visibility or geometry change events. Separate the handling of the
     // cases

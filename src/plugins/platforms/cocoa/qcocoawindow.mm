@@ -417,6 +417,9 @@ QCocoaWindow::~QCocoaWindow()
 {
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::~QCocoaWindow" << window();
 
+    // Stop and destroy display link
+    [m_qtView destroyDisplayLink];
+
     QMacAutoReleasePool pool;
     [m_nsWindow makeFirstResponder:nil];
     [m_nsWindow setContentView:nil];
@@ -1111,9 +1114,9 @@ void QCocoaWindow::propagateSizeHints()
         return;
 
     qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::propagateSizeHints" << window() << "\n"
-                              << "       min/max" << windowMinimumSize() << windowMaximumSize()
-                              << "size increment" << windowSizeIncrement()
-                              << "      basesize" << windowBaseSize()
+                              << "       min/max" << windowMinimumSize() << windowMaximumSize() << "\n"
+                              << "size increment" << windowSizeIncrement() << "\n"
+                              << "      basesize" << windowBaseSize() << "\n"
                               << "      geometry" << windowGeometry();
 
     // Set the minimum content size.
