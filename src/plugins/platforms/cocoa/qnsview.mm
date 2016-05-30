@@ -39,6 +39,7 @@
 
 #include <QtCore/qglobal.h>
 
+#include <QuartzCore/QuartzCore.h>
 #include <dlfcn.h>
 
 #include "qnsview.h"
@@ -535,9 +536,18 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         [self.layer setNeedsDisplay];
     } else {
         m_inFlushBackingStore = true;
+
+        // Invalidate and repaint the updated region.
         foreach (QRect rect, region.rects())
             [self setNeedsDisplayInRect:NSMakeRect(rect.x(), rect.y(), rect.width(), rect.height())];
         [self displayIfNeeded];
+
+        // Core Animation layer mode needs a flush call to propagate the new
+        // content to the window. (This is normally done automatically when
+        // spinning the event loop).
+        if (inLayerMode)
+            [CATransaction flush];
+
         m_inFlushBackingStore = false;
     }
 }
