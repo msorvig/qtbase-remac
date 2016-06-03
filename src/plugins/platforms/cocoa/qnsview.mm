@@ -526,7 +526,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // application flushes the backing store outside of UpdateRequest or ExposeEvent
     // callbacks. This code path is susceptible to performance issues if flush is
     // called more often than ~60 times per second.
-    bool inLayerMode = m_platformWindow->m_inLayerMode;
+    bool inLayerMode = ([self layer] != 0);
     bool usesCustomOpenGLLayer = (inLayerMode && m_window->supportsOpenGL());
     bool usesRasterLayerUpdate = m_platformWindow->m_useRasterLayerUpdate;
     if (inLayerMode && usesCustomOpenGLLayer) {
