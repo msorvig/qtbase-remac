@@ -2167,6 +2167,8 @@ void QWindowPrivate::deliverUpdateRequest()
 {
     Q_Q(QWindow);
     updateRequestPending = false;
+    if (!exposed)
+        return;
     QEvent request(QEvent::UpdateRequest);
     QCoreApplication::sendEvent(q, &request);
 }
