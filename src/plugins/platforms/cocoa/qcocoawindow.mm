@@ -2094,7 +2094,7 @@ void QCocoaWindow::requestUpdate(const QRect &rect)
 {
     if (!window()->isVisible())
         return;
-    [m_qtView requestUpdateWithRect:rect];
+    [m_qtView requestUpdateWithRegion:QRegion(rect)];
 }
 
 void QCocoaWindow::requestUpdate(const QRegion &region)

@@ -222,8 +222,11 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     m_ownsQWindow = !m_platformWindow->m_ownsQtView;
 
-    // Display link setup
-    [self createDisplayLink];
+    // Create DisplayLink if enabled.
+    [self initializeDisplayLinkMembers];
+    m_displayLinkEnable = qt_mac_resolveOption(true, "QT_MAC_ENABLE_CVDISPLAYLINK");
+    if (m_displayLinkEnable)
+        [self createDisplayLink];
 
 #ifdef QT_COCOA_ENABLE_ACCESSIBILITY_INSPECTOR
     // prevent rift in space-time continuum, disable
@@ -306,8 +309,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 - (void)viewDidMoveToSuperview
 {
-    m_requestUpdateCalled = true; // get the GL Layer going
-
     if (!(m_platformWindow->m_contentViewIsToBeEmbedded))
         return;
 
@@ -447,7 +448,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         if (([self.window occlusionState] & NSWindowOcclusionStateVisible) == 0) {
             m_platformWindow->updateExposedState(QSize());
         } else {
-            m_requestUpdateCalled = true;
             m_platformWindow->requestExpose();
         }
 
@@ -531,7 +531,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     bool usesRasterLayerUpdate = m_platformWindow->m_useRasterLayerUpdate;
     if (inLayerMode && usesCustomOpenGLLayer) {
         // OpenGL layer mode is async
-        m_requestUpdateCalled = true;
     } else if (inLayerMode && usesRasterLayerUpdate) {
         [self.layer setNeedsDisplay];
     } else {
@@ -2303,6 +2302,14 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
     QWindowSystemInterface::handleMouseEvent(target, mapWindowCoordinates(m_window, target, qtWindowPoint), qtScreenPoint, m_buttons);
 }
 
+// Returns the int value for an environment variable, or the default value if no good.
+static int qEnvironmentVariableIntValue(const char *name, int def)
+{
+    bool ok = false;
+    int val = qEnvironmentVariableIntValue(name, &ok);
+    return ok ? val : def;
+}
+
 - (void)requestUpdate
 {
     if (m_displayLinkEnable) {
@@ -2310,19 +2317,11 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
         m_displayLinkDirty = QRegion(QRect(QPoint(0, 0), m_platformWindow->geometry().size()));
         [self requestCVDisplayLinkUpdate];
     } else {
-        // TODO: use timer like QPlatformWindow::requestUpdate
-        [self setNeedsDisplay:YES];
-    }
-}
-
-- (void)requestUpdateWithRect:(QRect) rect
-{
-    if (m_displayLinkEnable) {
-        QMutexLocker lock(&m_displayLinkMutex);
-        m_displayLinkDirty = QRegion(rect);
-        [self requestCVDisplayLinkUpdate];
-    } else {
-        [self setNeedsDisplayInRect:qt_mac_toNSRect(rect)];
+        static int timeout = qEnvironmentVariableIntValue("QT_QPA_UPDATE_IDLE_TIME", 5);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, timeout * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(), ^{
+            [self setNeedsDisplay:YES];
+        });
     }
 }
 
@@ -2333,25 +2332,35 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
         m_displayLinkDirty = region;
         [self requestCVDisplayLinkUpdate];
     } else {
-        foreach (QRect rect, region.rects())
-            [self setNeedsDisplayInRect:qt_mac_toNSRect(rect)];
+        static int timeout = qEnvironmentVariableIntValue("QT_QPA_UPDATE_IDLE_TIME", 5);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, timeout * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(), ^{
+            foreach (QRect rect, region.rects())
+                [self setNeedsDisplayInRect:qt_mac_toNSRect(rect)];
+        });
     }
+}
+
+- (void)initializeDisplayLinkMembers
+{
+    m_displayLinkEnable = false;
+    m_displayLink = 0;
+    m_displayLinkSerial = 0;
+    m_displayLinkSerialAtTimerSchedule = 0;
+    m_displayLinkStopping = false;
+    m_isDisplayLinkUpdate = false;
 }
 
 - (void)createDisplayLink
 {
     CVDisplayLinkCreateWithActiveCGDisplays(&m_displayLink);
     CVDisplayLinkSetOutputCallback(m_displayLink, &qNsViewDisplayLinkCallback, self);
-    m_displayLinkEnable = true;
-    m_displayLinkSerial = 0;
-    m_displayLinkSerialAtTimerSchedule = 0;
-    m_requestUpdateCalled = false;
-    m_displayLinkDisable = false;
-    m_isDisplayLinkUpdate = false;
 }
 
 - (void)destroyDisplayLink
 {
+    qCDebug(lcQpaCocoaWindow) << "[QNSView destroyDisplayLink]" << m_window;
+
     // Do nothing if already destroyed.
     if (!m_displayLink)
         return;
@@ -2367,22 +2376,27 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
 
 - (void)startDisplayLink
 {
+    qCDebug(lcQpaCocoaWindow) << "[QNSView startDisplayLink]" << m_window;
+
     // Start the display link if needed
     if (!CVDisplayLinkIsRunning(m_displayLink)) {
-        m_displayLinkDisable = false;
+        m_displayLinkStopping = false;
         CVDisplayLinkStart(m_displayLink);
     }
 }
 
 - (void)stopDisplayLink
 {
+    qCDebug(lcQpaCocoaWindow) << "[QNSView stopDisplayLink]" << m_window;
+
     // Calling CVDisplayLinkStop() while the display link thread is in
     // the callback will block until the callback returns. Wake it to
     // prevent deadlocking if the display link thread is waiting for
-    // the GUI thread.
+    // the GUI thread. Set displayLinkDisable to make sure this wakeup
+    // does not trigger a repaint.
     {
         QMutexLocker lock(&m_displayLinkMutex);
-        m_displayLinkDisable = true;
+        m_displayLinkStopping = true;
         m_displayLinkWait.wakeAll();
     }
     CVDisplayLinkStop(m_displayLink);
@@ -2390,7 +2404,8 @@ static QPoint mapWindowCoordinates(QWindow *source, QWindow *target, QPoint poin
 
 - (void)requestCVDisplayLinkUpdate
 {
-    m_requestUpdateCalled = true;
+    qCDebug(lcQpaCocoaWindow) << "[QNSView requestCVDisplayLinkUpdate]" << m_window;
+
     [self startDisplayLink];
     ++m_displayLinkSerial;
 
@@ -2462,10 +2477,13 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 {
     QMutexLocker lock(&m_displayLinkMutex);
 
-    qCDebug(lcQpaCocoaWindow) << "[QNSView triggerUpdateRequest]" << m_window << m_displayLinkDisable;
+    qCDebug(lcQpaCocoaWindow) << "[QNSView triggerUpdateRequest]" << m_window << "disabled" << m_displayLinkStopping;
 
-    if (m_displayLinkDisable)
+    if (m_displayLinkStopping)
         return;
+
+    // Mark the next GUI thread update as an display link update.
+    m_isDisplayLinkUpdate = true;
 
     // Store timing value pointers for the GUI thread.
     m_displayLinkNowTime = now;
@@ -2481,13 +2499,11 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
             // The QCocoaWindow may have been deleted by the time we
             // get here (this block keeps the QNSView alive). If so the
             // display link disable flag has been set an we return early.
-            if (m_displayLinkDisable)
+            if (m_displayLinkStopping)
                 return;
 
-            m_isDisplayLinkUpdate = true;
             [[self layer] setNeedsDisplay];
             [[self layer] displayIfNeeded];
-            m_isDisplayLinkUpdate = false;
         });
     } else {
         // Call setNeedsDisplay which repaints later on the GUI thread.
@@ -2505,36 +2521,40 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     m_displayLinkOutputTime = 0;
 }
 
+// This function is called either from the displaylink calback or in response
+// to window visibility or geometry changes, in both cases via drawRect. It
+// requests a synchronous repaint from Qt, either via expose or updateRequest events.
 - (void)sendUpdateRequest
 {
     qCDebug(lcQpaCocoaWindow) << "[QNSView sendUpdateRequest]" << m_window;
 
-    // This function may be called either from the displaylink calback or in response
-    // to window visibility or geometry change events. Separate the handling of the
-    // cases
-    if (m_isDisplayLinkUpdate) {
+    // Check if this is a displaylink update. If m_isDisplayLinkUpdate is set then
+    // the display link thread is waiting on m_displayLinkWait.
+    m_displayLinkMutex.lock();
+    const bool isDisplayLinkUpdate = m_isDisplayLinkUpdate;
+    if (isDisplayLinkUpdate)
+        m_isDisplayLinkUpdate = false;
+    m_displayLinkMutex.unlock();
 
-        if (m_displayLinkDisable) {
-            qDebug() << "Display link update request dropped: display link was disabled";
-            return;
-        }
+    // There may be spurious wakeups for the purpose of stopping the display link.
+    if (isDisplayLinkUpdate && m_displayLinkStopping) {
+        qDebug() << "Display link update request dropped: display link was disabled";
+        // Note: m_displayLinkWait.wakeAll() has already been called in this case
+        return;
+    }
 
-        // Send update request to Qt. This is a synchronous call.
-        m_requestUpdateCalled = false;
+    // If geometry has changed the repaint should happen via expose events.
+    QSize viewSize = qt_mac_toQSize(self.frame.size);
+    qreal dpr = m_platformWindow->devicePixelRatio();
+    bool didSendExpose = m_platformWindow->updateExposedState(viewSize, dpr);
+
+    // Repaint via UpdateRequest if no expose event was sent.
+    if (!didSendExpose)
         m_platformWindow->deliverUpdateRequest();
 
-        // Wake the displaylink thread, allowing it to return from the displaylink callback.
+    // Wake the displaylink thread, allowing it to return from the displaylink callback.
+    if (isDisplayLinkUpdate)
         m_displayLinkWait.wakeAll();
-    } else {
-        // Send other updates as expose events.
-        QSize viewSize = qt_mac_toQSize(self.frame.size);
-        qreal dpr = m_platformWindow->devicePixelRatio();
-        bool didSendExpose = m_platformWindow->updateExposedState(viewSize, dpr);
-
-        // But we really need to provide a frame.  (At least when using a CAopenGLLayer)
-        if (!didSendExpose)
-            m_platformWindow->deliverUpdateRequest();
-    }
 }
 
 @end
