@@ -261,8 +261,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 #ifndef QT_NO_OPENGL
 - (CALayer *)makeBackingLayer
 {
-    qDebug() << "makeBackingLayer";
-
     // This function is called if layer mode is active, which can
     // happen if this view requests a layer, or if a parent view
     // requests a layer.
@@ -498,7 +496,6 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 - (void)viewDidHide
 {
-    qDebug() << "viewDidHide";
     m_platformWindow->updateExposedState(QSize());
 }
 
