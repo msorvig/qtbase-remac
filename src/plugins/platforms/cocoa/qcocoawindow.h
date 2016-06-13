@@ -282,8 +282,7 @@ public: // for QNSView
     QNSView *m_qtView;
     QCocoaNSWindow *m_nsWindow;
     QCocoaWindow *m_forwardWindow;
-    bool m_lazyNativeViewAndWindows;
-    mutable bool m_lazyNativeViewCreated;
+    bool m_lazyNativeWindows;
     mutable bool m_lazyNativeWindowCreated;
 
     // TODO merge to one variable if possible
