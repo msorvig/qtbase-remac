@@ -373,7 +373,7 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_resizableTransientParent(false)
     , m_hiddenByClipping(false)
     , m_hiddenByAncestor(false)
-    , m_inLayerMode(false)
+    , m_inCustomLayerMode(false)
     , m_useRasterLayerUpdate(false)
     , m_alertRequest(NoAlertRequest)
     , monitor(nil)
@@ -2048,7 +2048,7 @@ const CVTimeStamp *QCocoaWindow::displayLinkOutputTime() const
 
 bool QCocoaWindow::inLayerMode() const
 {
-    return m_inLayerMode;
+    return m_inCustomLayerMode;
 }
 
 // Gets the current GL_DRAW_FRAMEBUFFER_BINDING for this window, which
@@ -2058,7 +2058,7 @@ GLuint QCocoaWindow::defaultFramebufferObject() const
 {
     if (!m_qtView)
         return 0;
-    if (!m_inLayerMode)
+    if (!m_inCustomLayerMode)
         return 0;
     if (QCocoaGLLayer *layer = qcocoaopengllayer_cast([m_qtView layer]))
         return [layer drawFbo];

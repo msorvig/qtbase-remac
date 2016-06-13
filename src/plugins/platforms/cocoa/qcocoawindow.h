@@ -321,7 +321,7 @@ public: // for QNSView
     bool m_resizableTransientParent;
     bool m_hiddenByClipping;
     bool m_hiddenByAncestor;
-    bool m_inLayerMode;
+    bool m_inCustomLayerMode;
     bool m_useRasterLayerUpdate;
 
     static const int NoAlertRequest;

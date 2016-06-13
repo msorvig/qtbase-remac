@@ -267,13 +267,17 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // happen if this view requests a layer, or if a parent view
     // requests a layer.
 
-    m_platformWindow->m_inLayerMode = true;
-
     // OpenGL rendering needs a layer: We are rendering into a
     // non-default framebuffer, the exact one only known at
     // layer draw callback time.
-    if (m_window->surfaceType() == QWindow::OpenGLSurface)
-        return [[QCocoaGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
+
+    if (m_window->surfaceType() == QWindow::OpenGLSurface) {
+        static bool useCustomLayer = qt_mac_resolveOption(true, "QT_MAC_USE_OPENGL_SURFACE_CUSTOM_LAYER");
+        if (useCustomLayer) {
+            m_platformWindow->m_inCustomLayerMode = true;
+            return [[QCocoaGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
+        }
+    }
 
     // RasterGLSurface may push either OpenGL or raster content.
     // Since which one isn't known at this point, create an OpenGL
@@ -651,7 +655,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         [self sendUpdateRequest];
 
     // Now draw the backing store
-    bool usesCustomOpenGLLayer = (m_platformWindow->m_inLayerMode && m_window->supportsOpenGL());
+    bool usesCustomOpenGLLayer = (m_platformWindow->m_inCustomLayerMode && m_window->supportsOpenGL());
     if (!usesCustomOpenGLLayer)
         [self drawBackingStoreUsingCoreGraphics:dirtyRect];
 
@@ -2491,7 +2495,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     // Trigger native view/layer update, which will call sendUpdateRequest below
     // on the GUI thread.
-    if (m_platformWindow->m_inLayerMode) {
+    if (m_platformWindow->m_inCustomLayerMode) {
         // Layer setNeedsDisplay seems to repaint immediately using the the
         // calling thread. Schedule call on GUI thread.
         dispatch_async(dispatch_get_main_queue(), ^{
