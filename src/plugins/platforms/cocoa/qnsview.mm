@@ -544,8 +544,9 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
         // Core Animation layer mode needs a flush call to propagate the new
         // content to the window. (This is normally done automatically when
-        // spinning the event loop).
-        if (inLayerMode)
+        // spinning the event loop). This is may also be needed on newer
+        // versions of macOS.
+        if (inLayerMode || QSysInfo::MacintoshVersion > QSysInfo::MV_10_11)
             [CATransaction flush];
 
         m_inFlushBackingStore = false;
