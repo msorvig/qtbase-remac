@@ -53,6 +53,13 @@ A QWindow can also be switched into layer mode for external reasons:
       switched into layer mode as well.
     * Use certain NSWindow config options, souch as NSFullSizeContentViewWindowMask
 
+Development options: Qt may use a custom layer for improved performance/correctness.
+Switches exists for each QWindow surface type:
+
+    QT_MAC_USE_OPENGL_SURFACE_CUSTOM_LAYER
+    QT_MAC_USE_RASTERGL_SURFACE_CUSTOM_LAYER
+    QT_MAC_USE_RASTER_SURFACE_DIRECT_UPDATE
+
 Display Link Updates
 --------------------------------------------------------
 

@@ -395,6 +395,8 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     // but we'll check m_inConstructor and return early.
     tlw->setGeometry(QPlatformWindow::geometry()); // ### QHighDPI
 
+    m_useRasterLayerUpdate = qt_mac_resolveOption(false, "QT_MAC_USE_RASTER_SURFACE_DIRECT_UPDATE");
+
     if (tlw->type() == Qt::ForeignWindow) {
         NSView *foreignView = (NSView *)WId(tlw->property("_q_foreignWinId").value<WId>());
         setContentView(foreignView);

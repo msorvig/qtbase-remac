@@ -265,10 +265,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // happen if this view requests a layer, or if a parent view
     // requests a layer.
 
-    // OpenGL rendering needs a layer: We are rendering into a
-    // non-default framebuffer, the exact one only known at
-    // layer draw callback time.
-
+    // Possibly use a custom OpenGL layer for QWindow::OpenGLSurface
     if (m_window->surfaceType() == QWindow::OpenGLSurface) {
         static bool useCustomLayer = qt_mac_resolveOption(true, "QT_MAC_USE_OPENGL_SURFACE_CUSTOM_LAYER");
         if (useCustomLayer) {
@@ -277,16 +274,21 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         }
     }
 
-    // RasterGLSurface may push either OpenGL or raster content.
-    // Since which one isn't known at this point, create an OpenGL
-    // layer in order to be able to handle OpenGL content. The
-    // raster flush path then handles flusing raster content to
-    // the OpenGL layer.
-    if (m_window->surfaceType() == QWindow::RasterGLSurface)
-        return [[QCocoaGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
+    // Possibly use a custom OpenGL layer for QWindow::RasterGLSurface.
+    // This surface type must handle both raster and GL content.
+    if (m_window->surfaceType() == QWindow::RasterGLSurface) {
+        static bool useCustomLayer = qt_mac_resolveOption(false, "QT_MAC_USE_RASTERGL_SURFACE_CUSTOM_LAYER");
+        if (useCustomLayer) {
+            m_platformWindow->m_inCustomLayerMode = true;
+            return [[QCocoaGLLayer alloc] initWithQNSView:self andQCocoaWindow:m_platformWindow];
+        }
+    }
 
-    // RasterSurface windows could get a raster layer, or use the
-    // standard drawRect raster path. Do he latter for now.
+    // QWindow::RasterSurface updates may possibly also happen directly on
+    // on the layer. This does not require a custom layer and as controlled
+    // with QT_MAC_USE_RASTER_SURFACE_DIRECT_UPDATE which sets QCocoaWindow::m_useRasterLayerUpdate.
+
+    // Fall back to using the default layer if no custom layer has been created.
     return [super makeBackingLayer];
 }
 #endif
