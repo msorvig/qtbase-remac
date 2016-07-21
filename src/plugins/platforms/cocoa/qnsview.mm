@@ -224,7 +224,7 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
     // Create DisplayLink if enabled.
     [self initializeDisplayLinkMembers];
-    m_displayLinkEnable = qt_mac_resolveOption(true, "QT_MAC_ENABLE_CVDISPLAYLINK");
+    m_displayLinkEnable = qt_mac_resolveOption(false, "QT_MAC_ENABLE_CVDISPLAYLINK");
     if (m_displayLinkEnable)
         [self createDisplayLink];
 
