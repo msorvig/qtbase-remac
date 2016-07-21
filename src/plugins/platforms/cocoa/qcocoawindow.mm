@@ -456,7 +456,8 @@ QCocoaWindow::~QCocoaWindow()
         child->m_parentCocoaWindow = 0;
     }
 
-    [m_contentView release];
+    if (m_ownsQtView)
+        [m_contentView release];
     [m_nsWindow release];
     [m_windowCursor release];
 }
