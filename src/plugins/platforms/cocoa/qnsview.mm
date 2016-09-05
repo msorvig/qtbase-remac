@@ -195,6 +195,10 @@ static bool _q_dontOverrideCtrlLMB = false;
     // Stop any running display link and the display link stop timer.
     [self destroyDisplayLink];
 
+    // Remove any layer from the layer hiearchy to prevent AppKit from
+    // trying to update it after the view has been deallocated.s
+    [self.layer removeFromSuperlayer];
+
     CGImageRelease(m_maskImage);
     [m_trackingArea release];
     m_maskImage = 0;
