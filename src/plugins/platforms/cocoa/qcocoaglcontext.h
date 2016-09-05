@@ -84,7 +84,7 @@ public:
 
 private:
     QSurfaceFormat m_format;
-    QPointer<QWindow> m_targetWindow;
+    QWindow *m_targetWindow;
     NSOpenGLContext *m_context;
     NSOpenGLContext *m_shareContext;
     QPointer<QWindow> m_currentWindow;

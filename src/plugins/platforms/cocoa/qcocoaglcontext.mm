@@ -280,7 +280,7 @@ QVariant QCocoaGLContext::nativeHandle() const
     return QVariant::fromValue<QCocoaNativeContext>(QCocoaNativeContext(m_context));
 }
 
-typedef QHash<QWindow *, QCocoaGLContext *> WindowContexts;
+typedef QHash<void *, QCocoaGLContext *> WindowContexts;
 Q_GLOBAL_STATIC(WindowContexts, g_windowContexts);
 
 QCocoaGLContext::QCocoaGLContext(QOpenGLContext *context, QWindow *targetWindow)
@@ -325,7 +325,7 @@ QCocoaGLContext::QCocoaGLContext(QOpenGLContext *context, QWindow *targetWindow)
 
 QCocoaGLContext::~QCocoaGLContext()
 {
-    if (!m_targetWindow.isNull())
+    if (m_targetWindow != 0)
         g_windowContexts()->remove(m_targetWindow);
 
     if (QCocoaWindow *cocoaWindow = QCocoaWindow::get(m_currentWindow))
