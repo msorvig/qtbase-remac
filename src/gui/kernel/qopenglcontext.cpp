@@ -498,6 +498,15 @@ void QOpenGLContext::setShareContext(QOpenGLContext *shareContext)
 }
 
 /*!
+    Sets the \a window the OpenGL context should be valid for.
+*/
+void QOpenGLContext::setWindow(QWindow *window)
+{
+    Q_D(QOpenGLContext);
+    d->window = window;
+}
+
+/*!
     Sets the \a screen the OpenGL context should be valid for. You need to call
     create() before it takes effect.
 */
@@ -609,7 +618,11 @@ bool QOpenGLContext::create(QWindow *targetWindowHint)
     if (d->platformGLContext)
         destroy();
 
-    d->platformGLContext = QGuiApplicationPrivate::platformIntegration()->createPlatformOpenGLContext(this, targetWindowHint);
+    // ### retire the targetWindowHint argument
+    if (targetWindowHint)
+        d->window = targetWindowHint;
+
+    d->platformGLContext = QGuiApplicationPrivate::platformIntegration()->createPlatformOpenGLContext(this, d->window);
     if (!d->platformGLContext)
         return false;
     d->platformGLContext->initialize();

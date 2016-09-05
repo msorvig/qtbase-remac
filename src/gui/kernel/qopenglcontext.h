@@ -156,6 +156,7 @@ public:
 
     void setFormat(const QSurfaceFormat &format);
     void setShareContext(QOpenGLContext *shareContext);
+    void setWindow(QWindow *window);
     void setScreen(QScreen *screen);
     void setNativeHandle(const QVariant &handle);
 

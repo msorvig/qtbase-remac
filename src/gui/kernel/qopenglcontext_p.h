@@ -201,6 +201,7 @@ public:
         , shareContext(0)
         , shareGroup(0)
         , screen(0)
+        , window(0)
         , surface(0)
         , functions(0)
         , textureFunctions(0)
@@ -233,6 +234,7 @@ public:
     QOpenGLContext *shareContext;
     QOpenGLContextGroup *shareGroup;
     QScreen *screen;
+    QWindow *window;
     QSurface *surface;
     QOpenGLFunctions *functions;
     mutable QSet<QByteArray> extensionNames;
