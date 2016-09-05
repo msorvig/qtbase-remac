@@ -41,6 +41,8 @@ class QCocoaWindow;
 {
     QNSView *m_view;
     QCocoaWindow *m_window;
+    NSOpenGLContext *m_context;
+    bool m_contextWasInitialized;
     @public GLint m_drawFbo;
 }
 

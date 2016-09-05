@@ -46,13 +46,21 @@
 - (id)initWithQNSView:(QNSView *)qtView andQCocoaWindow:(QCocoaWindow *)qtWindow
 {
     [super init];
+
     m_view = qtView;
     m_window = qtWindow;
+    m_context = nil;
+    m_contextWasInitialized = false;
     m_drawFbo = 0;
 
     self.asynchronous = NO;
 
     return self;
+}
+
+- (void)dealloc
+{
+    [m_context release];
 }
 
 - (NSOpenGLPixelFormat *)openGLPixelFormatForDisplayMask:(uint32_t)mask
@@ -63,34 +71,39 @@
     // NSOpenGLPFAScreenMask, CGDisplayIDToOpenGLDisplayMask(kCGDirectMainDisplay),
     Q_UNUSED(mask)
 
-    // Use pixel format from existing context if there is one. This means we respect
-    // the QSurfaceFormat configurtion created by the user.
-#if 0
-    QCocoaGLContext *qtContext = 0;
-    if (m_window)
-        qtContext = QCocoaGLContext::contextForTargetWindow(m_window->window());
-    if (qtContext) {
-        NSOpenGLContext *context = qtContext->nativeContext();
-        if (context) {
-            CGLContextObj cglContext = [context CGLContextObj];
-            CGLPixelFormatObj cglPixelFormat = CGLGetPixelFormat(cglContext);
-            pixelFormat = [[NSOpenGLPixelFormat alloc] initWithCGLPixelFormatObj:cglPixelFormat];
+    // Get the native OpenGL context for the window. The window -> context
+    // accociation is made at platform context creation time, if QOpenGLContext
+    // user code has made the call to set which window the context will be used
+    // for. If no context is found the then the layers falls back to using a
+    // default context. This most likely won't work so print a warning.
+    if (!m_contextWasInitialized) {
+        m_contextWasInitialized = true;
+        if (m_window) {
+            QCocoaGLContext *qtContext = QCocoaGLContext::contextForTargetWindow(m_window->window());
+            if (qtContext) {
+                m_context = qtContext->nativeContext();
+                [m_context retain];
+            }
         }
+        if (!m_context)
+            qWarning("QCocoaGLLayer: OpenGL context not set, using default context");
     }
-#endif
-    // Create a default pixel format if there was no context. This is probably not what
-    // was intended by user code, so we should possibly have a qWarning() here.
-    if (!pixelFormat) {
-        qWarning("QCocoaGLLayer openGLPixelFormatForDisplayMask: Using default pixel format");
 
+    // Use the pixel format from existing context if there is one.
+    if (m_context) {
+        CGLContextObj cglContext = [m_context CGLContextObj];
+        CGLPixelFormatObj cglPixelFormat = CGLGetPixelFormat(cglContext);
+        pixelFormat = [[NSOpenGLPixelFormat alloc] initWithCGLPixelFormatObj:cglPixelFormat];
+    }
+
+    // Create a default pixel format if there was no context.a qWarning() here.
+    if (!pixelFormat) {
         NSOpenGLPixelFormatAttribute attributes [] =
         {
-            NSOpenGLPFADoubleBuffer,
             NSOpenGLPFANoRecovery,
             NSOpenGLPFAAccelerated,
             0
         };
-
         pixelFormat = [[NSOpenGLPixelFormat alloc] initWithAttributes:attributes];
     }
 
@@ -99,16 +112,11 @@
 
 - (NSOpenGLContext *)openGLContextForPixelFormat:(NSOpenGLPixelFormat *)pixelFormat
 {
-    // Use existing native context if there is one.
-    NSOpenGLContext *context = 0;
-#if 0
-    if (m_window)
-        if (QCocoaGLContext *qtContext = QCocoaGLContext::contextForTargetWindow(m_window->window()))
-            context = qtContext->nativeContext();
-#endif
-    if (!context)
-        context = [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:nil];
-    return context;
+    // Use the existing native context if there is one.
+    if (m_context)
+        return m_context;
+
+    return [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:nil];
 }
 
 - (void)drawInOpenGLContext:(NSOpenGLContext *)context
@@ -122,7 +130,7 @@
     Q_UNUSED(context);
     Q_UNUSED(pixelFormat);
 
-    // Unused: time stamps are provided by the outed DisplayLink driver
+    // Unused: time stamps are provided by the outer DisplayLink driver
     Q_UNUSED(timeInterval);
     Q_UNUSED(timeStamp);
 
