@@ -284,6 +284,9 @@ public: // for QNSView
     QCocoaWindow *m_forwardWindow;
     bool m_lazyNativeWindows;
     mutable bool m_lazyNativeWindowCreated;
+    bool m_lazyNativeViews;
+    mutable bool m_lazyNativeViewCreated;
+
 
     // TODO merge to one variable if possible
     bool m_contentViewIsEmbedded; // true if the m_contentView is actually embedded in a "foreign" NSView hiearchy

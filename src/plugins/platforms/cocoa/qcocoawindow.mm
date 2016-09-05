@@ -347,6 +347,8 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_forwardWindow(0)
     , m_lazyNativeWindows(true)
     , m_lazyNativeWindowCreated(false)
+    , m_lazyNativeViews(true)
+    , m_lazyNativeViewCreated(false)
     , m_contentViewIsEmbedded(false)
     , m_contentViewIsToBeEmbedded(false)
     , m_ownsQtView(true)
@@ -401,7 +403,8 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
         NSView *foreignView = (NSView *)WId(tlw->property("_q_foreignWinId").value<WId>());
         setContentView(foreignView);
     } else {
-        createNativeView();
+        if (!m_lazyNativeViews)
+            createNativeView();
     }
 
     if (!m_lazyNativeWindows) {
@@ -506,7 +509,8 @@ void QCocoaWindow::setGeometry(const QRect &rectIn)
         rect.moveTopLeft(rect.topLeft() + QPoint(margins.left(), margins.top()));
     }
 
-    if (m_lazyNativeWindows && !m_lazyNativeWindowCreated) {
+    if ((m_lazyNativeWindows && !m_lazyNativeWindowCreated) ||
+        (m_lazyNativeViews && !m_lazyNativeViewCreated)) {
         QPlatformWindow::setGeometry(rect);
         return;
     }
@@ -679,6 +683,9 @@ void QCocoaWindow::setVisible(bool visible)
 
         // Native views and windows are needed to make the window visible. Create
         // them if this has not already been done.
+        if (m_lazyNativeViews && !m_lazyNativeViewCreated) {
+            createNativeView();
+        }
         if (m_lazyNativeWindows && !m_lazyNativeWindowCreated) {
             createNativeWindow();
         }
@@ -1212,6 +1219,8 @@ void QCocoaWindow::setParent(const QPlatformWindow *parentWindow)
 // Creates a QNSView for this window.
 void QCocoaWindow::createNativeView()
 {
+    m_lazyNativeViewCreated = true;
+
     m_qtView = [[QNSView alloc] initWithQWindow:window() platformWindow:this];
     m_contentView = m_qtView;
 
@@ -1237,9 +1246,17 @@ void QCocoaWindow::createNativeWindow()
     recreateWindow(parent());
 }
 
-// Returns the native NSView instance for this window.
+// Returns the native NSView instance for this window. In lazy mode creates
+// a QNSView if neccesary.
 NSView *QCocoaWindow::contentView() const
 {
+    // handle not enabled or already created
+    if (!m_lazyNativeViews || m_lazyNativeViewCreated)
+        return m_contentView;
+
+    if (!m_contentView)
+        const_cast<QCocoaWindow *>(this)->createNativeView();
+
     return m_contentView;
 }
 
@@ -1247,6 +1264,9 @@ NSView *QCocoaWindow::contentView() const
 // is used when making QWindow control a foreign NSView.
 void QCocoaWindow::setContentView(NSView *contentView)
 {
+    // This counts as running the view creation logic.
+    m_lazyNativeViewCreated = true;
+
     // Remove and release the previous content view
     [m_contentView removeFromSuperview];
     [m_contentView release];
@@ -1264,6 +1284,17 @@ void QCocoaWindow::setContentView(NSView *contentView)
 // a QNSView if neccesary.
 QNSView *QCocoaWindow::qtView() const
 {
+    // handle not enabled or already created
+    if (!m_lazyNativeViews || m_lazyNativeViewCreated)
+        return m_qtView;
+
+    // Don't create a QNSView if this QWindow is managing a foreign NSView.
+    if (m_contentView)
+         return nil;
+
+    if (!m_qtView)
+        const_cast<QCocoaWindow *>(this)->createNativeView();
+
     return m_qtView;
 }
 
