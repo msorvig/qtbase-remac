@@ -106,6 +106,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(QT_MANGLE_NAMESPACE(QNSViewMouseMoveHelper));
     bool m_inDrawRect;
     bool m_inFlushBackingStore;
     @public bool m_ownsQWindow;
+    bool m_requestUpdatePending;
 }
 
 - (id)init;

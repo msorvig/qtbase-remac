@@ -2316,6 +2316,8 @@ static int qEnvironmentVariableIntValue(const char *name, int def)
 
 - (void)requestUpdate
 {
+    m_requestUpdatePending = true;
+
     if (m_displayLinkEnable) {
         QMutexLocker lock(&m_displayLinkMutex);
         m_displayLinkDirty = QRegion(QRect(QPoint(0, 0), m_platformWindow->geometry().size()));
@@ -2331,6 +2333,8 @@ static int qEnvironmentVariableIntValue(const char *name, int def)
 
 - (void)requestUpdateWithRegion:(QRegion) region
 {
+    m_requestUpdatePending = true;
+
     if (m_displayLinkEnable) {
         QMutexLocker lock(&m_displayLinkMutex);
         m_displayLinkDirty = region;
@@ -2547,13 +2551,15 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         return;
     }
 
-    // If geometry has changed the repaint should happen via expose events.
+    // If geometry has changed the repaint has to be deliverd happen via an expose event.
     QSize viewSize = qt_mac_toQSize(self.frame.size);
     qreal dpr = m_platformWindow->devicePixelRatio();
-    bool didSendExpose = m_platformWindow->updateExposedState(viewSize, dpr);
+    m_platformWindow->updateExposedState(viewSize, dpr);
 
-    // Repaint via UpdateRequest if no expose event was sent.
-    if (!didSendExpose)
+    // If reuqestUdpate() has been called then the update has to be deliverd
+    // via deliverUpdateRequest in order to keep QWindowPrivate::updateRequestPending
+    // in sync.
+    if (m_requestUpdatePending)
         m_platformWindow->deliverUpdateRequest();
 
     // Wake the displaylink thread, allowing it to return from the displaylink callback.
