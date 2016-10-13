@@ -57,6 +57,10 @@
 #include <QtGui/qcursor.h>
 #endif
 
+#ifdef Q_OS_OSX
+Q_FORWARD_DECLARE_OBJC_CLASS(NSView);
+#endif
+
 QT_BEGIN_NAMESPACE
 
 
@@ -262,6 +266,10 @@ public:
 #endif
 
     static QWindow *fromWinId(WId id);
+
+#ifdef Q_OS_OSX
+    NSView *toNSView();
+#endif
 
 public Q_SLOTS:
     Q_REVISION(1) void requestActivate();

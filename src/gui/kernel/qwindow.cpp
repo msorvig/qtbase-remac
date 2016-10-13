@@ -41,6 +41,7 @@
 
 #include <qpa/qplatformwindow.h>
 #include <qpa/qplatformintegration.h>
+#include <qpa/qplatformnativeinterface.h>
 #include "qsurfaceformat.h"
 #ifndef QT_NO_OPENGL
 #include <qpa/qplatformopenglcontext.h>
@@ -2476,6 +2477,26 @@ QWindow *QWindow::fromWinId(WId id)
     window->create();
     return window;
 }
+
+#ifdef Q_OS_OSX
+
+NSView *QWindow::toNSView()
+{
+    QPlatformNativeInterface::NativeResourceForIntegrationFunction fn =
+    QGuiApplicationPrivate::platformIntegration()->nativeInterface()->
+        nativeResourceFunctionForIntegration("transferViewOwnership");
+
+    if (!fn) {
+        qWarning("transferViewOwnership function missing from platform plugin");
+        return 0;
+    }
+
+    typedef NSView *(*TransferNativeViewFunction)(QWindow *window);
+    return reinterpret_cast<TransferNativeViewFunction>(fn)(this);
+}
+
+#endif
+
 
 /*!
     Causes an alert to be shown for \a msec miliseconds. If \a msec is \c 0 (the

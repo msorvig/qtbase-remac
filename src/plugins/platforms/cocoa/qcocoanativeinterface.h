@@ -45,6 +45,10 @@
 #include <qpa/qplatformnativeinterface.h>
 #include <QtGui/qpixmap.h>
 
+#ifdef Q_OS_OSX
+Q_FORWARD_DECLARE_OBJC_CLASS(NSView);
+#endif
+
 QT_BEGIN_NAMESPACE
 
 class QWidget;
@@ -158,6 +162,8 @@ private:
     // that is created;
    static void setNSToolbar(QWindow *window, void *nsToolbar);
 
+   // Transfers ownership of a QWindow to the native NSView, and resturns it.
+   static NSView *transferViewOwnership(QWindow *window);
 };
 
 QT_END_NAMESPACE

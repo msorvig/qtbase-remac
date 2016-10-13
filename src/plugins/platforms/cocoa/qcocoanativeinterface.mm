@@ -144,6 +144,8 @@ QPlatformNativeInterface::NativeResourceForIntegrationFunction QCocoaNativeInter
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::setNSToolbar);
     if (resource.toLower() == "testcontentborderposition")
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::testContentBorderPosition);
+    if (resource.toLower() == "transferviewownership")
+        return NativeResourceForIntegrationFunction(QCocoaNativeInterface::transferViewOwnership);
 
     return 0;
 }
@@ -365,6 +367,17 @@ bool QCocoaNativeInterface::testContentBorderPosition(QWindow *window, int posit
     if (cocoaWindow)
         return cocoaWindow->testContentBorderAreaPosition(position);
     return false;
+}
+
+NSView *QCocoaNativeInterface::transferViewOwnership(QWindow *window)
+{
+    if (!window)
+        return 0;
+    window->create();
+
+    QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(window->handle());
+    if (cocoaWindow)
+        return cocoaWindow->transferViewOwnership();
 }
 
 QT_END_NAMESPACE
