@@ -1988,8 +1988,10 @@ NSView *QCocoaWindow::transferViewOwnershipStatic(QWindow *window)
     return 0;
 }
 
-// Transfer ownership of the QNSView instance from the QCocoaWindow/QWindow instance to
-// the caller, and also transfer ownership of the QWindow instance to the QNSView instance.
+// Inverts the QCocoaWindow <-> QNSView ownership by making the QNSView own
+// the QWindow and QCocoaWindow. This is useful for Qt-as-plugin use cases
+// where NSView/QWindow lifetime contral happens through native API.
+// Returns an NSView suitable for embedding in native hiearchies.
 NSView *QCocoaWindow::transferViewOwnership()
 {
     // Create the native view if needed.
