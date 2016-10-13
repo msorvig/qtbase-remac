@@ -76,6 +76,12 @@ public:
                                             NSOpenGLContext *shareContext);
     static QSurfaceFormat updateSurfaceFormat(NSOpenGLContext *context, QSurfaceFormat requestedFormat);
 
+
+    static IOSurfaceRef createIOSurface(const QSize &size);
+    bool createIOSurfaceFBO(IOSurfaceRef ioSurfaceBuffer);
+    void destroyIOSurfaceFBO();
+    void updateIOSurfaceIfNeeded(QSize size);
+
     // Misc
     void windowWasHidden();
     NSOpenGLContext *nativeContext() const;
@@ -88,6 +94,13 @@ private:
     NSOpenGLContext *m_context;
     NSOpenGLContext *m_shareContext;
     QPointer<QWindow> m_currentWindow;
+
+    // IOSurface mode
+    IOSurfaceRef m_iosurface;
+    GLuint m_iosurfaceTexture;
+    GLuint m_iosurfaceFrameBuffer;
+    GLuint m_iosurfaceDepthStencilBuffer;
+
 };
 
 QT_END_NAMESPACE

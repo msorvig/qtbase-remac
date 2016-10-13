@@ -52,6 +52,13 @@
 
 QT_BEGIN_NAMESPACE
 
+static QWindow *qwindow_cast(QSurface *surface)
+{
+    if (surface->surfaceClass() == QSurface::Window)
+        return static_cast<QWindow *>(surface);
+    return 0;
+}
+
 static QCocoaWindow *qcocoawindow_cast(QPlatformSurface *surface)
 {
     if (surface->surface()->surfaceClass() == QSurface::Window)
@@ -59,10 +66,17 @@ static QCocoaWindow *qcocoawindow_cast(QPlatformSurface *surface)
     return 0;
 }
 
-static bool isCocoaWindowInLayerMode(QPlatformSurface *surface)
+static bool isCocoaWindowInOpenGLLayerMode(QPlatformSurface *surface)
 {
     if (QCocoaWindow *cocoaWindow = qcocoawindow_cast(surface))
-        return cocoaWindow->inLayerMode();
+        return cocoaWindow->inOpenGLLayerMode();
+    return false;
+}
+
+static bool isCocoaWindowInIOSurfaceMode(QPlatformSurface *surface)
+{
+    if (QCocoaWindow *cocoaWindow = qcocoawindow_cast(surface))
+        return cocoaWindow->inIOSurfaceMode();
     return false;
 }
 
@@ -287,6 +301,10 @@ QCocoaGLContext::QCocoaGLContext(QOpenGLContext *context, QWindow *targetWindow)
 :m_targetWindow(targetWindow)
 ,m_context(nil)
 ,m_shareContext(nil)
+,m_iosurface(0)
+,m_iosurfaceTexture(0)
+,m_iosurfaceFrameBuffer(0)
+
 {
     QVariant nativeHandle = context->nativeHandle();
     QCocoaGLContext *share = static_cast<QCocoaGLContext *>(context->shareHandle());
@@ -325,6 +343,8 @@ QCocoaGLContext::QCocoaGLContext(QOpenGLContext *context, QWindow *targetWindow)
 
 QCocoaGLContext::~QCocoaGLContext()
 {
+    destroyIOSurfaceFBO();
+
     if (m_targetWindow != 0)
         g_windowContexts()->remove(m_targetWindow);
 
@@ -342,18 +362,24 @@ QCocoaGLContext *QCocoaGLContext::contextForTargetWindow(QWindow *window)
 void QCocoaGLContext::swapBuffers(QPlatformSurface *surface)
 {
     // No-op for layer mode: Core Animation will swap/flush for us.
-    if (isCocoaWindowInLayerMode(surface))
+    if (isCocoaWindowInOpenGLLayerMode(surface))
         return;
 
     [m_context flushBuffer];
+
+    if (isCocoaWindowInIOSurfaceMode(surface))
+        qcocoawindow_cast(surface)->setLayerContent(m_iosurface);
 }
 
 GLuint QCocoaGLContext::defaultFramebufferObject(QPlatformSurface *surface) const
 {
     // Core Animation layers redirect to a non-default FBO; call
     // on QCocoaWindow to determine if this is the case.
-    if (QCocoaWindow *coocaWindow = qcocoawindow_cast(surface))
-        return coocaWindow->defaultFramebufferObject();
+    if (isCocoaWindowInOpenGLLayerMode(surface))
+        return qcocoawindow_cast(surface)->defaultFramebufferObject();
+
+    if (isCocoaWindowInIOSurfaceMode(surface))
+        return m_iosurfaceFrameBuffer;
 
     return QPlatformOpenGLContext::defaultFramebufferObject(surface);
 }
@@ -363,30 +389,36 @@ bool QCocoaGLContext::makeCurrent(QPlatformSurface *surface)
     QMacAutoReleasePool pool;
 
     // No-op for layer mode: Core Animation makes the context current.
-    if (isCocoaWindowInLayerMode(surface))
+    if (isCocoaWindowInOpenGLLayerMode(surface))
         return true;
 
-    // The setActiveWindow logic is run for "classic" OpenGL, where QCocoaWindow
-    // needs to call back into the context on geometry changes etc.
-    setActiveWindow(qcocoawindow_cast(surface)->window());
-
     [m_context makeCurrentContext];
-    [m_context update];
+
+    if (isCocoaWindowInIOSurfaceMode(surface)) {
+        // Resize IOSurface if needed.
+        QWindow *window = qwindow_cast(surface->surface());
+        QSize devicePixelSize = window->size() * window->devicePixelRatio();
+        updateIOSurfaceIfNeeded(devicePixelSize);
+    } else {
+        // The setActiveWindow logic is run for "classic" OpenGL, where QCocoaWindow
+        // needs to call back into the context on geometry changes etc.
+        setActiveWindow(qcocoawindow_cast(surface)->window());
+        [m_context update];
+    }
 
     return true;
 }
 
 void QCocoaGLContext::doneCurrent()
 {
-    if (!m_currentWindow)
-        return;
+    [NSOpenGLContext clearCurrentContext];
 
     // If m_currentWindow is set then setActiveWindow() has been run earlier and we clean up.
-    if (QCocoaWindow *cocoaWindow = QCocoaWindow::get(m_currentWindow))
-        cocoaWindow->setCurrentContext(0);
-
-    m_currentWindow.clear();
-    [NSOpenGLContext clearCurrentContext];
+    if (m_currentWindow) {
+        if (QCocoaWindow *cocoaWindow = QCocoaWindow::get(m_currentWindow))
+            cocoaWindow->setCurrentContext(0);
+        m_currentWindow.clear();
+    }
 }
 
 bool QCocoaGLContext::isValid() const
@@ -424,6 +456,134 @@ void QCocoaGLContext::setActiveWindow(QWindow *window)
     cocoaWindow->setCurrentContext(this);
 
     [(QNSView *) cocoaWindow->contentView() setQCocoaGLContext:this];
+}
+
+IOSurfaceRef QCocoaGLContext::createIOSurface(const QSize &size)
+{
+    unsigned pixelFormat = 'BGRA';
+    unsigned bytesPerElement = 4;
+
+    // Check system size limits
+    int maxWidth = IOSurfaceGetPropertyMaximum(kIOSurfaceWidth);
+    int maxHeight = IOSurfaceGetPropertyMaximum(kIOSurfaceHeight);
+    if (size.width() > maxWidth || size.height() > maxHeight) {
+        qWarning() << "QCocoaGLContext::createIOSurface: maximum IOSurface size exceeded"
+                   << "size" << size << "max" << QSize(maxWidth, maxHeight);
+        return nil;
+    }
+
+    size_t bytesPerRow = IOSurfaceAlignProperty(kIOSurfaceBytesPerRow, size.width() * bytesPerElement);
+    size_t totalBytes = IOSurfaceAlignProperty(kIOSurfaceAllocSize, size.height() * bytesPerRow);
+    NSDictionary *options = @{
+        (id)kIOSurfaceWidth: @(size.width()),
+        (id)kIOSurfaceHeight: @(size.height()),
+        (id)kIOSurfacePixelFormat: @(pixelFormat),
+        (id)kIOSurfaceBytesPerElement: @(bytesPerElement),
+        (id)kIOSurfaceBytesPerRow: @(bytesPerRow),
+        (id)kIOSurfaceAllocSize: @(totalBytes),
+    };
+    return IOSurfaceCreate(static_cast<CFDictionaryRef>(options));
+}
+
+void QCocoaGLContext::destroyIOSurfaceFBO()
+{
+    if (m_iosurfaceTexture) {
+        glDeleteTextures(1, &m_iosurfaceTexture);
+        m_iosurfaceTexture = 0;
+    }
+    if (m_iosurfaceFrameBuffer) {
+        glDeleteFramebuffers(1, &m_iosurfaceFrameBuffer);
+        m_iosurfaceFrameBuffer = 0;
+    }
+    if (m_iosurfaceDepthStencilBuffer) {
+        glDeleteRenderbuffers(1, &m_iosurfaceDepthStencilBuffer);
+        m_iosurfaceDepthStencilBuffer = 0;
+    }
+}
+
+bool QCocoaGLContext::createIOSurfaceFBO(IOSurfaceRef ioSurfaceBuffer)
+{
+    // Reset
+    destroyIOSurfaceFBO();
+
+    // Cretate texture with IOSurface dimensions.
+    CGLContextObj cgl_ctx = reinterpret_cast<CGLContextObj>([m_context CGLContextObj]);
+    GLuint width = IOSurfaceGetWidth(ioSurfaceBuffer);
+    GLuint height = IOSurfaceGetHeight(ioSurfaceBuffer);
+    glGenTextures(1, &m_iosurfaceTexture);
+    glBindTexture(GL_TEXTURE_RECTANGLE, m_iosurfaceTexture);
+    CGLTexImageIOSurface2D(cgl_ctx, GL_TEXTURE_RECTANGLE, GL_RGBA, width, height, GL_BGRA,
+                           GL_UNSIGNED_INT_8_8_8_8_REV, ioSurfaceBuffer, 0);
+    glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_RECTANGLE, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Generate an FBO and bind the texture to it as a render target.
+    glBindTexture(GL_TEXTURE_RECTANGLE, 0);
+    glGenFramebuffers(1, &m_iosurfaceFrameBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_iosurfaceFrameBuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE, m_iosurfaceTexture, 0);
+
+    if (m_format.depthBufferSize() > 0 || m_format.stencilBufferSize() > 0) {
+        glGenRenderbuffers(1, &m_iosurfaceDepthStencilBuffer);
+        glBindRenderbuffer(GL_RENDERBUFFER, m_iosurfaceDepthStencilBuffer);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_iosurfaceDepthStencilBuffer);
+
+        if (m_format.stencilBufferSize() > 0)
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_iosurfaceDepthStencilBuffer);
+
+        glBindRenderbuffer(GL_RENDERBUFFER, m_iosurfaceDepthStencilBuffer);
+
+        if (m_format.stencilBufferSize() > 0)
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_EXT, width, height);
+        else
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
+    }
+
+    // Check for completeness and print error
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        if (status == GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT)
+            qWarning() << "QCocoaGLContext::setupIOSurfaceFBO GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT";
+        else if (status == GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT)
+            qWarning() << "QCocoaGLContext::setupIOSurfaceFBO GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT";
+        else if (status == GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER)
+            qWarning() << "QCocoaGLContext::setupIOSurfaceFBO GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER";
+        else if (status == GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER)
+            qWarning() << "QCocoaGLContext::setupIOSurfaceFBO GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER";
+        else if (status == GL_FRAMEBUFFER_UNSUPPORTED)
+            qWarning() << "QCocoaGLContext::setupIOSurfaceFBO GL_FRAMEBUFFER_UNSUPPORTED";
+    }
+
+    return (status == GL_FRAMEBUFFER_COMPLETE);
+}
+
+void QCocoaGLContext::updateIOSurfaceIfNeeded(QSize size)
+{
+    // Create IOSurface if null or if resize is needed
+    if (!m_iosurface || IOSurfaceGetWidth(m_iosurface) != size_t(size.width())
+                     || IOSurfaceGetHeight(m_iosurface) != size_t(size.height())) {
+
+        // Release current surface
+        if (m_iosurface) {
+            // ### but how
+            // IOSurfaceDestroy(m_iosurface)
+        }
+
+        qDebug() << "updateIOSurfaceIfNeeded new iosurface";
+        m_iosurface = createIOSurface(size);
+
+        if (!m_iosurface) {
+            qWarning("QCococaGLContext: Unable to crate IO surface");
+        }
+
+        bool complete = createIOSurfaceFBO(m_iosurface);
+        if (!complete) {
+            // ### release surface
+            m_iosurface = 0;
+        }
+    }
 }
 
 QT_END_NAMESPACE

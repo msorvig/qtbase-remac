@@ -81,7 +81,7 @@ contains(QT_CONFIG, opengl.*) {
 
 RESOURCES += qcocoaresources.qrc
 
-LIBS += -framework AppKit -framework Carbon -framework IOKit -framework QuartzCore -lcups
+LIBS += -framework AppKit -framework Carbon -framework IOKit -framework QuartzCore -framework IOSurface -lcups
 
 QT += core-private gui-private platformsupport-private
 

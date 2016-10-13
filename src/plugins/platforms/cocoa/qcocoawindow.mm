@@ -376,6 +376,7 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw)
     , m_hiddenByAncestor(false)
     , m_inCustomLayerMode(false)
     , m_useRasterLayerUpdate(false)
+    , m_inIOSurfaceMode(false)
     , m_alertRequest(NoAlertRequest)
     , monitor(nil)
     , m_drawContentBorderGradient(false)
@@ -2058,9 +2059,14 @@ const CVTimeStamp *QCocoaWindow::displayLinkOutputTime() const
     return m_qtView->m_displayLinkOutputTime;
 }
 
-bool QCocoaWindow::inLayerMode() const
+bool QCocoaWindow::inOpenGLLayerMode() const
 {
-    return m_inCustomLayerMode;
+    return !m_inIOSurfaceMode && m_inCustomLayerMode;
+}
+
+bool QCocoaWindow::inIOSurfaceMode() const
+{
+    return m_inIOSurfaceMode;
 }
 
 // Gets the current GL_DRAW_FRAMEBUFFER_BINDING for this window, which
@@ -2075,6 +2081,48 @@ GLuint QCocoaWindow::defaultFramebufferObject() const
     if (QCocoaGLLayer *layer = qcocoaopengllayer_cast([m_qtView layer]))
         return [layer drawFbo];
     return 0;
+}
+
+#ifdef QT_MAC_USE_PRIVATE_API
+@interface CALayer (Private)
+- (void)setContentsChanged;
+@end
+#endif
+
+void QCocoaWindow::setLayerContent(IOSurfaceRef surface)
+{
+    if (!m_qtView)
+        return;
+
+    // Set or update layer contents.
+    if (m_qtView.layer.contents != (id)surface) {
+        m_qtView.layer.contents = (id)surface;
+    } else {
+
+#ifdef QT_MAC_USE_PRIVATE_API
+        // The most efficent API (setContentsChanged) is private.
+        // See https://codereview.chromium.org/1187233003
+        [m_qtView.layer setContentsChanged];
+#else
+        // Need to reset via nil for update via unchanged surface pointer.
+        m_qtView.layer.contents = nil;
+        m_qtView.layer.contents = (id)surface;
+#endif
+
+    }
+
+/*
+    // ### Layer content is flipped along the y axis. We can correct
+    //     that via a transform here. However, the code below does not
+    //     work in all cases (in particular in the testbench) - this
+    //     need to be investigated further.
+
+    m_qtView.layer.anchorPoint = CGPointMake(0, 0);
+    CATransform3D scale = CATransform3DMakeScale(1, -1, 1);
+    CATransform3D translate = CATransform3DMakeTranslation(0, 0 IOSurfaceGetHeight(surface), 0);
+    m_qtView.layer.transform = CATransform3DConcat(scale, translate);
+*/
+
 }
 
 QMargins QCocoaWindow::frameMargins() const

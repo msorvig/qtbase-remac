@@ -251,8 +251,10 @@ public:
     static const CVTimeStamp *displayLinkOutputTimeStatic(QWindow *window);
     const CVTimeStamp *displayLinkOutputTime() const;
 
-    bool inLayerMode() const;
+    bool inOpenGLLayerMode() const;
+    bool inIOSurfaceMode() const;
     GLuint defaultFramebufferObject() const;
+    void setLayerContent(IOSurfaceRef surface);
 
 protected:
     void recreateWindow(const QPlatformWindow *parentWindow);
@@ -325,6 +327,7 @@ public: // for QNSView
     bool m_hiddenByAncestor;
     bool m_inCustomLayerMode;
     bool m_useRasterLayerUpdate;
+    bool m_inIOSurfaceMode;
 
     static const int NoAlertRequest;
     NSInteger m_alertRequest;

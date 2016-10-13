@@ -269,6 +269,25 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
     // happen if this view requests a layer, or if a parent view
     // requests a layer.
 
+
+    // possibly Use IOSurface + layer for QWindow::OpenGLSurface
+    if (m_window->surfaceType() == QWindow::OpenGLSurface) {
+        static bool useCustomLayer = qt_mac_resolveOption(true, "QT_MAC_USE_OPENGL_IOSURFACE");
+
+        m_platformWindow->m_inIOSurfaceMode = true;
+        m_platformWindow->m_inCustomLayerMode = true;
+
+        // ### Using the default NSView layer and setting the layer contents
+        // seems to work, expect that the layer contents appear flipped. Infortunately
+        // setting the geometryFlipped property does not work.
+
+        // CALayer *layer = [[CALayer alloc] init];
+        CALayer *layer = [super makeBackingLayer];
+        //layer.geometryFlipped = YES;
+        return layer;
+    }
+
+
     // Possibly use a custom OpenGL layer for QWindow::OpenGLSurface
     if (m_window->surfaceType() == QWindow::OpenGLSurface) {
         static bool useCustomLayer = qt_mac_resolveOption(true, "QT_MAC_USE_OPENGL_SURFACE_CUSTOM_LAYER");
@@ -621,14 +640,18 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
 
 -(BOOL) wantsUpdateLayer
 {
-    return m_platformWindow->m_useRasterLayerUpdate;
+    return m_platformWindow->m_useRasterLayerUpdate || m_platformWindow->m_inIOSurfaceMode;
 }
 
 - (void) updateLayer
 {
-    // Set the layer contents to be the backing store image
-    if (m_backingStore)
-        self.layer.contents = (__bridge id) qt_mac_toCGImage(m_backingStore->toImage());
+    [self sendUpdateRequest];
+
+    if (m_platformWindow->m_useRasterLayerUpdate) {
+        // Set the layer contents to be the backing store image
+        if (m_backingStore)
+            self.layer.contents = (__bridge id) qt_mac_toCGImage(m_backingStore->toImage());
+    }
 }
 
 - (void) drawRect:(NSRect)dirtyRect
