@@ -2578,16 +2578,18 @@ CVReturn qNsViewDisplayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
         return;
     }
 
-    // If geometry has changed the repaint has to be deliverd happen via an expose event.
-    QSize viewSize = qt_mac_toQSize(self.frame.size);
-    qreal dpr = m_platformWindow->devicePixelRatio();
-    m_platformWindow->updateExposedState(viewSize, dpr);
-
     // If reuqestUdpate() has been called then the update has to be deliverd
     // via deliverUpdateRequest in order to keep QWindowPrivate::updateRequestPending
     // in sync.
-    if (m_requestUpdatePending)
+    if (m_requestUpdatePending) {
+        m_requestUpdatePending = false;
         m_platformWindow->deliverUpdateRequest();
+    } else {
+        // If geometry has changed the repaint has to be deliverd happen via an expose event.
+        QSize viewSize = qt_mac_toQSize(self.frame.size);
+        qreal dpr = m_platformWindow->devicePixelRatio();
+        m_platformWindow->updateExposedState(viewSize, dpr);
+    }
 
     // Wake the displaylink thread, allowing it to return from the displaylink callback.
     if (isDisplayLinkUpdate)

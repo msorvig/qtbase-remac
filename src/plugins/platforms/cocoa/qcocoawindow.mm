@@ -1908,9 +1908,6 @@ void QCocoaWindow::requestExpose()
 // empty rect on window hide.
 bool QCocoaWindow::updateExposedState(QSize windowSize, const qreal devicePixelRatio)
 {
-    // Don't send expose events if there are no changes.
-    if (m_exposedSize == windowSize && m_exposedDevicePixelRatio == devicePixelRatio)
-        return false;
 
 	qCDebug(lcQpaCocoaWindow) << "QCocoaWindow::updateExposedState" << window() << windowSize << devicePixelRatio;
 
