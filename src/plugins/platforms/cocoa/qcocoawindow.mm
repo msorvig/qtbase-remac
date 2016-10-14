@@ -2018,6 +2018,11 @@ NSView *QCocoaWindow::transferViewOwnership()
     // Prepare the window for "embedded" mode.
     setEmbeddedInForeignView(true);
 
+    // Transition the window to visible state. This will not make the window
+    // visible on screen (due to embedded mode being active), but matches the
+    // default non-hidden state of NSView
+    window()->setVisible(true);
+
     // Normally, ~QCocoaWindow() deletes the QNSView instance. Set
     // ownership flags to prevent this and have [QNSView dealloc]
     // delete the QWindow (and QCocoaWindow) instead.
