@@ -2480,6 +2480,25 @@ QWindow *QWindow::fromWinId(WId id)
 
 #ifdef Q_OS_OSX
 
+/*!
+    Returns a NSView suitable for embedding the QWindow in a native view
+    hierarchy.
+
+    The returned NSView will behave like any other NSView and can be used
+    with naive API that works with view objects. This function must be
+    called instead of making the window visible with show() or setVisible().
+    Calling this function on a window that is already visible is not supported.
+
+    Ownership of the QWindow is transferred to the NSView. Application code
+    must not delete the QWindow instance, instead the NSView instance will
+    delete it when it is deallocated. You may retain/release the NSView to
+    control the combined lifetime of the NSView and QWindow instances.
+
+    The QWindow will transitioned into the visible state, but will not be
+    immediately exposed and made visible on screen. This mathces the default
+    visibility state of NSView instances. Exposed state (and visibility on screen)
+    is controlled by embedding the NSView instance in a NSView/NSWindow heirachy.
+*/
 NSView *QWindow::toNSView()
 {
     QPlatformNativeInterface::NativeResourceForIntegrationFunction fn =
