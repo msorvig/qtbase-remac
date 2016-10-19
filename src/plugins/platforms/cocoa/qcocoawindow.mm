@@ -2115,18 +2115,14 @@ void QCocoaWindow::setLayerContent(IOSurfaceRef surface)
 
     }
 
-/*
-    // ### Layer content is flipped along the y axis. We can correct
-    //     that via a transform here. However, the code below does not
-    //     work in all cases (in particular in the testbench) - this
-    //     need to be investigated further.
-
-    m_qtView.layer.anchorPoint = CGPointMake(0, 0);
-    CATransform3D scale = CATransform3DMakeScale(1, -1, 1);
-    CATransform3D translate = CATransform3DMakeTranslation(0, 0 IOSurfaceGetHeight(surface), 0);
-    m_qtView.layer.transform = CATransform3DConcat(scale, translate);
-*/
-
+    // Flip layer contents vertically by setting a transform
+    const int middle = m_qtView.frame.size.height / 2;
+    m_qtView.layer.transform =
+        CATransform3DConcat(
+            CATransform3DMakeTranslation(0, -middle, 0),
+            CATransform3DConcat(
+                CATransform3DMakeScale(1, -1, 1),
+                CATransform3DMakeTranslation(0, middle, 0)));
 }
 
 QMargins QCocoaWindow::frameMargins() const
