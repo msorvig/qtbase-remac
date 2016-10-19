@@ -571,9 +571,7 @@ void QCocoaGLContext::updateIOSurfaceIfNeeded(QSize size)
             // IOSurfaceDestroy(m_iosurface)
         }
 
-        qDebug() << "updateIOSurfaceIfNeeded new iosurface";
         m_iosurface = createIOSurface(size);
-
         if (!m_iosurface) {
             qWarning("QCococaGLContext: Unable to crate IO surface");
         }

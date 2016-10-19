@@ -499,8 +499,6 @@ void QCocoaWindow::setGeometry(const QRect &rectIn)
 
     QBoolBlocker inSetGeometry(m_inSetGeometry, true);
 
-    qDebug() << "QCocoaWindow::setGeometry" << rectIn << geometry();
-
     // Determine if this is a call from QWindow::setFramePosition(). If so,
     // the position includes the frame. Size is still the content size.
     if (qt_window_private(const_cast<QWindow *>(window()))->positionPolicy
